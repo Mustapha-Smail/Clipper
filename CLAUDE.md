@@ -93,6 +93,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   licence files. People are `who` lines with traits from `ink.TRAITS`; the
   first definition of an ID wins for the whole video and the name tag shows
   once. Shots can `cut` instead of gliding.
+- Archive photos (`studio/photos.py`): Wikimedia Commons API only (no scraping),
+  licences public domain, CC0 and CC BY only (`photos.allowed`), results must
+  share most of the search's words (`photos.relevance`). One `studio_photos`
+  row per search, used by every video that asks for it; credits are kept and
+  shown. Found in the storyboard job's draw step.
 - Settings `feature_clipping` (off by default) and `feature_studio` (on) only
   decide what the UI shows; at least one stays on. `/system/status` reports them.
 - Recorded moves (`clipper/assets/moves.json`) come from CMU motion capture via

@@ -69,7 +69,7 @@ export const STAGE_NAMES: Record<string, string> = {
   prepare: 'Prepare',
   align: 'Timing',
   plan: 'Plan scenes',
-  draw: 'Draw props',
+  draw: 'Props and photos',
   animate: 'Animate',
 };
 

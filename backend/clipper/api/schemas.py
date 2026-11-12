@@ -595,11 +595,25 @@ class StoryboardListItem(StoryboardSummary):
     script_title: str
 
 
+class PhotoOut(Model):
+    id: int
+    query: str
+    title: str
+    creator: str
+    license: str
+    landing_url: str
+    credit: str
+    rank: int
+
+
 class StoryboardOut(StoryboardSummary):
     words: list[dict]
     scenes: list[dict]
     missing_props: list[str]
     music_credit: str = ""
+    photos: list[PhotoOut] = []
+    photo_searches_missing: list[str] = []       # searches with no picture yet (found when it renders)
+    credits: str = ""                            # every credit line the description needs
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
 
 

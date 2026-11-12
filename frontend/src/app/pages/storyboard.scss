@@ -439,3 +439,37 @@ pre.cheat {
     grid-template-columns: 1fr;
   }
 }
+
+.archive {
+  display: grid;
+  gap: 10px;
+
+  h3, p { margin: 0; }
+}
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+
+.photo {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+
+  img {
+    width: 96px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: var(--sunken);
+  }
+
+  div {
+    display: grid;
+    gap: 2px;
+    overflow-wrap: anywhere;
+  }
+}

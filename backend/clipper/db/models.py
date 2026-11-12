@@ -264,6 +264,34 @@ class Storyboard(Base):
     take: Mapped["VoiceTake | None"] = relationship()
 
 
+class StudioPhoto(Base):
+    """An archive picture found for a search in a storyboard (`photo "..."`), with its credit.
+
+    The search is the key: every video that asks for it shows the same picture.
+    The file is under data/studio/photos; `rank` is which search result it is,
+    so "try another" can move on to the next.
+    """
+
+    __tablename__ = "studio_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query: Mapped[str] = mapped_column(String(200), unique=True)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(40), default="Wikimedia Commons")
+    key: Mapped[str] = mapped_column(String(40), default="")            # the source's own id
+    title: Mapped[str] = mapped_column(Text, default="")
+    creator: Mapped[str] = mapped_column(Text, default="")
+    license: Mapped[str] = mapped_column(String(60), default="")
+    license_url: Mapped[str] = mapped_column(Text, default="")
+    landing_url: Mapped[str] = mapped_column(Text, default="")
+    credit: Mapped[str] = mapped_column(Text, default="")
+    width: Mapped[int] = mapped_column(Integer, default=0)
+    height: Mapped[int] = mapped_column(Integer, default=0)
+    path: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class AiUsage(Base):
     """One AI call: what for, which model, tokens, searches and estimated cost."""
 

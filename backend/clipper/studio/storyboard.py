@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 from .. import llm
 from ..db import session_scope
-from ..db.models import Storyboard, StudioAsset, VoiceTake, utcnow
+from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
 from . import art, beats, ink
 from . import voice as voice_mod
@@ -273,6 +273,11 @@ under them. Define each person once, with the same ID all video long. Never stan
 anonymous figure in for a named person.
 - Years, dates, a period or an order of events: a timeline (have an actor point at \
 it, or circle it).
+- A real thing that exists in paintings, engravings or old photographs (a famous \
+portrait, a building, a manuscript, a machine, an event): a photo from the archives, \
+taped to the page, or full to fill the frame for a moment. Mark it in ink: circle a \
+detail, point at it, write a label next to it. About one every 30 to 60 seconds in a \
+history video, fewer elsewhere.
 These are where a viewer's eye goes; use them whenever the narration names one.
 
 The beat language. Each line starts with the number of the narration word on which it \
@@ -285,6 +290,7 @@ happens. A shot line opens each shot; beat lines follow it:
   N map COUNTRY [COUNTRY...] [PLACE] [large] [COLOUR] [as ID]   (those countries in colour, labelled)
   N timeline "label" "label"... [PLACE] [COLOUR] [as ID]        (2 to 7 moments, in order, left to right)
   N who ID "Full Name" TRAIT...                          (defines a person; then: N actor ID ...)
+  N photo "search words" [PLACE] [small|large|full] [as ID]   (a real picture from Wikimedia Commons)
   N do ACTOR POSE|ACTION [TARGET] [FACE]
   N face ACTOR FACE
   N move ACTOR|PROP PLACE|TARGET [GAIT]   (to a thing: walks up to it, or lands on it)
@@ -304,6 +310,9 @@ GAIT (how a move gets there): walk (default) run march zombie
 TRAIT (for who; give 2 to 5): hair {hair}; hair colour {colours}; face {facial}; head {hats}; \
 eyes {eyes}; clothes {outfits}; skin {skins}. A monk: tonsure robe. A pope or bishop: mitre robe. \
 A Roman emperor: laurel toga. A king or queen: crown. A scientist: lab_coat.
+Photo search words: 2 to 5 plain words that would be in the title of a museum or Wikimedia \
+file, the name first ("Pope Gregory XIII portrait", "Hagia Sophia", "Gutenberg Bible", \
+"Easter table manuscript"); nothing abstract ("confusion", "time passing").
 FACE: {faces}
 COLOUR: warm (flow, emphasis), bad (problems, myths), good (answers, truth), gold, green
 TARGET and FROM/TO: an actor's name, a prop's name, an ID given with `as`, or a PLACE.
@@ -485,7 +494,37 @@ def draw_prop(name: str, description: str, instruction: str = "") -> str:
     raise RuntimeError(f"Could not draw {name}: {error}")
 
 
+def find_photos(storyboard_id: int, rep: Reporter) -> None:
+    """Find the archive pictures an ink storyboard asks for, on Wikimedia Commons; each search once."""
+    from . import photos
+
+    with session_scope() as db:
+        board = db.get(Storyboard, storyboard_id)
+        queries = beats.photo_queries(board.scenes) if board.style == "ink" else []
+        known = {p.query for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))} if queries else set()
+    todo = [q for q in queries if q not in known]
+    if not todo:
+        return
+    rep.info(f"Finding {len(todo)} archive pictures on Wikimedia Commons (public domain, CC0 and CC BY only)")
+    missing = []
+    for n, query in enumerate(todo, 1):
+        try:
+            found = photos.find(query)
+        except RuntimeError as err:
+            rep.warn(f"{query}: {err}")
+            found = None
+        if found is None:
+            missing.append(query)
+        else:
+            rep.info(f"\"{query}\": {found.title} ({found.license})")
+        rep.progress(n / len(todo), f"Found {n - len(missing)} of {len(todo)} pictures")
+    if missing:
+        rep.warn(f"No usable picture for: {', '.join(missing)}. They show as paper cards with the search; "
+                 "edit the search words in the beats and render again.")
+
+
 def draw_missing(storyboard_id: int, rep: Reporter) -> None:
+    find_photos(storyboard_id, rep)
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         names = prop_names(board.style, board.scenes)

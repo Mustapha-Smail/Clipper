@@ -22,16 +22,16 @@ from PIL import Image
 
 from .. import captions as captions_mod
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, art, beats, geo, ink
+from . import animate, art, beats, geo, ink, photos
 
 FPS = 24
 ART_FPS = 12
 # The hand-drawn wobble of the lines: (pixels at 1080p, changes per second). Subtle by default:
 # a strong boil on every line, all the time, is tiring to watch.
 WOBBLE = {"off": (0.0, 1), "subtle": (0.7, 4), "strong": (2.2, 8)}
-BODIES = ("actor", "prop", "text", "flag", "map", "timeline")      # things with a place on the stage
+BODIES = ("actor", "prop", "text", "flag", "map", "timeline", "photo")   # things with a place on the stage
 DRAW_TIME = {"actor": 0.7, "prop": 0.8, "arrow": 0.45, "circle": 0.55, "underline": 0.35, "cross": 0.35,
-             "tick": 0.3, "flag": 0.9, "map": 1.5, "timeline": 1.3, "tag": 0.6}
+             "tick": 0.3, "flag": 0.9, "map": 1.5, "timeline": 1.3, "tag": 0.6, "photo": 0.6}
 TAG_TIME = 3.2               # how long a person's name stays under them when they first appear
 ERASE_TIME = 0.3
 POSE_TIME = 0.45
@@ -137,6 +137,7 @@ class InkComposer:
         self.W, self.H = self.layout.width, self.layout.height
         self.sizes = SIZES[self.format]
         self.props = props
+        self.photos: dict[str, dict] = board.get("photos") or {}     # search -> {path, width, height}
         self.mouths = mouths
         self.words = board["words"]
         self.duration = board["end"] - board["start"]
@@ -167,9 +168,13 @@ class InkComposer:
         self.paper = Image.fromarray(paper(self.W, self.H), "RGB").convert("RGBA")
         strength, self.boil_fps = WOBBLE.get(getattr(settings, "ink_wobble", "subtle"), WOBBLE["subtle"])
         self.boil = boil_fields(self.W, self.H, strength=strength) if strength else []
+        # Drawings are kept to be reused, up to a memory budget (not a count: a map or a
+        # photo weighs as much as a hundred props). Previews in the API keep less.
         self._cache: OrderedDict = OrderedDict()
-        self.cache_limit = 700                        # drawings kept; previews keep fewer
+        self._cache_bytes = 0
+        self.cache_limit = 250 * 1024 * 1024
         self._sized: OrderedDict = OrderedDict()      # sprites resized for the current zoom
+        self._sized_bytes = 0
         self._last: tuple | None = None
 
     # --- time --------------------------------------------------------------------------
@@ -362,6 +367,21 @@ class InkComposer:
                 w = self.sizes["prop"][size] * (1.9 if self.format == "long" else 2.0)
                 w = min(w, self.W * 0.9)
                 h = w * 0.75
+            elif x.kind == "photo":
+                found = self.photos.get(x.line.text) or {}
+                aspect = (found.get("width") or 4) / (found.get("height") or 3)
+                stage_h = self.H * (lay.stage_bottom - lay.stage_top)
+                if size == "full":
+                    w, h = self.W, self.H
+                else:
+                    pw = {"small": 0.24, "medium": 0.36, "large": 0.5}[size] * self.W * (1.6 if self.format == "short"
+                                                                                          else 1.0)
+                    ph = pw / aspect
+                    if ph > stage_h * 0.78:                 # tall pictures shrink to fit the stage
+                        ph = stage_h * 0.78
+                        pw = ph * aspect
+                    x.size_px = int(pw)
+                    w, h = photos.outer(pw, ph, False)
             elif x.kind == "timeline":
                 scale = {"small": 0.7, "medium": 1.0, "large": 1.15}[size]
                 w = self.W * (0.62 if self.format == "long" else 0.86) * scale
@@ -402,6 +422,8 @@ class InkComposer:
                     x.gaits.append((begin, begin + duration, "walk"))
                 x.shot = shot
                 x.spans.append((shot, begin))
+            elif x.kind == "photo" and x.line.size == "full":
+                x.box = (ox + self.W / 2, oy + self.H / 2, self.W, self.H)
             else:
                 x.scale = s
                 x.box = (cx + ox, cy + oy, w, h)
@@ -702,6 +724,9 @@ class InkComposer:
     def body_box(self, thing: Thing, t: float) -> tuple[float, float, float, float]:
         """The part of the page the drawing itself covers: what hands reach for and circles go round."""
         x0, y0, x1, y1 = self.world_box(thing, t)
+        if thing.kind == "photo" and thing.line.size != "full":     # the picture, inside its border
+            mx, my = (x1 - x0) * 0.1, (y1 - y0) * 0.12
+            return x0 + mx, y0 + my, x1 - mx, y1 - my
         if thing.kind != "prop":
             return x0, y0, x1, y1
         label_h = self.sizes["text"]["small"] * 1.1 * thing.scale if thing.line.text else 0
@@ -850,8 +875,10 @@ class InkComposer:
         if image is None:
             image = make()
             self._cache[key] = image
-            while len(self._cache) > self.cache_limit:
-                self._cache.popitem(last=False)
+            self._cache_bytes += _weight(image)
+            while self._cache_bytes > self.cache_limit and len(self._cache) > 1:
+                _, old = self._cache.popitem(last=False)
+                self._cache_bytes -= _weight(old)
         else:
             self._cache.move_to_end(key)
         return image
@@ -915,6 +942,20 @@ class InkComposer:
                 return out
             image = self._cached(("p", thing.id, thing.order, pq, zq), make)
             return image, (cx - image.width / zq / 2, cy - h / 2)
+        if thing.kind == "photo":
+            cx, cy = self.centre(thing, t)
+            _, _, w, h = thing.box
+            found = self.photos.get(thing.line.text) or {}
+            full = thing.line.size == "full"
+            if full:
+                pw, ph = w, h
+            else:
+                pw = thing.size_px * thing.scale
+                aspect = (found.get("width") or 4) / (found.get("height") or 3)
+                ph = min(pw / aspect, h)
+            image = photos.photo_image(found.get("path"), thing.line.text, int(pw * zq), int(ph * zq), p,
+                                       t - thing.born, thing.order, full)
+            return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
         if thing.kind in ("flag", "map", "timeline"):
             cx, cy = self.centre(thing, t)
             _, _, w, h = thing.box
@@ -973,8 +1014,10 @@ class InkComposer:
         if out is None or out[0] is not image:
             out = (image, image.resize(size, Image.BILINEAR))
             self._sized[key] = out
-            if len(self._sized) > 300:
-                self._sized.popitem(last=False)
+            self._sized_bytes += _weight(out[1])
+            while self._sized_bytes > self.cache_limit // 4 and len(self._sized) > 1:
+                _, (_, old) = self._sized.popitem(last=False)
+                self._sized_bytes -= _weight(old)
         return out[1]
 
     def frame_rgb(self, t: float) -> np.ndarray:
@@ -995,7 +1038,8 @@ class InkComposer:
         layer = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
         view = (cx - self.W / 2 / zoom, cy - self.H / 2 / zoom, cx + self.W / 2 / zoom, cy + self.H / 2 / zoom)
         zq = max(0.5, round(zoom * 10) / 10)
-        rank = {"prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "actor": 1, "arrow": 2, "mark": 2, "tag": 2}
+        rank = {"photo": -1, "prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "actor": 1, "arrow": 2,
+                "mark": 2, "tag": 2}
         for thing in sorted(self.things, key=lambda x: (rank[x.kind], x.order)):
             if tq < thing.born or (thing.gone is not None and tq > thing.gone + ERASE_TIME):
                 continue
@@ -1068,7 +1112,7 @@ class InkComposer:
             if not self.shots[i].get("cut"):
                 events.append((self.pan_start(i)[0], "pan"))
         draws = {"actor": "scribble", "prop": "scribble", "text": "scribble", "arrow": "scribble",
-                 "circle": "scribble", "underline": "scribble", "cross": "cross", "tick": "tick"}
+                 "circle": "scribble", "underline": "scribble", "cross": "cross", "tick": "tick", "photo": "glide"}
         for x in self.things:
             verb = x.line.verb if x.kind in ("arrow", "mark") else x.kind
             events.append((x.born, draws.get(verb, "scribble")))
@@ -1114,6 +1158,11 @@ class InkComposer:
         if self.captions is not None:
             self.captions.draw(frame, t)
         return frame
+
+
+def _weight(image) -> int:
+    """Bytes a cached picture takes."""
+    return image.width * image.height * 4 if isinstance(image, Image.Image) else 1024
 
 
 def _edge(box, centre: tuple[float, float], toward: tuple[float, float], gap: float) -> tuple[float, float]:

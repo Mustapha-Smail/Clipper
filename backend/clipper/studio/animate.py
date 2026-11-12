@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .. import captions as captions_mod
 from ..db import session_scope
-from ..db.models import Storyboard, StudioAsset, utcnow
+from ..db.models import Storyboard, StudioAsset, StudioPhoto, utcnow
 from ..ffutil import require
 from ..jobs import Reporter
 from ..render import RenderOptions
@@ -478,6 +478,10 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
             {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
         wav = Path(board.take.path) if board.take_id and board.take and board.take.path else None
+        if board.style == "ink":
+            queries = beats.photo_queries(board.scenes)
+            data["photos"] = {p.query: {"path": p.path, "width": p.width, "height": p.height}
+                              for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))} if queries else {}
     return data, props, wav
 
 
@@ -512,7 +516,7 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
         if composer is None:
             _still_cache.clear()
             composer = composer_for(board, props, settings, None)
-            composer.cache_limit = 80     # previews: one frame here and there, not a whole video
+            composer.cache_limit = 40 * 1024 * 1024    # previews: one frame here and there, not a whole video
             _still_cache[key] = composer
         image = composer.frame(max(0.0, min(t, composer.duration - 0.01))).convert("RGB")
     image = image.resize((width, round(image.height * width / image.width)), Image.LANCZOS)

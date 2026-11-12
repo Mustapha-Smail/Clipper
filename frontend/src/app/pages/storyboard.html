@@ -134,6 +134,33 @@
       </section>
     }
 
+    @if (b.photos.length || b.photo_searches_missing.length) {
+      <section class="card archive">
+        <h3>Pictures from the archives</h3>
+        <p class="small muted">Found on Wikimedia Commons: public domain, CC0 and CC BY only. "Try another" uses the
+          next result for that search, in every video that asks for it; render again to see it.</p>
+        <div class="photos">
+          @for (p of b.photos; track p.id) {
+            <article class="photo">
+              <img [src]="photoUrl(p)" [alt]="p.title" loading="lazy" />
+              <div class="small">
+                <strong>“{{ p.query }}”</strong>
+                <span class="muted">{{ p.title }} · {{ p.creator }} · {{ p.license }}</span>
+                <span class="row">
+                  <a [href]="p.landing_url" target="_blank" rel="noopener">source</a>
+                  <button class="sm quiet" (click)="nextPhoto(p)" [disabled]="swapping() === p.id">
+                    {{ swapping() === p.id ? 'Looking…' : 'Try another' }}</button>
+                </span>
+              </div>
+            </article>
+          }
+        </div>
+        @if (b.photo_searches_missing.length) {
+          <p class="small muted">Found when it renders: {{ b.photo_searches_missing.join(', ') }}.</p>
+        }
+      </section>
+    }
+
     <section class="card publish">
       <h3>For YouTube</h3>
       <div class="publish-grid">
@@ -142,11 +169,12 @@
             (Subtitles, Upload file, With timing).</p>
           <a class="btn sm" [href]="subtitlesUrl()" download>Download subtitles (.srt)</a>
         </div>
-        @if (b.music_credit) {
+        @if (b.credits) {
           <div>
-            <p class="small muted">Music credit: the licence asks you to put this line in the description.</p>
-            <pre class="chapters">{{ b.music_credit }}</pre>
-            <button class="sm" (click)="copy(b.music_credit)">Copy credit</button>
+            <p class="small muted">Credits: pictures and music used. CC BY licences ask for these lines in the
+              description; for public-domain works they are a courtesy.</p>
+            <pre class="chapters">{{ b.credits }}</pre>
+            <button class="sm" (click)="copy(b.credits)">Copy credits</button>
           </div>
         }
         @if (b.format === 'long') {

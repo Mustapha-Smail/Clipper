@@ -463,6 +463,21 @@ export interface Storyboard extends StoryboardSummary {
   missing_props: string[];
   music_credit: string;
   score: LivelinessScore | null;
+  photos: ArchivePhoto[];
+  photo_searches_missing: string[];
+  credits: string;
+}
+
+/** A picture from Wikimedia Commons used by an ink storyboard, with its credit. */
+export interface ArchivePhoto {
+  id: number;
+  query: string;
+  title: string;
+  creator: string;
+  license: string;
+  landing_url: string;
+  credit: string;
+  rank: number;
 }
 
 export interface Asset {

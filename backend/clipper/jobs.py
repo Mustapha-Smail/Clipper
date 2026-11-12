@@ -52,7 +52,7 @@ STAGE_LABELS = {
     "prepare": "Preparing the recording",
     "align": "Timing every word against the script",
     "plan": "Planning the scenes",
-    "draw": "Drawing new props",
+    "draw": "Drawing new props and finding photos",
     "animate": "Animating the video",
 }
 

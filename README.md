@@ -259,6 +259,21 @@ names something:
 `backend/tools/geo_import.py` packs the flags and outlines into
 `clipper/assets/` (flags.json.gz, countries.json.gz).
 
+**Pictures from the archives.** For a real thing that exists in paintings,
+engravings or old photographs (a portrait, a building, a manuscript), the
+planner writes `photo "Pope Gregory XIII portrait"`. When the storyboard is
+planned or rendered, the app searches Wikimedia Commons through its public API
+and keeps only pictures that are public domain, CC0 or CC BY (share-alike,
+non-commercial and no-derivatives licences are left out, as for music), large
+enough, and whose title or description has most of the search words. A picture
+appears as an aged print taped to the page, or fills the frame (`full`); a
+picture far from the frame's shape is shown whole over a blurred copy of itself.
+It moves slowly (a Ken Burns move), and ink marks can be drawn over it. Each
+search is resolved once and reused; the storyboard page lists the pictures
+with their licence and source, "Try another" moves to the next result, and the
+For YouTube box gathers every credit line (pictures and music) to paste into
+the description.
+
 **Editing.** Shots glide from one to the next across the page, or cut hard
 (`cut` on the shot line); the planner mixes both. The camera reframes at most
 every 3 seconds unless something would appear out of view. The lines' hand-drawn

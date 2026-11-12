@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 from . import art, geo, ink
 
 SLOTS = ("left", "center", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right")
-SIZES = {"small": "small", "medium": "medium", "large": "large", "s": "small", "m": "medium", "l": "large"}
+SIZES = {"small": "small", "medium": "medium", "large": "large", "s": "small", "m": "medium", "l": "large",
+         "full": "full"}     # full: a photo that fills the frame
 COLORS = ("warm", "bad", "good", "gold", "green", "ink")
 EXPRESSIONS = art.EXPRESSIONS
 STILL_POSES = ("stand", "point", "hold", "push", "pull", "carry", "drop", "shrug", "think", "facepalm", "cheer", "wave",
@@ -36,9 +37,9 @@ TARGETED = {"point", "hold", "push", "pull", "carry"}  # poses that reach for so
 CAMERAS = ("wide", "push", "drift", "close")
 MARKS = ("circle", "underline", "cross", "tick")
 MOTIONS = ("shake", "bounce", "pulse", "spin", "grow", "shrink")
-CREATES = ("actor", "draw", "write", "flag", "map", "timeline")
+CREATES = ("actor", "draw", "write", "flag", "map", "timeline", "photo")
 VERBS = (*CREATES, "do", "face", "move", "arrow", *MARKS, *MOTIONS, "erase", "look", "who")
-SHOWN = ("flag", "map", "timeline")          # things drawn from data, not from the prop library
+SHOWN = ("flag", "map", "timeline", "photo")  # things made from data or archives, not from the prop library
 MAX_LIVE = 6                  # things on stage at once; older ones are erased to make room
 MAX_TEXT_WORDS = 6
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
@@ -71,15 +72,17 @@ class Line:
             return _slug(self.text)
         if self.verb == "flag":
             return f"flag_{self.who}"
-        if self.verb in ("map", "timeline"):
+        if self.verb in ("map", "timeline", "photo"):
             return self.verb
         return self.who
 
     def render(self) -> str:
         """The canonical text of the line."""
         parts = [str(self.word), self.verb]
-        if self.verb in ("flag", "map", "timeline", "who"):
-            if self.verb == "flag":
+        if self.verb in ("flag", "map", "timeline", "who", "photo"):
+            if self.verb == "photo":
+                parts.append(_quote(self.text))
+            elif self.verb == "flag":
                 parts.append(self.who)
             elif self.verb == "map":
                 parts += self.extra
@@ -142,7 +145,7 @@ def parse_line(raw: str) -> Line | None:
         if k + 1 < len(rest) and NAME.match(_name(rest[k + 1])):
             line.ident = _name(rest[k + 1])
         rest = rest[:k] + rest[k + 2:]
-    if verb in ("flag", "map", "timeline", "who"):
+    if verb in ("flag", "map", "timeline", "who", "photo"):
         return _parse_shown(line, rest)
     refs: list[str] = []
     for token in rest:
@@ -226,7 +229,11 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
         else:
             words.append(_name(token))
     words = [w for w in words if w]
-    if line.verb == "flag":
+    if line.verb == "photo":
+        if not quoted or not quoted[0].strip():
+            return None
+        line.text = " ".join(quoted[0].split()[:8])
+    elif line.verb == "flag":
         codes = [c for c in (geo.code(w) for w in words) if c]
         if not codes or codes[0] not in geo.flags():
             return None
@@ -432,6 +439,16 @@ def parsed(sh: dict) -> list[Line]:
 
 def prop_names(shots: list[dict]) -> set[str]:
     return {line.who for sh in shots for line in parsed(sh) if line.verb == "draw"}
+
+
+def photo_queries(shots: list[dict]) -> list[str]:
+    """The archive searches a storyboard uses, in order of appearance."""
+    out: list[str] = []
+    for sh in shots:
+        for line in parsed(sh):
+            if line.verb == "photo" and line.text not in out:
+                out.append(line.text)
+    return out
 
 
 def to_text(shots: list[dict]) -> str:

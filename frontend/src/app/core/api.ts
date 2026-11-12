@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport,
+  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -261,6 +261,12 @@ export class Api {
   }
   allStoryboards(): Observable<StoryboardListItem[]> {
     return this.http.get<StoryboardListItem[]>(`${BASE}/storyboards`);
+  }
+  photoImageUrl(id: number, version: string | number, size = 320): string {
+    return `${BASE}/photos/${id}/image?size=${size}&v=${version}`;
+  }
+  nextPhoto(id: number): Observable<ArchivePhoto> {
+    return this.http.post<ArchivePhoto>(`${BASE}/photos/${id}/next`, {});
   }
   costs(of: CostOf): Observable<CostReport> {
     const params: Record<string, number | string> = {};

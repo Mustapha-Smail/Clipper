@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, VoiceTake, utcnow
+from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, VoiceTake, utcnow
 from ..studio import animate, art, beats, music_pick, music_search, sound
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
@@ -59,6 +59,11 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     drawn = set(db.scalars(select(StudioAsset.name).where(StudioAsset.name.in_(names), StudioAsset.svg.is_not(None))))
     music = board.music
     credit = (music.attribution or f"Music: {music.name}") if music and music.license else ""
+    queries = beats.photo_queries(board.scenes) if board.style == "ink" else []
+    found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
+        if queries else {}
+    used = [found[q] for q in queries if q in found]
+    credits = "\n".join([*(f"Picture: {p.credit}" for p in used), *([credit] if credit else [])])
     score = None
     if board.style == "ink" and board.scenes and board.words:
         words = board.words
@@ -66,7 +71,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                             board.end - board.start)
     return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job),
                            words=board.words, scenes=board.scenes, missing_props=sorted(names - drawn),
-                           music_credit=credit, score=score)
+                           music_credit=credit, score=score, photos=used,
+                           photo_searches_missing=[q for q in queries if q not in found], credits=credits)
 
 
 def _idle(db: Session, board: Storyboard) -> None:
@@ -304,6 +310,41 @@ def delete_storyboard(board: Storyboard = Depends(get_board), db: Session = Depe
     db.delete(board)
     db.flush()
     shutil.rmtree(folder, ignore_errors=True)
+
+
+# --- archive photos ---------------------------------------------------------------------------
+
+@router.get("/photos/{photo_id}/image")
+def photo_image(photo_id: int, size: int = Query(320, ge=64, le=1200), db: Session = Depends(get_db)):
+    photo = db.get(StudioPhoto, photo_id)
+    if photo is None or not Path(photo.path).is_file():
+        raise HTTPException(404, "Picture not found")
+    from PIL import Image
+
+    image = Image.open(photo.path)
+    image.thumbnail((size, size))
+    out = io.BytesIO()
+    image.convert("RGB").save(out, "JPEG", quality=85)
+    return Response(out.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+
+@router.post("/photos/{photo_id}/next", response_model=s.PhotoOut)
+def next_photo(photo_id: int, db: Session = Depends(get_db)):
+    """Use the next search result instead, in every video that asks for this search. Render again to see it."""
+    from ..studio import photos as photos_mod
+
+    photo = db.get(StudioPhoto, photo_id)
+    if photo is None:
+        raise HTTPException(404, "Picture not found")
+    query, rank = photo.query, photo.rank
+    db.commit()       # release the row: find() writes it in its own session
+    try:
+        found = photos_mod.find(query, rank + 1) or photos_mod.find(query, 0)
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    if found is None:
+        raise HTTPException(404, "No other usable picture for this search: change its words in the beats")
+    return found
 
 
 # --- the library ------------------------------------------------------------------------------

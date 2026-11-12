@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard, SuggestedTrack } from '../core/models';
+import { ArchivePhoto, Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard, SuggestedTrack } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
@@ -27,6 +27,9 @@ N move ACTOR|PROP PLACE|TARGET [walk|run|march|zombie]
 N arrow FROM TO [COLOUR]             N circle|underline|cross|tick TARGET [COLOUR]
 N shake|bounce|pulse|spin|grow|shrink TARGET
 N erase TARGET|all                   N look TARGET|all   (the camera moves in, or back out)
+N flag COUNTRY    N map COUNTRY...    N timeline "label" "label"...    (COUNTRY: ro, it, bg...)
+N who ID "Full Name" TRAIT...  then  N actor ID    (traits: tonsure robe mitre laurel toga crown beard...)
+N photo "search words" [PLACE] [small|large|full]   (a real picture from Wikimedia Commons)
 
 WHO      ${CAST.join(' ')}
 PLACE    ${SLOTS.join(' ')}
@@ -380,6 +383,29 @@ export class StoryboardPage {
       },
       error: (err) => {
         this.saving.set(false);
+        this.toasts.error(err);
+      },
+    });
+  }
+
+  // --- archive pictures -------------------------------------------------------------------------
+
+  protected readonly swapping = signal<number | null>(null);
+
+  protected photoUrl(p: ArchivePhoto): string {
+    return this.api.photoImageUrl(p.id, `${p.rank}-${this.version()}`, 280);
+  }
+
+  protected nextPhoto(p: ArchivePhoto): void {
+    this.swapping.set(p.id);
+    this.api.nextPhoto(p.id).subscribe({
+      next: () => {
+        this.swapping.set(null);
+        this.toasts.ok('Another picture chosen. Render again to see it in the video.');
+        this.load();
+      },
+      error: (err) => {
+        this.swapping.set(null);
         this.toasts.error(err);
       },
     });
