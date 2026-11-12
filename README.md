@@ -202,10 +202,16 @@ drawn by code in `studio/art.py`; props are rendered with resvg.
   numbers, a boing for things that bounce or grow, a zip for arrows, whooshes for
   slides. Pitch and length vary, the same sound never plays twice in a row, and
   each storyboard has its own sequence. On by default; switch off per storyboard.
-- **Suggest music:** one small call on the quick tier ranks your library against
-  the video's tone, from what the app measured in each track (tempo, density,
-  brightness, dynamics; no audio is sent) and its genres. It may well answer "no
-  music". "Hear the mix" plays 25 seconds of voice, effects and a track together
+- **Suggest music:** ranks your library and tracks found online together. A
+  first small call on the quick tier turns the video's tone into plain search
+  words (Openverse matches titles and tags, not moods), the app searches
+  Openverse (CC0, public domain, CC BY only), measures each candidate from 40
+  seconds read straight from its source (tempo, density, brightness, dynamics;
+  cached; no audio goes to a model), and a second small call ranks everything.
+  It may answer "no music". Online picks can be heard with the voice before
+  adding them; "Add and use" imports one with its credit line. Untick "Search
+  online too" to rank only the library. About 10 to 20 seconds, a fraction of a
+  cent. "Hear the mix" plays 25 seconds of voice, effects and a track together
   without rendering anything.
 - **Scenes** are grouped by chapter (long videos) or by 15 seconds (Shorts);
   groups fold away.

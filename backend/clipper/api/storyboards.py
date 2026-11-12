@@ -202,28 +202,53 @@ def _measure(db: Session, tracks: list[StudioMusic]) -> None:
 
 
 @router.post("/storyboards/{storyboard_id}/suggest-music", response_model=s.MusicSuggestion)
-def suggest_music(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
-    """Which library track suits this video, or none. One small call on the quick tier."""
+def suggest_music(body: s.SuggestMusic | None = None, board: Storyboard = Depends(get_board),
+                  db: Session = Depends(get_db)):
+    """Which track suits this video, from your library and (by default) online, or none at all.
+
+    Two small calls on the quick tier: search words, then the ranking. Online
+    candidates are measured by the app itself from a stretch of their audio.
+    """
+    online = body.online if body else True
     tracks = db.scalars(select(StudioMusic).order_by(StudioMusic.name)).all()
-    if not tracks:
-        return {"choice": None, "level_db": -18, "ranking": [],
-                "reason": "The library has no music yet. Upload a track or find one under Library, Music."}
     _measure(db, tracks)
     narration = " ".join(w["w"] for w in board.words[:90])
     chapters = [sec["heading"] for sec in board.script.sections] if board.format == "long" else []
+    args = (board.title, board.format, board.end - board.start, narration, chapters)
+    searches, found = [], []
     try:
-        pick = music_pick.suggest(board.title, board.format, board.end - board.start, narration, chapters, tracks)
+        if online:
+            try:
+                searches = music_pick.searches(*args)
+            except RuntimeError:
+                searches = []    # the fallback genres still find something
+            found = music_search.candidates(searches, {t.source_url for t in tracks if t.source_url})
+        if not tracks and not found:
+            return {"choice": None, "level_db": -18, "searches": searches, "ranking": [],
+                    "reason": "No music to choose from: the library is empty and nothing was found online."}
+        pick = music_pick.suggest(*args, tracks, found)
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
-    known = {t.id for t in tracks}
-    ranking = [r for r in pick.ranking if r.track_id in known]
-    choice = pick.choice if pick.choice in known else None
-    return {"choice": choice, "reason": pick.reason, "level_db": max(-34, min(-10, pick.level_db)),
-            "ranking": ranking}
+
+    details = {f"lib-{t.id}": {"source": "library", "track_id": t.id, "openverse_id": None, "title": t.name,
+                               "creator": t.creator, "license": t.license, "duration": t.duration,
+                               "words": (t.features or {}).get("words", []), "landing_url": t.source_url}
+               for t in tracks}
+    details.update({f"web-{i['id'][:8]}": {"source": "online", "track_id": None, "openverse_id": i["id"],
+                                          "title": i["title"], "creator": i["creator"], "license": i["license"],
+                                          "duration": i["duration"],
+                                          "words": (i.get("features") or {}).get("words", []),
+                                          "landing_url": i["landing_url"]}
+                    for i in found})
+    ranking = [{"ref": r.ref, "fit": max(0, min(10, r.fit)), "reason": r.reason, **details[r.ref]}
+               for r in pick.ranking if r.ref in details]
+    return {"choice": pick.choice if pick.choice in details else None, "reason": pick.reason,
+            "level_db": max(-34, min(-10, pick.level_db)), "searches": searches, "ranking": ranking[:8]}
 
 
 @router.get("/storyboards/{storyboard_id}/sound-preview")
-def sound_preview(music_id: int | None = None, music_db: float = Query(-18, ge=-40, le=-6), effects: bool = True,
+def sound_preview(music_id: int | None = None, openverse_id: str | None = None,
+                  music_db: float = Query(-18, ge=-40, le=-6), effects: bool = True,
                   start: float = Query(0, ge=0), seconds: float = Query(25, ge=5, le=60),
                   board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """The voice, effects and a music track mixed for a stretch of the video, without rendering any frames."""
@@ -231,8 +256,14 @@ def sound_preview(music_id: int | None = None, music_db: float = Query(-18, ge=-
     if take is None or not take.path or not Path(take.path).is_file():
         raise HTTPException(409, "The voice take of this storyboard is missing")
     track = db.get(StudioMusic, music_id) if music_id else None
+    music = track.path if track else None
+    if openverse_id and not music:   # an online track, heard before adding it: streamed from its source
+        try:
+            music = music_search.track(openverse_id)["audio_url"]
+        except (ValueError, RuntimeError) as err:
+            raise HTTPException(400, str(err)) from err
     try:
-        audio = animate.preview_mix(board, take.path, track.path if track else None, music_db, effects, start, seconds)
+        audio = animate.preview_mix(board, take.path, music, music_db, effects, start, seconds)
     except RuntimeError as err:
         raise HTTPException(500, str(err)) from err
     return Response(audio, media_type="audio/mp4", headers={"Cache-Control": "no-store"})

@@ -90,6 +90,21 @@
     font-weight: 700;
     min-width: 38px;
   }
+
+  .reason {
+    display: block;
+  }
+
+  .pill.tiny {
+    font-size: 10.5px;
+    padding: 0 6px;
+    margin-left: 4px;
+
+    &.online {
+      background: var(--accent);
+      color: var(--accent-ink);
+    }
+  }
 }
 
 .publish {

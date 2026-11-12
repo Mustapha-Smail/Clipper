@@ -501,7 +501,8 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
             sound.write_effects(events, seconds, fx, seed=board.id)
             inputs += ["-i", str(fx)]
         if music_path:
-            inputs += ["-stream_loop", "-1", "-i", music_path]
+            looped = [] if music_path.startswith(("http://", "https://")) else ["-stream_loop", "-1"]
+            inputs += [*looped, "-i", music_path]
         graph, mixed = sound.mix_graph(seconds, effects, bool(music_path), music_db)
         # mix_graph numbers the voice as input 1 (input 0 is the video when rendering): add a silent input 0.
         out = Path(tmp) / "preview.m4a"

@@ -287,22 +287,28 @@ def normalise_music(src: Path, out: Path) -> None:
     partial.replace(out)
 
 
-def describe_track(path: Path) -> dict:
-    """Tempo, density, brightness and dynamics of a track, from a minute of its audio. No AI involved.
+def describe_track(path: Path | str, seconds: float = 60) -> dict:
+    """Tempo, density, brightness and dynamics of a track, from up to a minute of its audio. No AI involved.
 
     Enough to tell a calm sparse bed from a busy bright one, which is what
-    matters under a voice.
+    matters under a voice. `path` may be a URL: ffmpeg then reads only the
+    stretch it needs.
     """
     from ..ffutil import require
 
     sr, hop = 22_050, 512
-    proc = subprocess.run([require("ffmpeg"), "-v", "error", "-ss", "20", "-t", "60", "-i", str(path),
-                           "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True)
-    audio = np.frombuffer(proc.stdout, dtype=np.float32)
+
+    def decode(*seek: str) -> np.ndarray:
+        try:
+            proc = subprocess.run([require("ffmpeg"), "-v", "error", *seek, "-t", str(seconds), "-i", str(path),
+                                   "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True, timeout=45)
+        except subprocess.TimeoutExpired:
+            return np.zeros(0, dtype=np.float32)
+        return np.frombuffer(proc.stdout, dtype=np.float32)
+
+    audio = decode("-ss", "20")
     if len(audio) < sr * 5:   # short track: analyse from the start
-        proc = subprocess.run([require("ffmpeg"), "-v", "error", "-t", "60", "-i", str(path), "-ac", "1",
-                               "-ar", str(sr), "-f", "f32le", "-"], capture_output=True)
-        audio = np.frombuffer(proc.stdout, dtype=np.float32)
+        audio = decode()
     if len(audio) < sr * 2:
         return {}
     frames = np.lib.stride_tricks.sliding_window_view(audio, 1024)[::hop] * np.hanning(1024)
@@ -320,7 +326,8 @@ def describe_track(path: Path) -> dict:
     curve = curve / (curve.std() + 1e-9)
     lags = np.arange(int(fps * 60 / 180) - 1, int(fps * 60 / 60) + 2)
     ac = np.array([np.dot(curve[:-lag], curve[lag:]) / (len(curve) - lag) for lag in lags])
-    peaks = [i for i in range(1, len(ac) - 1) if ac[i] > ac[i - 1] and ac[i] >= ac[i + 1] and ac[i] > 0.1]
+    peaks = [i for i in range(1, len(ac) - 1) if ac[i] > ac[i - 1] and ac[i] >= ac[i + 1] and ac[i] > 0.1
+             and 58 <= 60 * fps / lags[i] <= 182]
     # A peak's strength is its area (a beat between two frames splits its height). A steady pulse
     # repeats almost as strongly every second beat, so prefer the fastest peak close to the best.
     area = {i: ac[i] + 0.5 * (ac[i - 1] + ac[i + 1]) for i in peaks}

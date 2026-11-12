@@ -83,7 +83,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   your own ideas start as `new`.
 - `studio/music_pick.py`: music is chosen from measurements
   (`sound.describe_track`: tempo, density, brightness, dynamics) on the quick
-  tier; never send audio to a model. "No music" is a valid answer.
+  tier; never send audio to a model. Library and Openverse candidates are
+  ranked together under refs `lib-<id>` / `web-<id8>`; online candidates are
+  measured from their URL and cached in `data/cache/openverse-features.json`.
+  Openverse search words must be plain genres or instruments. Uploaded tracks
+  have an unknown licence and are described as such. "No music" is valid.
 - `studio/sound.py`: effects are synthesised (no sound files), music is
   normalised at upload and ducked with sidechaincompress; subtitles come from
   the storyboard's words (script spelling), never from Whisper's text.

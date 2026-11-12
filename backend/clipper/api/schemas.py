@@ -587,17 +587,31 @@ class MusicOut(Model):
     created_at: UtcDatetime
 
 
-class MusicFit(BaseModel):
-    track_id: int
+class SuggestedTrack(BaseModel):
+    ref: str
     fit: int
     reason: str
+    source: Literal["library", "online"]
+    track_id: int | None          # library tracks
+    openverse_id: str | None      # online tracks, to preview or add
+    title: str
+    creator: str
+    license: str
+    duration: float
+    words: list[str]
+    landing_url: str
 
 
 class MusicSuggestion(BaseModel):
-    choice: int | None
+    choice: str | None            # a ref from the ranking, or None for no music
     reason: str
     level_db: int
-    ranking: list[MusicFit]
+    searches: list[str]           # what was searched online
+    ranking: list[SuggestedTrack]
+
+
+class SuggestMusic(BaseModel):
+    online: bool = Field(True, description="Also look for tracks on Openverse, not only in your library")
 
 
 class MusicFound(BaseModel):

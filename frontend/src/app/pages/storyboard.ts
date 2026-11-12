@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard } from '../core/models';
+import { Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard, SuggestedTrack } from '../core/models';
 import { Toasts } from '../core/toast';
 import { JobCard } from '../shared/job-card';
 
@@ -177,11 +177,50 @@ export class StoryboardPage {
   protected readonly suggestion = signal<MusicSuggestion | null>(null);
   protected readonly suggesting = signal(false);
   protected readonly previewSrc = signal('');
+  protected readonly searchOnline = signal(true);
+  protected readonly adding = signal<string | null>(null);
+
+  protected chosen(sg: MusicSuggestion): SuggestedTrack | null {
+    return sg.ranking.find((r) => r.ref === sg.choice) ?? null;
+  }
+
+  protected licence(code: string): string {
+    return code === 'by' ? 'CC BY · credit' : code === 'cc0' ? 'CC0' : 'public domain';
+  }
+
+  protected hearTrack(r: SuggestedTrack, level: number): void {
+    const board = this.board();
+    if (!board) return;
+    this.previewSrc.set(this.api.soundPreviewUrl(this.id, r.track_id, level, board.effects, 0, r.openverse_id));
+  }
+
+  /** Use a suggested track: online ones are added to the library first, with their credit. */
+  protected useTrack(r: SuggestedTrack, level: number): void {
+    if (r.track_id !== null) {
+      this.setSound({ music_id: r.track_id, music_db: level });
+      return;
+    }
+    this.adding.set(r.ref);
+    this.api.importMusic(r.openverse_id!).subscribe({
+      next: (track) => {
+        this.adding.set(null);
+        this.music.update((list) => [...list.filter((m) => m.id !== track.id), track]);
+        this.suggestion.update((sg) => sg && {
+          ...sg, ranking: sg.ranking.map((x) => (x.ref === r.ref ? { ...x, source: 'library', track_id: track.id } : x)),
+        });
+        this.setSound({ music_id: track.id, music_db: level });
+      },
+      error: (err) => {
+        this.adding.set(null);
+        this.toasts.error(err);
+      },
+    });
+  }
 
   /** Ask the quick-tier model which track fits, if any. Costs a fraction of a cent. */
   protected suggest(): void {
     this.suggesting.set(true);
-    this.api.suggestMusic(this.id).subscribe({
+    this.api.suggestMusic(this.id, this.searchOnline()).subscribe({
       next: (s) => {
         this.suggesting.set(false);
         this.suggestion.set(s);

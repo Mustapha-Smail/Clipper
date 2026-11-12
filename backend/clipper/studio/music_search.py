@@ -12,6 +12,7 @@ upload the file instead.
 """
 
 import json
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -87,3 +88,56 @@ def credit(item: dict) -> str:
         return item["attribution"] or (f"\"{item['title']}\" by {item['creator']}, licensed under CC BY "
                                        f"{item['license_version']} ({item['license_url']})")
     return f"Music: \"{item['title']}\" by {item['creator']} ({'CC0' if item['license'] == 'cc0' else 'public domain'})"
+
+
+# --- candidates for a video ----------------------------------------------------------------
+
+_cache_lock = threading.Lock()
+
+
+def _features_cache():
+    from .. import config
+    return config.data_dir() / "cache" / "openverse-features.json"
+
+
+def measure(item: dict) -> dict:
+    """Measure an online track from 40 seconds read straight from its source; cached by Openverse id."""
+    from . import sound
+
+    path = _features_cache()
+    with _cache_lock:
+        cache = json.loads(path.read_text()) if path.is_file() else {}
+    if item["id"] in cache:
+        return cache[item["id"]]
+    features = sound.describe_track(item["audio_url"], seconds=40) if item["audio_url"] else {}
+    with _cache_lock:
+        cache = json.loads(path.read_text()) if path.is_file() else {}
+        cache[item["id"]] = features
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cache))
+    return features
+
+
+def candidates(queries: list[str], skip_urls: set[str], length: str = "", limit: int = 12) -> list[dict]:
+    """Online tracks for the searches, without the ones already in the library, measured."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    found: dict[str, dict] = {}
+    # Openverse matches titles and tags, not moods: plain genre or instrument words work best.
+    # When the given searches find little, a few safe genres for a background bed fill in.
+    searches = [q for q in queries[:3] if q.strip()] + ["ambient", "piano", "acoustic"]
+    for query in searches:
+        if len(found) >= limit:
+            break
+        try:
+            results = search(query, length)["results"]
+        except RuntimeError:
+            continue
+        for item in results[:6]:
+            if item["id"] not in found and item["landing_url"] not in skip_urls and item["duration"] >= 30:
+                found[item["id"]] = {**item, "query": query}
+    items = list(found.values())[:limit]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for item, features in zip(items, pool.map(measure, items), strict=True):
+            item["features"] = features
+    return items

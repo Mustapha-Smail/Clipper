@@ -52,7 +52,10 @@
           <span>Pops and whooshes<small>Quiet sounds when things appear.</small></span></label>
       </div>
       <div class="row sound-tools">
-        <button class="sm" (click)="suggest()" [disabled]="suggesting()">{{ suggesting() ? 'Thinking…' : 'Suggest music' }}</button>
+        <button class="sm" (click)="suggest()" [disabled]="suggesting()">
+          {{ suggesting() ? (searchOnline() ? 'Searching and listening… about 20 s' : 'Thinking…') : 'Suggest music' }}</button>
+        <label class="check small"><input type="checkbox" [ngModel]="searchOnline()" (ngModelChange)="searchOnline.set($event)" />
+          <span>Search online too</span></label>
         <button class="sm" (click)="hear(b.music_id, b.music_db)">Hear the mix (first 25 s)</button>
         <span class="small muted">A preview of voice, music and effects together; nothing is rendered.</span>
       </div>
@@ -61,20 +64,36 @@
       }
       @if (suggestion(); as sg) {
         <div class="suggestion">
-          <p class="small"><strong>{{ sg.choice === null ? 'Suggested: no music.' : 'Suggested: ' + trackName(sg.choice) + ' at ' + sg.level_db + ' dB.' }}</strong>
-            {{ sg.reason }}</p>
+          @if (chosen(sg); as c) {
+            <p class="small"><strong>Suggested: “{{ c.title }}”{{ c.source === 'online' ? ' (online)' : '' }} at {{ sg.level_db }} dB.</strong> {{ sg.reason }}</p>
+          } @else {
+            <p class="small"><strong>Suggested: no music.</strong> {{ sg.reason }}</p>
+          }
+          @if (sg.searches.length) { <p class="small muted">Searched online for: {{ sg.searches.join(', ') }}.</p> }
           <div class="row">
-            @if (sg.choice !== b.music_id || (sg.choice !== null && sg.level_db !== b.music_db)) {
-              <button class="sm primary" (click)="setSound({ music_id: sg.choice, music_db: sg.choice === null ? b.music_db : sg.level_db })">Use this</button>
+            @if (chosen(sg); as c) {
+              <button class="sm primary" (click)="useTrack(c, sg.level_db)" [disabled]="adding() === c.ref">
+                {{ adding() === c.ref ? 'Adding…' : c.source === 'online' ? 'Add and use' : 'Use this' }}</button>
+              <button class="sm" (click)="hearTrack(c, sg.level_db)">Hear it with the voice</button>
+            } @else if (b.music_id !== null) {
+              <button class="sm primary" (click)="setSound({ music_id: null })">Use no music</button>
             }
-            @if (sg.choice !== null) { <button class="sm" (click)="hear(sg.choice, sg.level_db)">Hear it with the voice</button> }
           </div>
           @if (sg.ranking.length) {
             <ul class="ranking">
-              @for (r of sg.ranking; track r.track_id) {
+              @for (r of sg.ranking; track r.ref) {
                 <li><span class="num fit">{{ r.fit }}/10</span>
-                  <span class="grow"><strong>{{ trackName(r.track_id) }}</strong> <span class="muted">{{ r.reason }}</span></span>
-                  <button class="sm quiet" (click)="hear(r.track_id, sg.level_db)">Hear</button></li>
+                  <span class="grow">
+                    <strong>{{ r.title }}</strong>
+                    <span class="pill tiny" [class.online]="r.source === 'online'">{{ r.source === 'online' ? licence(r.license) : 'in library' }}</span>
+                    <span class="muted"> {{ r.creator ? 'by ' + r.creator + ' · ' : '' }}{{ clock(r.duration) }}{{ r.words.length ? ' · ' + r.words.join(', ') : '' }}</span>
+                    <span class="reason muted">{{ r.reason }}</span>
+                  </span>
+                  <button class="sm quiet" (click)="hearTrack(r, sg.level_db)">Hear</button>
+                  <button class="sm" (click)="useTrack(r, sg.level_db)" [disabled]="adding() === r.ref">
+                    {{ adding() === r.ref ? 'Adding…' : r.source === 'online' ? 'Add and use' : 'Use' }}</button>
+                  @if (r.landing_url) { <a class="small" [href]="r.landing_url" target="_blank" rel="noopener">source</a> }
+                </li>
               }
             </ul>
           }

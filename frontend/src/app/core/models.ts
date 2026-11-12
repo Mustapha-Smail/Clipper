@@ -453,11 +453,27 @@ export interface MusicTrack {
   created_at: string;
 }
 
+export interface SuggestedTrack {
+  ref: string;
+  fit: number;
+  reason: string;
+  source: 'library' | 'online';
+  track_id: number | null;
+  openverse_id: string | null;
+  title: string;
+  creator: string;
+  license: string;
+  duration: number;
+  words: string[];
+  landing_url: string;
+}
+
 export interface MusicSuggestion {
-  choice: number | null;
+  choice: string | null;
   reason: string;
   level_db: number;
-  ranking: { track_id: number; fit: number; reason: string }[];
+  searches: string[];
+  ranking: SuggestedTrack[];
 }
 
 export interface AiModel {

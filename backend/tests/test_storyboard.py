@@ -297,29 +297,44 @@ def test_tracks_are_measured_without_ai(tmp_path):
 
 
 def test_music_suggestion_and_sound_preview(client, script_with_take, fake_claude, monkeypatch):
-    from clipper.studio import music_pick
+    from clipper.studio import music_pick, music_search
     sid = script_with_take
     board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "short", "section_key": "a"}).json()
     run_job(board["job"]["id"])
 
-    empty = client.post(f"/api/v1/storyboards/{board['id']}/suggest-music").json()
-    assert empty["choice"] is None and "no music yet" in empty["reason"]
+    monkeypatch.setattr(music_search, "candidates", lambda searches, skip, length="", limit=12: [])
+    monkeypatch.setattr(music_pick, "searches", lambda *a: ["ukulele"])
+    empty = client.post(f"/api/v1/storyboards/{board['id']}/suggest-music", json={"online": False}).json()
+    assert empty["choice"] is None and "No music to choose from" in empty["reason"]
 
     with tmp_music().open("rb") as f:
         track = client.post("/api/v1/music", files={"file": ("calm.mp3", f, "audio/mpeg")}).json()
     assert track["features"]["words"]                                  # measured on upload
+
+    online = {**OPENVERSE_ITEM_FOR_PICK, "features": {"words": ["slow", "sparse", "warm", "steady"], "bpm": 70}}
+    asked = {}
+
+    def fake_candidates(searches, skip, length="", limit=12):
+        asked.update(searches=searches, skip=skip)
+        return [online]
+    monkeypatch.setattr(music_search, "candidates", fake_candidates)
     seen = {}
 
     def fake_ask(task, system, content, output_format, effort="high"):
         seen.update(task=task, content=content)
-        return music_pick.Pick(choice=999, reason="Nothing fits.", level_db=-40,
-                               ranking=[music_pick.Fit(track_id=track["id"], fit=3, reason="Too bright"),
-                                        music_pick.Fit(track_id=999, fit=9, reason="Made up")])
+        return music_pick.Pick(choice="web-5f7af4b0", reason="The ukulele fits.", level_db=-40, ranking=[
+            music_pick.Fit(ref="web-5f7af4b0", fit=8, reason="Light and steady"),
+            music_pick.Fit(ref=f"lib-{track['id']}", fit=3, reason="Too dark"),
+            music_pick.Fit(ref="web-deadbeef", fit=9, reason="Made up")])
     monkeypatch.setattr(llm, "ask", fake_ask)
     pick = client.post(f"/api/v1/storyboards/{board['id']}/suggest-music").json()
-    assert seen["task"] == "music" and f"id {track['id']}" in seen["content"] and "no clear beat" in seen["content"]
-    assert pick["choice"] is None and pick["level_db"] == -34            # unknown ids dropped, level clamped
-    assert [r["track_id"] for r in pick["ranking"]] == [track["id"]]
+    assert asked["searches"] == ["ukulele"] and seen["task"] == "music"
+    assert f"lib-{track['id']}" in seen["content"] and "web-5f7af4b0" in seen["content"]
+    assert "CC BY, credit needed" in seen["content"] and "no clear beat" in seen["content"]
+    assert "uploaded by you, licence unknown" in seen["content"]
+    assert pick["choice"] == "web-5f7af4b0" and pick["level_db"] == -34 and pick["searches"] == ["ukulele"]
+    assert [(r["source"], r["fit"]) for r in pick["ranking"]] == [("online", 8), ("library", 3)]   # made-up ref dropped
+    assert pick["ranking"][0]["openverse_id"] == online["id"] and pick["ranking"][1]["track_id"] == track["id"]
 
     preview = client.get(f"/api/v1/storyboards/{board['id']}/sound-preview",
                          params={"music_id": track["id"], "music_db": -18, "seconds": 5})
@@ -330,6 +345,18 @@ def test_music_suggestion_and_sound_preview(client, script_with_take, fake_claud
                            capture_output=True, text=True, check=True)
     assert float(probe.stdout) == pytest.approx(3.05, abs=0.2)           # clipped to the Short's length
 
+    # An online track is previewed straight from its source, before adding it.
+    monkeypatch.setattr(music_search, "track", lambda oid: {**online, "audio_url": str(tmp_music())})
+    heard = client.get(f"/api/v1/storyboards/{board['id']}/sound-preview",
+                       params={"openverse_id": online["id"], "seconds": 5})
+    assert heard.status_code == 200
+
+
+OPENVERSE_ITEM_FOR_PICK = {"id": "5f7af4b0-3629-4345-83ae-9ca5bca2e9d9", "title": "Paper Lantern", "creator": "uke",
+                           "license": "by", "license_version": "3.0", "license_url": "", "source": "jamendo",
+                           "landing_url": "https://www.jamendo.com/track/9", "audio_url": "https://example.org/a.mp3",
+                           "duration": 159.0, "genres": ["folk"], "attribution": ""}
+
 
 @pytest.mark.parametrize("bpm", [72, 100, 120, 150])
 def test_tempo_of_a_click_track(tmp_path, bpm):
@@ -337,3 +364,20 @@ def test_tempo_of_a_click_track(tmp_path, bpm):
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
                     f"aevalsrc='if(lt(mod(t,60/{bpm}),0.01),random(0)*2-1,0)':s=22050:d=40", str(path)], check=True)
     assert sound.describe_track(path)["bpm"] == pytest.approx(bpm, abs=3)
+
+
+def test_online_candidates_skip_known_tracks_and_use_the_cache(app_env, monkeypatch):
+    from clipper.studio import music_search
+    pages = {"ukulele": [{"id": "a", "landing_url": "u1", "duration": 120, "audio_url": "x"},
+                         {"id": "b", "landing_url": "known", "duration": 120, "audio_url": "x"},
+                         {"id": "c", "landing_url": "u3", "duration": 12, "audio_url": "x"}],
+             "ambient": [{"id": "a", "landing_url": "u1", "duration": 120, "audio_url": "x"},
+                         {"id": "d", "landing_url": "u4", "duration": 200, "audio_url": "x"}]}
+    monkeypatch.setattr(music_search, "search", lambda q, length="": {"results": pages.get(q, [])})
+    measured = []
+    monkeypatch.setattr(sound, "describe_track", lambda url, seconds=60: measured.append(url) or {"words": ["slow"]})
+    items = music_search.candidates(["ukulele"], {"known"})
+    assert [i["id"] for i in items] == ["a", "d"]           # known and too-short skipped, fallback genre added
+    assert len(measured) == 2 and items[0]["features"] == {"words": ["slow"]}
+    music_search.candidates(["ukulele"], {"known"})
+    assert len(measured) == 2                               # measured once, then cached

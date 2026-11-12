@@ -237,11 +237,12 @@ export class Api {
   voiceSample(voice: string, speed: number, text: string): Observable<Blob> {
     return this.http.post(`${BASE}/voices/sample`, { voice, speed, text }, { responseType: 'blob' });
   }
-  suggestMusic(storyboardId: number): Observable<MusicSuggestion> {
-    return this.http.post<MusicSuggestion>(`${BASE}/storyboards/${storyboardId}/suggest-music`, {});
+  suggestMusic(storyboardId: number, online: boolean): Observable<MusicSuggestion> {
+    return this.http.post<MusicSuggestion>(`${BASE}/storyboards/${storyboardId}/suggest-music`, { online });
   }
-  soundPreviewUrl(storyboardId: number, musicId: number | null, musicDb: number, effects: boolean, start = 0): string {
-    const music = musicId === null ? '' : `&music_id=${musicId}`;
+  soundPreviewUrl(storyboardId: number, musicId: number | null, musicDb: number, effects: boolean, start = 0,
+                  openverseId: string | null = null): string {
+    const music = openverseId ? `&openverse_id=${openverseId}` : musicId === null ? '' : `&music_id=${musicId}`;
     return `${BASE}/storyboards/${storyboardId}/sound-preview?music_db=${musicDb}&effects=${effects}&start=${start}${music}&t=${Date.now()}`;
   }
   aiModels(refresh = false): Observable<AiModels> {
