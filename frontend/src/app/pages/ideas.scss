@@ -45,7 +45,7 @@
 
 .theme-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: 8px;
 }
 
@@ -61,6 +61,11 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  // a button by default keeps its text on one line: these are cards of sentences
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-weight: 400;
 
   &:hover {
     border-color: var(--accent);

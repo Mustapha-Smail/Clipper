@@ -264,12 +264,27 @@ and motions (shake, bounce, grow...). Do not just illustrate nouns: a picture of
 word the narrator is saying is the weakest choice. Words on screen are rare: a number, \
 a name or a short label the viewer must remember; the narration is already heard.
 
+Show what is named, the way a good editor cuts in a visual:
+- A country, a city or a region: its flag, or a map of it (with its neighbours). For an \
+empire or an old region, map the countries it covered today, with a label.
+- A real person: define them once with who, giving the traits people know them by \
+(era, job, famous look), then bring them on as an actor: they get their name written \
+under them. Define each person once, with the same ID all video long. Never stand an \
+anonymous figure in for a named person.
+- Years, dates, a period or an order of events: a timeline (have an actor point at \
+it, or circle it).
+These are where a viewer's eye goes; use them whenever the narration names one.
+
 The beat language. Each line starts with the number of the narration word on which it \
 happens. A shot line opens each shot; beat lines follow it:
-  N shot "what the viewer sees, in one sentence" [wide|push|drift|close]
+  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut]
   N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
   N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [as ID]
   N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
+  N flag COUNTRY [PLACE] [small|large] [as ID]          (COUNTRY: two-letter code, like ro or it)
+  N map COUNTRY [COUNTRY...] [PLACE] [large] [COLOUR] [as ID]   (those countries in colour, labelled)
+  N timeline "label" "label"... [PLACE] [COLOUR] [as ID]        (2 to 7 moments, in order, left to right)
+  N who ID "Full Name" TRAIT...                          (defines a person; then: N actor ID ...)
   N do ACTOR POSE|ACTION [TARGET] [FACE]
   N face ACTOR FACE
   N move ACTOR|PROP PLACE|TARGET [GAIT]   (to a thing: walks up to it, or lands on it)
@@ -286,6 +301,9 @@ moves until drop (or any other pose) lets it fall.
 ACTION (a recorded movement, played once, about 1 to 3 seconds): {actions}. kick and throw \
 take a TARGET, which flies off.
 GAIT (how a move gets there): walk (default) run march zombie
+TRAIT (for who; give 2 to 5): hair {hair}; hair colour {colours}; face {facial}; head {hats}; \
+eyes {eyes}; clothes {outfits}; skin {skins}. A monk: tonsure robe. A pope or bishop: mitre robe. \
+A Roman emperor: laurel toga. A king or queen: crown. A scientist: lab_coat.
 FACE: {faces}
 COLOUR: warm (flow, emphasis), bad (problems, myths), good (answers, truth), gold, green
 TARGET and FROM/TO: an actor's name, a prop's name, an ID given with `as`, or a PLACE.
@@ -309,6 +327,9 @@ two or three in a Short. Have actors walk or run between places with move.
 - Write at most one word or number per shot, and only when it must be remembered.
 - Camera: wide is the default; push slowly moves in, for a key moment; drift for calm \
 stretches; close frames small things tightly. Use look for a reveal.
+- Editing: by default the camera glides to the next shot; add cut to a shot for a hard \
+cut instead. Mix both: cut on a surprise, a change of place or a punchline, glide when \
+the story flows on. A map, a flag or a timeline often deserves its own short shot.
 - Vary the patterns: no two shots in a row with the same beats.
 - Props are single objects (a coin, a fridge, a human eye), never scenes. Reuse library \
 props by their exact names; for anything else invent a snake_case name, use it in a \
@@ -330,6 +351,12 @@ A short example, for a different video:
 14 arrow kitchen_table toast warm
 16 circle kitchen_table
 18 do narrator point kitchen_table surprised
+21 shot "Murphy, the engineer behind the law" cut
+21 who murphy "Edward Murphy" short brown_hair uniform
+22 actor murphy right crossed
+24 flag us top_left small
+26 timeline "1949" "1952" "today" top
+29 do murphy point timeline
 """
 
 BEAT_SECONDS = {"long": 2.2, "short": 1.6}    # a beat line this often: lively without crowding
@@ -349,7 +376,10 @@ def ink_system(fmt: str, props: str) -> str:
     cast = ", ".join(name for name in art.CHARACTERS if name != "narrator")
     actions = ", ".join(f"{name} ({clip['what']})" for name, clip in ink.moves().items() if name in beats.ACTIONS)
     return (INK_PLAN.format(faces=" ".join(art.EXPRESSIONS), cast=cast, actions=actions,
-                            format_rules=INK_FORMAT_RULES[fmt])
+                            format_rules=INK_FORMAT_RULES[fmt], hair=" ".join(ink.HAIR),
+                            colours=" ".join(ink.HAIR_COLOURS), facial=" ".join(ink.FACIAL),
+                            hats=" ".join(ink.HEADWEAR), eyes=" ".join(ink.EYEWEAR), outfits=" ".join(ink.OUTFITS),
+                            skins=" ".join(ink.SKINS))
             + f"\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>")
 
 

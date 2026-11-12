@@ -252,6 +252,7 @@ def status(db: Session = Depends(get_db)):
         "worker_last_seen": last_seen,
         "queued": counts.get("queued", 0),
         "running": counts.get("running", 0),
+        "features": {"clipping": settings.feature_clipping, "studio": settings.feature_studio},
     }
 
 

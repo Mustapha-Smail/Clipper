@@ -33,6 +33,7 @@ export class JobsStore {
   /** Poll now, for instance right after queueing a job. */
   refresh(): void {
     clearTimeout(this.timer);
+    this.polls = 0;           // read the status again too: settings may have changed
     this.poll();
   }
 

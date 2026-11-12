@@ -393,25 +393,237 @@ def lowest(pose: Pose) -> float:
     return max(points) + 4
 
 
+# --- looks: what makes a figure recognisable ------------------------------------------------
+
+HAIR = ("bald", "short", "long", "curly", "spiky", "bun", "ponytail", "afro", "side_part", "tonsure", "wig")
+HAIR_COLOURS = {"black_hair": "#2b2622", "brown_hair": "#7a5236", "blond": "#e3c063", "ginger": "#c8642c",
+                "grey_hair": "#a7a49c", "white_hair": "#f1efe8"}
+FACIAL = ("beard", "long_beard", "moustache", "goatee", "stubble")
+HEADWEAR = ("crown", "laurel", "top_hat", "cap", "mitre", "turban", "helmet", "hood", "bowler", "beret",
+            "headscarf", "cowboy_hat")
+EYEWEAR = ("glasses", "round_glasses", "sunglasses", "monocle")
+OUTFITS = {"robe": "#8a6a4e", "toga": "#f4f1ea", "suit": "#4c5260", "lab_coat": "#ffffff", "dress": "#4a7fc0",
+           "armour": "#9aa0a6", "uniform": "#5f6d4e", "cape": "#b8352b", "tunic": "#c9a36b"}
+SKINS = {"light_skin": "#f7e1cc", "tan_skin": "#e2b58b", "brown_skin": "#b07a52", "dark_skin": "#7d5037"}
+TRAITS = (*HAIR, *HAIR_COLOURS, *FACIAL, *HEADWEAR, *EYEWEAR, *OUTFITS, *SKINS)
+
+
+def look_of(traits: list[str] | tuple[str, ...]) -> dict:
+    """Traits ("tonsure", "robe", "brown_hair"...) sorted into one choice per part."""
+    look: dict = {}
+    for t in traits:
+        for part, names in (("hair", HAIR), ("colour", HAIR_COLOURS), ("facial", FACIAL), ("hat", HEADWEAR),
+                            ("eyes", EYEWEAR), ("outfit", OUTFITS), ("skin", SKINS)):
+            if t in names and part not in look:
+                look[part] = t
+    return look
+
+
+def _hair_svg(look: dict) -> tuple[str, str]:
+    """(behind the head, over the head) in art.py's head frame (head at 150, 110, radius 70)."""
+    style = look.get("hair", "short" if "hat" not in look else "")
+    colour = HAIR_COLOURS.get(look.get("colour", ""), "#7a5236" if style != "wig" else "#f1efe8")
+    s = f'stroke="{INK}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"'
+    behind, over = "", ""
+    if style == "short":
+        over = f'<path d="M80 100 Q78 34 150 32 Q222 34 220 100 Q204 66 150 62 Q96 66 80 100 Z" fill="{colour}" {s}/>'
+    elif style == "side_part":
+        over = (f'<path d="M80 100 Q78 34 150 32 Q222 34 220 100 Q210 70 170 60 Q120 76 80 100 Z" fill="{colour}" {s}/>'
+                f'<path d="M170 60 L176 38" {s}/>')
+    elif style == "long":
+        over = (f'<path d="M80 116 Q70 36 150 32 Q230 36 220 116 L228 200 Q204 182 198 130 Q190 72 150 68 '
+                f'Q110 72 102 130 Q96 182 72 200 Z" fill="{colour}" {s}/>')
+    elif style == "curly":
+        bumps = "".join(f'<circle cx="{150 + 64 * math.cos(math.radians(a)):.0f}" '
+                        f'cy="{106 - 64 * math.sin(math.radians(a)):.0f}" r="22" fill="{colour}" {s}/>'
+                        for a in range(10, 180, 24))
+        over = bumps
+    elif style == "spiky":
+        over = (f'<path d="M84 86 L70 52 L104 62 L100 26 L132 50 L150 16 L168 50 L200 26 L196 62 L230 52 L216 86 '
+                f'Q150 60 84 86 Z" fill="{colour}" {s}/>')
+    elif style == "bun":
+        over = (f'<circle cx="150" cy="26" r="22" fill="{colour}" {s}/>'
+                f'<path d="M80 100 Q78 34 150 32 Q222 34 220 100 Q204 66 150 62 Q96 66 80 100 Z" fill="{colour}" {s}/>')
+    elif style == "ponytail":
+        behind = f'<path d="M206 70 Q262 80 252 150 Q236 120 214 104 Z" fill="{colour}" {s}/>'
+        over = f'<path d="M80 100 Q78 34 150 32 Q222 34 220 100 Q204 66 150 62 Q96 66 80 100 Z" fill="{colour}" {s}/>'
+    elif style == "afro":
+        behind = f'<circle cx="150" cy="96" r="98" fill="{colour}" {s}/>'
+    elif style == "tonsure":             # a monk: a ring of hair, the crown shaved
+        over = (f'<path d="M80 112 Q76 64 104 46 L112 64 Q96 80 96 112 Z" fill="{colour}" {s}/>'
+                f'<path d="M220 112 Q224 64 196 46 L188 64 Q204 80 204 112 Z" fill="{colour}" {s}/>'
+                f'<path d="M108 52 Q150 38 192 52" fill="none" {s}/>')
+    elif style == "wig":                 # an 18th-century powdered wig
+        rolls = "".join(f'<ellipse cx="{x}" cy="{y}" rx="20" ry="14" fill="{colour}" {s}/>'
+                        for x in (68, 232) for y in (96, 124, 152))
+        over = (f'<path d="M78 100 Q76 30 150 28 Q224 30 222 100 Q206 62 150 58 Q94 62 78 100 Z" '
+                f'fill="{colour}" {s}/>' + rolls)
+    return behind, over
+
+
+def _facial_svg(look: dict) -> str:
+    style = look.get("facial")
+    colour = HAIR_COLOURS.get(look.get("colour", ""), "#7a5236")
+    s = f'stroke="{INK}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"'
+    if style == "beard":
+        return (f'<path d="M96 132 Q104 206 150 214 Q196 206 204 132 Q186 166 150 168 Q114 166 96 132 Z" '
+                f'fill="{colour}" {s}/>')
+    if style == "long_beard":
+        return (f'<path d="M96 132 Q100 236 150 262 Q200 236 204 132 Q186 168 150 170 Q114 168 96 132 Z" '
+                f'fill="{colour}" {s}/>')
+    if style == "moustache":
+        return (f'<path d="M120 138 Q136 126 150 136 Q164 126 180 138 Q166 146 150 142 Q134 146 120 138 Z" '
+                f'fill="{colour}" {s}/>')
+    if style == "goatee":
+        return f'<path d="M136 162 Q150 196 164 162 Q150 170 136 162 Z" fill="{colour}" {s}/>'
+    if style == "stubble":
+        dots = "".join(f'<circle cx="{x}" cy="{y}" r="2.5" fill="{INK}"/>'
+                       for x, y in ((112, 156), (124, 166), (138, 172), (162, 172), (176, 166), (188, 156), (150, 176)))
+        return dots
+    return ""
+
+
+def _hat_svg(look: dict) -> str:
+    hat = look.get("hat")
+    s = f'stroke="{INK}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"'
+    gold, white = _wash(art.PALETTE["yellow"]), "#ffffff"
+    if hat == "crown":
+        return f'<path d="M96 56 L96 6 L122 32 L150 0 L178 32 L204 6 L204 56 Z" fill="{gold}" {s}/>'
+    if hat == "laurel":
+        leaves = "".join(f'<ellipse cx="{150 + 70 * math.cos(math.radians(a)):.0f}" '
+                         f'cy="{100 - 66 * math.sin(math.radians(a)):.0f}" rx="13" ry="7" '
+                         f'transform="rotate({90 - a} {150 + 70 * math.cos(math.radians(a)):.0f} '
+                         f'{100 - 66 * math.sin(math.radians(a)):.0f})" fill="{_wash(art.PALETTE["green"])}" {s}/>'
+                         for a in (25, 50, 75, 105, 130, 155))
+        return leaves
+    if hat == "top_hat":
+        return (f'<rect x="104" y="-10" width="92" height="66" '
+                f'fill="{INK}"/><path d="M72 58 L228 58" {s.replace("8", "14", 1)}/>')
+    if hat == "cap":
+        return (f'<path d="M84 76 Q88 28 150 26 Q212 28 216 76 Z" fill="{_wash(art.PALETTE["red"])}" {s}/>'
+                f'<path d="M210 74 L262 80" {s.replace("8", "14", 1)}/>')
+    if hat == "mitre":                   # a bishop's or pope's tall hat
+        return (f'<path d="M104 62 L114 -6 Q150 -46 186 -6 L196 62 Z" fill="{white}" {s}/>'
+                f'<path d="M150 -30 L150 58 M128 16 L172 16" stroke="{gold}" stroke-width="9" stroke-linecap="round"/>')
+    if hat == "turban":
+        return (f'<path d="M78 74 Q76 10 150 6 Q224 10 222 74 Q150 56 78 74 Z" fill="{white}" {s}/>'
+                f'<path d="M92 50 Q150 20 210 52 M100 30 Q150 6 200 30" fill="none" {s.replace("8", "5", 1)}/>')
+    if hat == "helmet":
+        return (f'<path d="M76 86 Q76 18 150 16 Q224 18 224 86 Z" fill="{_wash(art.PALETTE["grey"])}" {s}/>'
+                f'<path d="M150 16 Q150 -24 190 -30" fill="none" stroke="{_wash(art.PALETTE["red"])}" '
+                f'stroke-width="16" '
+                f'stroke-linecap="round"/>')
+    if hat == "hood":
+        return (f'<path d="M66 190 Q56 18 150 14 Q244 18 234 190 Q222 120 214 100 Q206 46 150 44 '
+                f'Q94 46 86 100 Q78 120 66 190 Z" '
+                f'fill="{_wash(art.PALETTE["brown"])}" {s}/>')
+    if hat == "bowler":
+        return (f'<path d="M100 54 Q100 6 150 4 Q200 6 200 54 Z" '
+                f'fill="{INK}"/><path d="M82 56 L218 56" {s.replace("8", "12", 1)}/>')
+    if hat == "beret":
+        return (f'<ellipse cx="140" cy="40" rx="78" ry="26" '
+                f'transform="rotate(-8 140 40)" fill="{_wash(art.PALETTE["red"])}" {s}/>')
+    if hat == "headscarf":
+        return (f'<path d="M74 140 Q66 20 150 18 Q234 20 226 140 Q214 70 150 62 Q86 70 74 140 Z" '
+                f'fill="{_wash(art.PALETTE["purple"])}" {s}/>')
+    if hat == "cowboy_hat":
+        return (f'<path d="M108 52 Q104 6 150 4 Q196 6 192 52 Z" fill="{_wash(art.PALETTE["brown"])}" {s}/>'
+                f'<path d="M56 54 Q150 74 244 54" fill="none" {s.replace("8", "12", 1)}/>')
+    return ""
+
+
+def _eyes_svg(look: dict) -> str:
+    eyes = look.get("eyes")
+    s = f'stroke="{INK}" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"'
+    if eyes == "glasses":
+        return (f'<rect x="100" y="84" width="46" height="34" rx="8" fill="none" {s}/>'
+                f'<rect x="154" y="84" width="46" height="34" rx="8" fill="none" {s}/><path d="M146 98 L154 98" {s}/>')
+    if eyes == "round_glasses":
+        return (f'<circle cx="125" cy="100" r="20" fill="none" {s}/><circle cx="175" cy="100" r="20" fill="none" {s}/>'
+                f'<path d="M145 100 L155 100" {s}/>')
+    if eyes == "sunglasses":
+        return (f'<rect x="100" y="86" width="46" height="28" rx="10" fill="{INK}"/>'
+                f'<rect x="154" y="86" width="46" height="28" rx="10" fill="{INK}"/><path d="M146 96 L154 96" {s}/>')
+    if eyes == "monocle":
+        return (f'<circle cx="175" cy="100" r="20" fill="none" '
+                f'{s}/><path d="M192 112 Q206 160 196 200" fill="none" {s.replace("7", "3", 1)}/>')
+    return ""
+
+
+def _outfit_svg(look: dict, j: dict) -> tuple[str, str]:
+    """(behind the body, over the body) in the figure's own units: clothes follow the torso's lean."""
+    outfit = look.get("outfit")
+    if not outfit:
+        return "", ""
+    hip, neck = np.asarray(j["hip"]), np.asarray(j["neck"])
+    up = (neck - hip) / max(float(np.hypot(*(neck - hip))), 1e-6)
+    side = np.array([-up[1], up[0]])
+
+    def at(across: float, along: float) -> str:
+        p = hip + up * along + side * across
+        return f"{p[0]:.1f} {p[1]:.1f}"
+
+    colour = _wash(OUTFITS[outfit]) if outfit not in ("lab_coat", "toga") else OUTFITS[outfit]
+    s = f'stroke="{INK}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"'
+    shoulder = 128
+    if outfit == "cape":
+        return (f'<path d="M{at(-24, shoulder)} L{at(24, shoulder)} L{at(58, -110)} Q{at(0, -96)} {at(-58, -110)} Z" '
+                f'fill="{colour}" {s}/>'), ""
+    hem = {"robe": -128, "dress": -100, "toga": -110, "lab_coat": -80, "tunic": -56, "suit": -18, "uniform": -18,
+           "armour": 6}[outfit]
+    wide = {"robe": 46, "dress": 54, "toga": 42, "lab_coat": 38, "tunic": 36, "suit": 30, "uniform": 30,
+            "armour": 30}[outfit]
+    body = (f'<path d="M{at(-20, shoulder + 6)} L{at(20, shoulder + 6)} L{at(wide * 0.75, 20)} L{at(wide, hem)} '
+            f'L{at(-wide, hem)} L{at(-wide * 0.75, 20)} Z" fill="{colour}" {s}/>')
+    extra = ""
+    if outfit == "suit":
+        extra = (f'<path d="M{at(-14, shoulder + 2)} L{at(0, 70)} L{at(14, shoulder + 2)}" fill="#ffffff" {s}/>'
+                 f'<path d="M{at(0, shoulder - 6)} L{at(-6, 90)} L{at(0, 62)} L{at(6, 90)} Z" '
+                 f'fill="{_wash(art.PALETTE["red"])}" {s.replace("8", "5", 1)}/>')
+    elif outfit == "lab_coat":
+        extra = f'<path d="M{at(0, shoulder)} L{at(0, hem)}" {s.replace("8", "5", 1)}/>'
+    elif outfit == "toga":
+        extra = (f'<path d="M{at(-22, shoulder + 4)} L{at(wide, 0)} L{at(wide * 0.6, -30)} '
+                 f'L{at(-26, shoulder - 30)} Z" '
+                 f'fill="{_wash(art.PALETTE["red"])}" {s.replace("8", "5", 1)}/>')
+    elif outfit in ("robe", "tunic", "uniform", "armour"):
+        extra = (f'<path d="M{at(-wide * 0.8, 6)} L{at(wide * 0.8, 6)}" '
+                 f'stroke="{INK}" stroke-width="10" stroke-linecap="round"/>')
+        if outfit == "uniform":
+            extra += "".join(f'<circle cx="{at(0, a).split()[0]}" cy="{at(0, a).split()[1]}" r="5" fill="{INK}"/>'
+                             for a in (40, 70, 100))
+    return "", body + extra
+
+
 def figure_svg(variant: str, pose: Pose, expression: str = "neutral", mouth: int = 0, blink: bool = False,
-               facing: str = "right", progress: float = 1.0, scale_px: float = 1.0) -> str:
-    """The figure in ink inside BOX (hip at 0, 0). `progress` < 1 draws it on: head, body, legs, arms, face."""
+               facing: str = "right", progress: float = 1.0, scale_px: float = 1.0, look: dict | None = None) -> str:
+    """The figure in ink inside BOX (hip at 0, 0). `progress` < 1 draws it on: head, body, legs, arms, face.
+
+    `look` (from `look_of`) dresses a figure as someone in particular: hair, beard,
+    headwear, glasses, clothes and skin tone; without it the cast member's costume is used.
+    """
     j = joints(pose)
     width = 11.0
     head = j["head"]
     parts = []
+    look = look or {}
 
     def stage(lo: float, hi: float) -> float:
         return min(1.0, max(0.0, (progress - lo) / (hi - lo)))
 
     p_head, p_body, p_legs, p_arms, p_face = stage(0, 0.3), stage(0.25, 0.42), stage(0.4, 0.62), \
         stage(0.6, 0.85), stage(0.82, 1.0)
+    behind, clothes = _outfit_svg(look, j)
+    if behind and p_body:
+        parts.append(f'<g opacity="{p_body:.2f}">{behind}</g>')
     # body, legs and arms first: the head is drawn over the neck
     if p_body:
         parts.append(f'<path d="{ribbon([j["hip"], j["neck"]], width, p_body, 0.15, 0.7)}" fill="{INK}"/>')
     for side in ("back_leg", "front_leg"):
         if p_legs:
             parts.append(f'<path d="{ribbon(j[side], width, p_legs, 0.12, 0.6)}" fill="{INK}"/>')
+    if clothes and p_legs:
+        parts.append(f'<g opacity="{p_legs:.2f}">{clothes}</g>')
     hands = []
     for side in ("back_arm", "front_arm"):
         if p_arms:
@@ -420,16 +632,23 @@ def figure_svg(variant: str, pose: Pose, expression: str = "neutral", mouth: int
                 hands.append(j[side][-1])
     for hx, hy in hands:
         parts.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="8" fill="{INK}"/>')
+    k = HEAD_R / 70
+    frame = (f'transform="translate({head[0]:.1f} {head[1]:.1f}) scale({k:.3f}) rotate({pose.lean + pose.tilt:.1f}) '
+             f'translate(-150 -110)"')
+    hair_behind, hair_over = _hair_svg(look) if look else ("", "")
+    if hair_behind and p_head >= 1:
+        parts.append(f'<g opacity="{p_face:.2f}" {frame}>{hair_behind}</g>')
     if p_head:
         if p_head >= 1:
-            parts.append(f'<circle cx="{head[0]:.1f}" cy="{head[1]:.1f}" r="{HEAD_R:.0f}" fill="#ffffff"/>')
+            skin = SKINS.get(look.get("skin", ""), "#ffffff")
+            parts.append(f'<circle cx="{head[0]:.1f}" cy="{head[1]:.1f}" r="{HEAD_R:.0f}" fill="{skin}"/>')
         outline = loop(head[0], head[1], HEAD_R, HEAD_R, -100, 1.04, 0.02, seed=3)
         parts.append(f'<path d="{ribbon(outline, width, p_head, 0.08, 0.6)}" fill="{INK}"/>')
     if p_face:
-        k = HEAD_R / 70
-        face = _face(variant, expression, mouth, blink)
-        parts.append(f'<g opacity="{p_face:.2f}" transform="translate({head[0]:.1f} {head[1]:.1f}) scale({k:.3f}) '
-                     f'rotate({pose.lean + pose.tilt:.1f}) translate(-150 -110)">{face}</g>')
+        face = _face(variant, expression, mouth, blink, look)
+        if look:
+            face += _facial_svg(look) + hair_over + _eyes_svg(look) + _hat_svg(look)
+        parts.append(f'<g opacity="{p_face:.2f}" {frame}>{face}</g>')
     body = "".join(parts)
     if facing == "left":
         body = f'<g transform="scale(-1 1)">{body}</g>'
@@ -437,7 +656,7 @@ def figure_svg(variant: str, pose: Pose, expression: str = "neutral", mouth: int
     return svg_doc(body, vw * scale_px, vh * scale_px, (vx, vy, vw, vh))
 
 
-def _face(variant: str, expression: str, mouth: int, blink: bool) -> str:
+def _face(variant: str, expression: str, mouth: int, blink: bool, look: dict | None = None) -> str:
     """Eyes, brows, mouth and costume in art.py's head frame (head at 150, 110, radius 70)."""
     s = f'stroke="{INK}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none"'
     out = []
@@ -454,6 +673,8 @@ def _face(variant: str, expression: str, mouth: int, blink: bool) -> str:
         out.append(f'<ellipse cx="150" cy="150" rx="{20 if expression != "happy" else 26}" ry="{h}" fill="{INK}"/>')
     else:
         out.append(f'<path d="{art.MOUTHS.get(expression) or art.MOUTHS["neutral"]}" {s}/>')
+    if look:            # someone in particular: their look replaces the cast member's costume
+        return "".join(out)
     costume = art._costume(variant).replace(art.INK, INK)
     for name, colour in art.PALETTE.items():     # costume colours become washes
         if name in ("yellow", "red", "blue"):

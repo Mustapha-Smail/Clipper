@@ -64,6 +64,12 @@ class Settings(BaseModel):
     # Timing a voice take only has to find words we already know: a small model is enough,
     # and it needs a fraction of the memory (the large one can run Docker out of memory).
     voice_align_model: Literal["small", "medium", "large-v3-turbo"] = "small"
+    # The ink style's hand-drawn wobble of the lines
+    ink_wobble: Literal["off", "subtle", "strong"] = "subtle"
+
+    # Which parts of the app are shown. The Studio is the main feature; turn Clipping on to use it.
+    feature_clipping: bool = False
+    feature_studio: bool = True
 
     # Download
     max_height: Literal[720, 1080] = 1080
@@ -90,6 +96,8 @@ class Settings(BaseModel):
     def _lengths(self):
         if self.max_len <= self.min_len:
             raise ValueError("The longest clip length must be greater than the shortest")
+        if not (self.feature_clipping or self.feature_studio):
+            raise ValueError("Keep at least one feature on: Studio or Clipping")
         return self
 
 

@@ -20,6 +20,105 @@ import { Toasts } from '../core/toast';
       @if (form(); as f) {
         <div class="stack">
           <section class="card">
+            <h3>Features</h3>
+            <p class="small muted">Turn off what you do not use: its pages leave the menu and its settings are hidden here.
+              Nothing is deleted, and you can turn it back on at any time.</p>
+            <div class="form-grid">
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.feature_studio"
+                                               [disabled]="f.feature_studio && !f.feature_clipping" />
+                <span>Studio<small>Animated videos for your channel: ideas, scripts, voice, storyboards and renders.</small></span></label>
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.feature_clipping"
+                                               [disabled]="f.feature_clipping && !f.feature_studio" />
+                <span>Clipping<small>Long videos turned into captioned clips for paid campaigns.</small></span></label>
+            </div>
+          </section>
+
+          @if (f.feature_studio) {
+
+          <h2 class="group-title">Studio</h2>
+
+          <section class="card">
+            <h3>Studio voice</h3>
+            <p class="small muted">Defaults for AI voices on the script page. You can still record your own voice.</p>
+            <div class="form-grid">
+              <label class="field"><span>Engine</span>
+                <select [(ngModel)]="f.voice_engine">
+                  <option value="kokoro">Kokoro (free, runs here)</option>
+                  <option value="elevenlabs">ElevenLabs (paid)</option>
+                </select>
+              </label>
+              @if (voices(); as v) {
+                <label class="field"><span>Kokoro voice</span>
+                  <select [(ngModel)]="f.kokoro_voice">
+                    @for (c of v.kokoro; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
+                  </select>
+                </label>
+                <label class="field"><span>ElevenLabs voice</span>
+                  @if (v.elevenlabs.length) {
+                    <select [(ngModel)]="f.elevenlabs_voice">
+                      <option value="">Choose a voice</option>
+                      @for (c of v.elevenlabs; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
+                    </select>
+                  } @else {
+                    <input type="text" [(ngModel)]="f.elevenlabs_voice" placeholder="Voice ID" />
+                    <small>{{ v.elevenlabs_error || 'Set ELEVENLABS_API_KEY in .env to pick from your voices.' }}</small>
+                  }
+                </label>
+              }
+              <label class="field"><span>ElevenLabs model</span>
+                <select [(ngModel)]="f.elevenlabs_model">
+                  <option value="eleven_multilingual_v2">Multilingual v2 (most natural)</option>
+                  <option value="eleven_v3">v3 (most expressive)</option>
+                  <option value="eleven_flash_v2_5">Flash v2.5 (cheapest, fastest)</option>
+                </select>
+              </label>
+              <label class="field"><span>Speed</span>
+                <input type="number" min="0.7" max="1.3" step="0.05" [(ngModel)]="f.voice_speed" />
+                <small>1 is the voice's natural pace.</small>
+              </label>
+              <label class="field"><span>Pauses (Kokoro)</span>
+                <select [(ngModel)]="f.voice_pauses">
+                  <option value="tight">Tight (brisk)</option>
+                  <option value="natural">Natural</option>
+                  <option value="relaxed">Relaxed</option>
+                </select>
+                <small>Kokoro reads one sentence at a time and pauses like a narrator: longer after questions and punchlines.</small>
+              </label>
+              <label class="field"><span>Timing model</span>
+                <select [(ngModel)]="f.voice_align_model">
+                  <option value="small">Small (recommended)</option>
+                  <option value="medium">Medium</option>
+                  <option value="large-v3-turbo">Large v3 turbo</option>
+                </select>
+                <small>Whisper only has to find words the script already knows. Small is quick and light; the large
+                  model can run Docker out of memory.</small>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Ink style</h3>
+            <p class="small muted">How hand-drawn the ink videos feel.</p>
+            <div class="form-grid">
+              <label class="field"><span>Line wobble</span>
+                <select [(ngModel)]="f.ink_wobble">
+                  <option value="off">Off: still lines</option>
+                  <option value="subtle">Subtle (recommended)</option>
+                  <option value="strong">Strong: classic hand-drawn boil</option>
+                </select>
+                <small>Hand-drawn animation redraws lines a little differently each time. Too much of it is tiring
+                  to watch; render again after changing it.</small>
+              </label>
+            </div>
+          </section>
+
+          }
+
+          @if (f.feature_clipping) {
+
+          <h2 class="group-title">Clipping</h2>
+
+          <section class="card">
             <h3>Your channel</h3>
             <p class="small muted">Used to rank campaigns. It does not change how clips are made.</p>
             <div class="form-grid">
@@ -44,6 +143,68 @@ import { Toasts } from '../core/toast';
               </label>
             </div>
           </section>
+
+          <section class="card">
+            <h3>Moments and brief checks</h3>
+            <p class="small muted">Defaults for new videos. Each video can override the numbers.</p>
+            <div class="form-grid">
+              <label class="field"><span>Clips per video</span>
+                <input type="number" min="1" max="20" [(ngModel)]="f.clips_per_video" /></label>
+              <label class="field"><span>Shortest clip (seconds)</span>
+                <input type="number" min="5" max="600" [(ngModel)]="f.min_len" /></label>
+              <label class="field"><span>Longest clip (seconds)</span>
+                <input type="number" min="10" max="900" [(ngModel)]="f.max_len" /></label>
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.auto_compliance" />
+                <span>Check each clip against the campaign brief after rendering
+                  <small>Only runs for videos that have a brief. You can always run the check by hand.</small></span>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Download</h3>
+            <p class="small muted">How source videos are fetched from links.</p>
+            <div class="form-grid">
+              <label class="field"><span>Maximum quality</span>
+                <select [(ngModel)]="f.max_height">
+                  <option [ngValue]="1080">1080p</option>
+                  <option [ngValue]="720">720p (smaller, faster)</option>
+                </select>
+              </label>
+              <label class="field wide"><span>Cookies file</span>
+                <input type="text" [(ngModel)]="f.cookies_file" placeholder="Optional path to cookies.txt" />
+                <small>Only needed if a site blocks downloads from this machine, which is common on cloud servers.</small>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <h3>Storage</h3>
+            <p class="small muted">Where finished clips are written.</p>
+            <div class="form-grid">
+              <label class="field wide"><span>Output folder</span>
+                <input type="text" [(ngModel)]="f.output_dir" [placeholder]="bundle()!.default_clips_dir" />
+                <small>
+                  Leave empty to use {{ bundle()!.default_clips_dir }}.
+                  @if (store.status()?.in_docker) {
+                    This app runs in Docker: use a path inside the container, such as /output, and mount a folder there.
+                  } @else {
+                    Any folder this machine can write to, for example a mounted drive.
+                  }
+                  Clips already rendered stay where they are.
+                </small>
+              </label>
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.delete_source_after_render" />
+                <span>Delete the downloaded video once all its clips are rendered
+                  <small>Saves disk space. Re-rendering a clip later means adding the video again.</small></span>
+              </label>
+            </div>
+          </section>
+
+          }
+
+          <h2 class="group-title">Both</h2>
+          <p class="small muted group-note">Used by the Studio and by Clipping.</p>
 
           <section class="card">
             <h3>AI models</h3>
@@ -115,105 +276,6 @@ import { Toasts } from '../core/toast';
           </section>
 
           <section class="card">
-            <h3>Studio voice</h3>
-            <p class="small muted">Defaults for AI voices on the script page. You can still record your own voice.</p>
-            <div class="form-grid">
-              <label class="field"><span>Engine</span>
-                <select [(ngModel)]="f.voice_engine">
-                  <option value="kokoro">Kokoro (free, runs here)</option>
-                  <option value="elevenlabs">ElevenLabs (paid)</option>
-                </select>
-              </label>
-              @if (voices(); as v) {
-                <label class="field"><span>Kokoro voice</span>
-                  <select [(ngModel)]="f.kokoro_voice">
-                    @for (c of v.kokoro; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
-                  </select>
-                </label>
-                <label class="field"><span>ElevenLabs voice</span>
-                  @if (v.elevenlabs.length) {
-                    <select [(ngModel)]="f.elevenlabs_voice">
-                      <option value="">Choose a voice</option>
-                      @for (c of v.elevenlabs; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
-                    </select>
-                  } @else {
-                    <input type="text" [(ngModel)]="f.elevenlabs_voice" placeholder="Voice ID" />
-                    <small>{{ v.elevenlabs_error || 'Set ELEVENLABS_API_KEY in .env to pick from your voices.' }}</small>
-                  }
-                </label>
-              }
-              <label class="field"><span>ElevenLabs model</span>
-                <select [(ngModel)]="f.elevenlabs_model">
-                  <option value="eleven_multilingual_v2">Multilingual v2 (most natural)</option>
-                  <option value="eleven_v3">v3 (most expressive)</option>
-                  <option value="eleven_flash_v2_5">Flash v2.5 (cheapest, fastest)</option>
-                </select>
-              </label>
-              <label class="field"><span>Speed</span>
-                <input type="number" min="0.7" max="1.3" step="0.05" [(ngModel)]="f.voice_speed" />
-                <small>1 is the voice's natural pace.</small>
-              </label>
-              <label class="field"><span>Pauses (Kokoro)</span>
-                <select [(ngModel)]="f.voice_pauses">
-                  <option value="tight">Tight (brisk)</option>
-                  <option value="natural">Natural</option>
-                  <option value="relaxed">Relaxed</option>
-                </select>
-                <small>Kokoro reads one sentence at a time and pauses like a narrator: longer after questions and punchlines.</small>
-              </label>
-              <label class="field"><span>Timing model</span>
-                <select [(ngModel)]="f.voice_align_model">
-                  <option value="small">Small (recommended)</option>
-                  <option value="medium">Medium</option>
-                  <option value="large-v3-turbo">Large v3 turbo</option>
-                </select>
-                <small>Whisper only has to find words the script already knows. Small is quick and light; the large
-                  model can run Docker out of memory.</small>
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
-            <h3>Storage</h3>
-            <p class="small muted">Where finished clips are written.</p>
-            <div class="form-grid">
-              <label class="field wide"><span>Output folder</span>
-                <input type="text" [(ngModel)]="f.output_dir" [placeholder]="bundle()!.default_clips_dir" />
-                <small>
-                  Leave empty to use {{ bundle()!.default_clips_dir }}.
-                  @if (store.status()?.in_docker) {
-                    This app runs in Docker: use a path inside the container, such as /output, and mount a folder there.
-                  } @else {
-                    Any folder this machine can write to, for example a mounted drive.
-                  }
-                  Clips already rendered stay where they are.
-                </small>
-              </label>
-              <label class="check wide"><input type="checkbox" [(ngModel)]="f.delete_source_after_render" />
-                <span>Delete the downloaded video once all its clips are rendered
-                  <small>Saves disk space. Re-rendering a clip later means adding the video again.</small></span>
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
-            <h3>Moments and brief checks</h3>
-            <p class="small muted">Defaults for new videos. Each video can override the numbers.</p>
-            <div class="form-grid">
-              <label class="field"><span>Clips per video</span>
-                <input type="number" min="1" max="20" [(ngModel)]="f.clips_per_video" /></label>
-              <label class="field"><span>Shortest clip (seconds)</span>
-                <input type="number" min="5" max="600" [(ngModel)]="f.min_len" /></label>
-              <label class="field"><span>Longest clip (seconds)</span>
-                <input type="number" min="10" max="900" [(ngModel)]="f.max_len" /></label>
-              <label class="check wide"><input type="checkbox" [(ngModel)]="f.auto_compliance" />
-                <span>Check each clip against the campaign brief after rendering
-                  <small>Only runs for videos that have a brief. You can always run the check by hand.</small></span>
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
             <h3>Transcription</h3>
             <p class="small muted">Speech is transcribed on this machine. No audio leaves it.</p>
             <div class="form-grid">
@@ -239,25 +301,8 @@ import { Toasts } from '../core/toast';
           </section>
 
           <section class="card">
-            <h3>Download</h3>
-            <p class="small muted">How source videos are fetched from links.</p>
-            <div class="form-grid">
-              <label class="field"><span>Maximum quality</span>
-                <select [(ngModel)]="f.max_height">
-                  <option [ngValue]="1080">1080p</option>
-                  <option [ngValue]="720">720p (smaller, faster)</option>
-                </select>
-              </label>
-              <label class="field wide"><span>Cookies file</span>
-                <input type="text" [(ngModel)]="f.cookies_file" placeholder="Optional path to cookies.txt" />
-                <small>Only needed if a site blocks downloads from this machine, which is common on cloud servers.</small>
-              </label>
-            </div>
-          </section>
-
-          <section class="card">
             <h3>Render</h3>
-            <p class="small muted">How the vertical clips look and how large the files are.</p>
+            <p class="small muted">How videos are encoded, and how burned-in captions look (clips and Shorts).</p>
             <div class="form-grid">
               <label class="field"><span>Encoder</span>
                 <select [(ngModel)]="f.encoder">
@@ -327,6 +372,12 @@ import { Toasts } from '../core/toast';
     </div>
   `,
   styles: `
+    .group-title {
+      margin: 18px 0 -4px;
+    }
+    .group-note {
+      margin: -6px 0 0;
+    }
     section > p {
       margin: 4px 0 16px;
     }

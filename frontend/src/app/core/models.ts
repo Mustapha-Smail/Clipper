@@ -205,6 +205,9 @@ export interface AppSettings {
   whisper_engine: string;
   whisper_model: string;
   voice_align_model: string;
+  ink_wobble: 'off' | 'subtle' | 'strong';
+  feature_clipping: boolean;
+  feature_studio: boolean;
   max_height: number;
   cookies_file: string;
   encoder: string;
@@ -224,6 +227,7 @@ export interface SettingsBundle {
 }
 
 export interface SystemStatus {
+  features?: { clipping: boolean; studio: boolean };
   version: string;
   api_key: boolean;
   youtube_key: boolean;

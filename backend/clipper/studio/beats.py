@@ -20,7 +20,7 @@ understand and says how many.
 import re
 from dataclasses import dataclass, field
 
-from . import art
+from . import art, geo, ink
 
 SLOTS = ("left", "center", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right")
 SIZES = {"small": "small", "medium": "medium", "large": "large", "s": "small", "m": "medium", "l": "large"}
@@ -36,8 +36,9 @@ TARGETED = {"point", "hold", "push", "pull", "carry"}  # poses that reach for so
 CAMERAS = ("wide", "push", "drift", "close")
 MARKS = ("circle", "underline", "cross", "tick")
 MOTIONS = ("shake", "bounce", "pulse", "spin", "grow", "shrink")
-CREATES = ("actor", "draw", "write")
-VERBS = (*CREATES, "do", "face", "move", "arrow", *MARKS, *MOTIONS, "erase", "look")
+CREATES = ("actor", "draw", "write", "flag", "map", "timeline")
+VERBS = (*CREATES, "do", "face", "move", "arrow", *MARKS, *MOTIONS, "erase", "look", "who")
+SHOWN = ("flag", "map", "timeline")          # things drawn from data, not from the prop library
 MAX_LIVE = 6                  # things on stage at once; older ones are erased to make room
 MAX_TEXT_WORDS = 6
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
@@ -68,11 +69,28 @@ class Line:
             return self.ident
         if self.verb == "write":
             return _slug(self.text)
+        if self.verb == "flag":
+            return f"flag_{self.who}"
+        if self.verb in ("map", "timeline"):
+            return self.verb
         return self.who
 
     def render(self) -> str:
         """The canonical text of the line."""
         parts = [str(self.word), self.verb]
+        if self.verb in ("flag", "map", "timeline", "who"):
+            if self.verb == "flag":
+                parts.append(self.who)
+            elif self.verb == "map":
+                parts += self.extra
+            elif self.verb == "timeline":
+                parts += [_quote(x) for x in self.extra]
+            else:
+                parts += [self.who, _quote(self.text), *self.extra]
+            parts += [v for v in (self.slot, self.size, self.color) if v]
+            if self.ident:
+                parts += ["as", self.ident]
+            return " ".join(parts)
         if self.verb == "write":
             parts.append(_quote(self.text))
         elif self.who:
@@ -124,6 +142,8 @@ def parse_line(raw: str) -> Line | None:
         if k + 1 < len(rest) and NAME.match(_name(rest[k + 1])):
             line.ident = _name(rest[k + 1])
         rest = rest[:k] + rest[k + 2:]
+    if verb in ("flag", "map", "timeline", "who"):
+        return _parse_shown(line, rest)
     refs: list[str] = []
     for token in rest:
         low = token.lower()
@@ -189,12 +209,57 @@ def parse_line(raw: str) -> Line | None:
     return line
 
 
+def _parse_shown(line: Line, rest: list[str]) -> Line | None:
+    """flag CODE, map CODE CODE..., timeline "a" "b"..., who ID "Name" TRAIT...: the order of the rest is free."""
+    words: list[str] = []
+    quoted: list[str] = []
+    for token in rest:
+        low = token.lower()
+        if token.startswith('"') and token.endswith('"') and len(token) >= 2:
+            quoted.append(token[1:-1].strip())
+        elif low in SLOTS and not line.slot:
+            line.slot = low
+        elif low in SIZES and not line.size:
+            line.size = SIZES[low]
+        elif low in COLORS and not line.color:
+            line.color = low
+        else:
+            words.append(_name(token))
+    words = [w for w in words if w]
+    if line.verb == "flag":
+        codes = [c for c in (geo.code(w) for w in words) if c]
+        if not codes or codes[0] not in geo.flags():
+            return None
+        line.who = codes[0]
+    elif line.verb == "map":
+        codes = []
+        for w in words:
+            c = geo.code(w)
+            if c and c in geo.countries() and c not in codes:
+                codes.append(c)
+        if not codes:
+            return None
+        line.who, line.extra = codes[0], codes[:6]
+    elif line.verb == "timeline":
+        labels = [" ".join(q.split()[:3]) for q in quoted if q][:7]
+        if len(labels) < 2:
+            return None
+        line.extra = labels
+    else:   # who
+        if not words or not NAME.match(words[0]) or not quoted:
+            return None
+        line.who, line.text = words[0], quoted[0][:60]
+        line.extra = [w for w in words[1:] if w in ink.TRAITS]
+    return line
+
+
 # --- shots --------------------------------------------------------------------------------
 
 def shot(start_word: int, note: str = "", camera: str = "wide", page: bool = False,
-         lines: list[str] | None = None) -> dict:
+         lines: list[str] | None = None, cut: bool = False) -> dict:
+    """A shot. `cut`: the camera jumps to it (a hard cut) instead of gliding across the page."""
     return {"start_word": start_word, "note": note, "camera": camera if camera in CAMERAS else "wide",
-            "page": bool(page), "lines": list(lines or [])}
+            "page": bool(page), "cut": bool(cut), "lines": list(lines or [])}
 
 
 SHOT = re.compile(r'^\[?(\d+)\]?\s+shot\b(.*)$', re.I)
@@ -218,7 +283,7 @@ def parse_plan(text: str, word_count: int, offset: int = 0, check: bool = True) 
             note = (re.search(r'"([^"]*)"', rest) or [None, ""])[1]
             words = re.sub(r'"[^"]*"', " ", rest).lower().split()
             camera = next((w for w in words if w in CAMERAS), "wide")
-            shots.append(shot(word, note, camera, "page" in words))
+            shots.append(shot(word, note, camera, "page" in words, cut="cut" in words))
             continue
         line = parse_line(raw)
         if line is None:
@@ -252,11 +317,12 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
             ordered[-1]["lines"] += list(raw.get("lines") or [])
             continue
         ordered.append(shot(start, str(raw.get("note", ""))[:200], raw.get("camera", "wide"), raw.get("page", False),
-                            list(raw.get("lines") or [])))
+                            list(raw.get("lines") or []), raw.get("cut", False)))
     if ordered:
         ordered[0]["start_word"] = 0
 
     previous: dict[str, Line] = {}     # still on stage at the end of the shot before
+    personas: set[str] = set()         # people defined with `who`, usable as actors from then on
     for i, sh in enumerate(ordered):
         end = ordered[i + 1]["start_word"] - 1 if i + 1 < len(ordered) else last
         parsed = []
@@ -274,9 +340,13 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
         kept: list[Line] = []
         carried = dict(previous)
         for line in parsed:
+            if line.verb == "who":
+                personas.add(line.who)
+                kept.append(line)
+                continue
             if line.verb in CREATES:
                 if line.verb == "actor":
-                    if line.who not in art.CHARACTERS:
+                    if line.who not in art.CHARACTERS and line.who not in personas:
                         line.who = "person"
                     if line.id in live and live[line.id].verb == "actor":
                         # the same actor again: that is a change of pose or place, not a second actor
@@ -325,7 +395,7 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                     live[ref] = carried.pop(ref)
                     order.append(ref)
                     continue
-                if ref in art.CHARACTERS and ref not in live:
+                if (ref in art.CHARACTERS or ref in personas) and ref not in live:
                     # a cast member used before being brought on: bring them on, rather than lose the line
                     taken = {x.slot for x in live.values()}
                     slot = next((s for s in ("left", "right", "center") if s not in taken), "left")
@@ -371,6 +441,8 @@ def to_text(shots: list[dict]) -> str:
         options = [sh["camera"]] if sh["camera"] != "wide" else []
         if sh.get("page"):
             options.append("page")
+        if sh.get("cut"):
+            options.append("cut")
         out.append(" ".join([str(sh["start_word"]), "shot", _quote(sh["note"]), *options]).strip())
         out += sh["lines"]
     return "\n".join(out)
@@ -409,7 +481,7 @@ def score(shots: list[dict], word_time, duration: float) -> dict:
         items = parsed(sh)
         end = word_time(shots[i + 1]["start_word"]) if i + 1 < len(shots) else duration
         length = end - (word_time(sh["start_word"]) if i else 0.0)
-        verbs = [x.verb for x in items]
+        verbs = [x.verb for x in items if x.verb != "who"]
         acting = [v for v in verbs if v not in CREATES]
         if items and not acting and length > 3:
             flat += 1

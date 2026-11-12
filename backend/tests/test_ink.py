@@ -294,3 +294,70 @@ def test_carried_things_go_where_the_actor_goes_and_fall_when_dropped():
 def test_a_second_pose_in_a_line_is_ignored():
     line = beats.parse_line("4 do narrator crossed hips smug")
     assert (line.pose, line.expression, line.target) == ("crossed", "smug", "")
+
+
+# --- montage: flags, maps, timelines, people, cuts ----------------------------------------------
+
+def test_countries_flags_and_maps():
+    from clipper.studio import geo
+    assert geo.code("Romania") == "ro" and geo.code("uk") == "gb" and geo.code("atlantis") is None
+    flag = geo.flag_image("it", 200, 1.0)
+    assert flag.getbbox() is not None and flag.width > 200
+    early = np.asarray(geo.flag_image("it", 200, 0.2))[..., 3].sum()
+    assert early < np.asarray(flag)[..., 3].sum()                    # the colours come in after the border
+    clon, clat, slon, slat = geo.map_view(["ro", "bg"])
+    assert 20 < clon < 30 and 40 < clat < 48 and slon > 10
+    assert geo.map_image(["ro", "bg"], 320, 1.0).size == (320, 240)
+    assert geo.timeline_image(["525", "532", "626"], 400, 1.0).getbbox() is not None
+
+
+def test_the_language_shows_what_is_named():
+    assert beats.parse_line("3 flag Romania top_left small").render() == "3 flag ro top_left small"
+    assert beats.parse_line("4 map ro bulgaria large as dobruja").render() == "4 map ro bg large as dobruja"
+    line = beats.parse_line('5 timeline "525" "532" "626" top warm')
+    assert line.extra == ["525", "532", "626"] and line.id == "timeline"
+    who = beats.parse_line('6 who dionysius "Dionysius Exiguus" tonsure robe dragon_wings')
+    assert who.extra == ["tonsure", "robe"] and who.text == "Dionysius Exiguus"
+    for bad in ("7 flag atlantis", "8 map", '9 timeline "only one"', "10 who x"):
+        assert beats.parse_line(bad) is None
+    shots, dropped = beats.clean([beats.shot(0, lines=['0 who pope "Pope John I" mitre robe', "1 actor pope left",
+                                                       "2 flag it right", "3 do pope point flag_it"]),
+                                  beats.shot(5, lines=["5 map it center"], cut=True)], 12)
+    assert not dropped and shots[0]["lines"][1] == "1 actor pope left" and shots[1]["cut"]
+    assert beats.to_text(shots).splitlines()[5] == '5 shot "" cut'
+
+
+def test_people_are_dressed_and_named_and_cuts_are_instant():
+    look = ink.look_of(["mitre", "robe", "long_beard", "white_hair", "wings"])
+    assert look == {"hat": "mitre", "outfit": "robe", "facial": "long_beard", "colour": "white_hair"}
+    plain = ink.figure_svg("person", ink.Pose.named("stand"))
+    dressed = ink.figure_svg("person", ink.Pose.named("stand"), look=look)
+    assert len(dressed) > len(plain) + 400
+    plan = ['0 who pope "Pope John I" mitre robe', "0 actor pope left", "1 flag it right"]
+    shots, _ = beats.clean([beats.shot(0, lines=plan), beats.shot(6, lines=["6 map it center", "7 do pope cheer"],
+                                                                    cut=True)], 12)
+    composer = stage.InkComposer({**board(), "scenes": shots}, {}, Settings(), None)
+    tags = [x for x in composer.things if x.kind == "tag"]
+    assert len(tags) == 1 and tags[0].line.text == "Pope John I" and tags[0].gone is not None
+    assert composer.pan_start(1)[1] == 0.0                          # a hard cut
+    before, after = composer.camera(composer.arrivals[1] - 0.05), composer.camera(composer.arrivals[1] + 0.05)
+    assert after[0] - before[0] > composer.W * 0.5
+    assert {"pan"}.isdisjoint(k for _, k in composer.sound_events())
+    composer.bgr(1.5)
+
+
+def test_the_wobble_can_be_calmed_or_turned_off():
+    calm = stage.InkComposer(board(), {"fridge": SVG, "snowflake": SVG}, Settings(ink_wobble="off"), None)
+    assert calm.boil == [] and calm.bgr(1.0).shape == (1080, 1920, 3)
+    assert stage.WOBBLE["subtle"][0] < stage.WOBBLE["strong"][0] / 2
+
+
+def test_a_person_keeps_one_look_and_is_named_once():
+    shots, _ = beats.clean([beats.shot(0, lines=['0 who monk "Dionysius" tonsure robe', "0 actor monk left"]),
+                            beats.shot(4, lines=['4 who monk "Dionysius" crown suit', "4 actor monk right",
+                                                 "5 erase monk"]),
+                            beats.shot(8, lines=["8 actor monk left"])], 12)
+    composer = stage.InkComposer({**board(), "scenes": shots}, {}, Settings(), None)
+    monks = [x for x in composer.things if x.kind == "actor"]
+    assert all(m.look == {"hair": "tonsure", "outfit": "robe"} for m in monks)
+    assert len([x for x in composer.things if x.kind == "tag"]) == 1

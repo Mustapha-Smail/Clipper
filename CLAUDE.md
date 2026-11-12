@@ -87,6 +87,14 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   fps, the camera at 24. Keep the liveliness score (`beats.score`) arithmetic,
   every deduction in its lines. New actions go in the beat language and the
   stage, and in the planner prompt and the page's cheat sheet.
+- Flags, maps and timelines (`studio/geo.py`): flags from flag-icons (MIT) and
+  country outlines from Natural Earth (public domain), packed by
+  `backend/tools/geo_import.py` into `clipper/assets/*.json.gz`; keep their
+  licence files. People are `who` lines with traits from `ink.TRAITS`; the
+  first definition of an ID wins for the whole video and the name tag shows
+  once. Shots can `cut` instead of gliding.
+- Settings `feature_clipping` (off by default) and `feature_studio` (on) only
+  decide what the UI shows; at least one stays on. `/system/status` reports them.
 - Recorded moves (`clipper/assets/moves.json`) come from CMU motion capture via
   `backend/tools/mocap_import.py` (a dev tool, not run by the app); keep the
   CMU credit in that file. Figures rest their lowest point on the ground

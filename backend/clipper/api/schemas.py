@@ -397,6 +397,7 @@ class SystemStatus(BaseModel):
     worker_last_seen: UtcDatetime | None
     queued: int
     running: int
+    features: dict[str, bool] = {}
 
 
 # --- studio scripts ------------------------------------------------------------------

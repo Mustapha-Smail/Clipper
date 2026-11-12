@@ -81,3 +81,13 @@ def test_a_shorts_only_idea_gets_a_one_section_script(client, app_env, monkeypat
     with session_scope() as db:
         sections = db.get(Script, made["id"]).sections
     assert len(sections) == 1 and sections[0]["short"] and sections[0]["text"] == "One.\n\nTwo."
+
+
+def test_features_default_to_studio_only(client):
+    import pytest
+
+    from clipper.settings import Settings
+    assert (Settings().feature_studio, Settings().feature_clipping) == (True, False)
+    with pytest.raises(ValueError):
+        Settings(feature_studio=False, feature_clipping=False)
+    assert client.get("/api/v1/system/status").json()["features"] == {"clipping": False, "studio": True}

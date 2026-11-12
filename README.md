@@ -88,6 +88,15 @@ video's brief, which drives both moment selection and the pre-post check.
 
 Set your theme, platforms and audience split under Settings, "Your channel".
 
+## Features
+
+Settings, Features turns each half of the app on or off: the **Studio**
+(animated videos, on by default) and **Clipping** (clips for paid campaigns,
+off by default). A feature that is off leaves the menu and its settings are
+hidden; nothing is deleted. The menu collapses to a rail of icons on a desktop
+(the arrow next to the logo) and becomes a drawer behind the menu button on a
+phone.
+
 ## Studio ideas
 
 The Ideas page (under Studio) is the first step of the animated channel. No theme in mind? The magic wand next to the theme field suggests five,
@@ -235,6 +244,25 @@ cartwheel). An actor carrying a prop takes it along until they drop it, and it
 falls; a kicked or thrown prop flies off. Footsteps, landings, swishes,
 creaks and slides are synthesised to match. The cast: narrator, person,
 scientist, worker, royal, fancy, kid, chef, woman, elder.
+
+**Showing what is named.** The planner cuts in a visual whenever the narration
+names something:
+- a country, city or region: its flag (flag-icons, MIT) or a hand-drawn map
+  (Natural Earth outlines, public domain) with the countries named in colour
+  and labelled, their neighbours in outline;
+- a real person: defined once with `who` and the traits people know them by
+  (hair, beard, headwear such as a mitre, laurel or crown, glasses, clothes
+  such as a robe, toga or suit, skin tone), then on stage with their name
+  written under them the first time;
+- dates and periods: a timeline that draws itself, label by label.
+
+`backend/tools/geo_import.py` packs the flags and outlines into
+`clipper/assets/` (flags.json.gz, countries.json.gz).
+
+**Editing.** Shots glide from one to the next across the page, or cut hard
+(`cut` on the shot line); the planner mixes both. The camera reframes at most
+every 3 seconds unless something would appear out of view. The lines' hand-drawn
+wobble is subtle by default (Settings, Ink style: off, subtle or strong).
 
 Props come from the same library as the flat style: each is turned into ink
 lines and a wash by code, so no new drawing is needed. New props are drawn
