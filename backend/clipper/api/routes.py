@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import config, jobs, llm, pipeline
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import AiUsage, Clip, Job, JobEvent, Worker, as_utc, utcnow
+from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Worker, as_utc, utcnow
 from . import schemas as s
 from .videos import clip_out
 
@@ -253,3 +253,32 @@ def status(db: Session = Depends(get_db)):
         "queued": counts.get("queued", 0),
         "running": counts.get("running", 0),
     }
+
+
+COST_NOTE = ("AI model calls only, as estimated from tokens. Kokoro voices and rendering are free; ElevenLabs "
+             "credits are not counted. Calls made before costs were tracked per video are not included.")
+
+
+@system.get("/costs", response_model=s.CostReport)
+def costs(script_id: int | None = None, storyboard_id: int | None = None, video_id: str | None = None,
+          db: Session = Depends(get_db)):
+    """What AI cost for one Studio video (its idea, its script, its storyboard), one script, or one clipped video."""
+    if storyboard_id is not None:
+        board = db.get(Storyboard, storyboard_id)
+        if board is None:
+            raise HTTPException(404, "Storyboard not found")
+        script = board.script
+        steps = [("Idea", [f"idea:{script.idea_id}"] if script.idea_id else []),
+                 ("Script", [f"script:{script.id}"]), ("This video", [f"storyboard:{board.id}"])]
+    elif script_id is not None:
+        script = db.get(Script, script_id)
+        if script is None:
+            raise HTTPException(404, "Script not found")
+        steps = [("Idea", [f"idea:{script.idea_id}"] if script.idea_id else []),
+                 ("Script", [f"script:{script.id}"]),
+                 ("Videos", [f"storyboard:{b.id}" for b in script.storyboards])]
+    elif video_id is not None:
+        steps = [("Clips", [f"video:{video_id}"])]
+    else:
+        raise HTTPException(400, "Say which: script_id, storyboard_id or video_id")
+    return {**llm.costs(steps), "note": COST_NOTE}

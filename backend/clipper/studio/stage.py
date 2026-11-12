@@ -160,6 +160,7 @@ class InkComposer:
         self.paper = Image.fromarray(paper(self.W, self.H), "RGB").convert("RGBA")
         self.boil = boil_fields(self.W, self.H)
         self._cache: OrderedDict = OrderedDict()
+        self.cache_limit = 700                        # drawings kept; previews keep fewer
         self._sized: OrderedDict = OrderedDict()      # sprites resized for the current zoom
         self._last: tuple | None = None
 
@@ -812,7 +813,7 @@ class InkComposer:
         if image is None:
             image = make()
             self._cache[key] = image
-            if len(self._cache) > 700:
+            while len(self._cache) > self.cache_limit:
                 self._cache.popitem(last=False)
         else:
             self._cache.move_to_end(key)

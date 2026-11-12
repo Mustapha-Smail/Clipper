@@ -5,6 +5,7 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { Pauses, Script, VoiceChoice, VoiceOptions, VoiceTake } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 import { JobCard } from './job-card';
 import { Recorder } from './recorder';
 
@@ -20,6 +21,7 @@ type Mode = 'none' | 'record' | 'ai';
 export class VoicePanel implements OnDestroy {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   private readonly store = inject(JobsStore);
 
   readonly script = input.required<Script>();
@@ -215,8 +217,9 @@ export class VoicePanel implements OnDestroy {
     });
   }
 
-  protected remove(take: VoiceTake): void {
-    if (!confirm(`Delete "${this.label(take)}"? Its audio is deleted too.`)) return;
+  protected async remove(take: VoiceTake): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Delete "${this.label(take)}"?`, message: 'Its audio is deleted too.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteTake(take.id).subscribe({
       next: () => this.takes.update((list) => list.filter((t) => t.id !== take.id)),
       error: (err) => this.toasts.error(err),

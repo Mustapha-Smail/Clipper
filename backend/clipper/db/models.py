@@ -114,6 +114,7 @@ class Idea(Base):
     beats: Mapped[list] = mapped_column(JSON, default=list)           # [{text, short}]
     angle: Mapped[str] = mapped_column(Text, default="")              # how it differs from what exists
     format: Mapped[str] = mapped_column(String(16), default="single")  # single|list
+    video: Mapped[str] = mapped_column(String(8), default="long")      # long (with Shorts from it) | short (only)
     search_query: Mapped[str] = mapped_column(Text, default="")       # what a viewer would search
     origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # inbox|new|approved|parked|skipped
@@ -142,6 +143,8 @@ class Script(Base):
     theme: Mapped[str] = mapped_column(Text, default="")
     format: Mapped[str] = mapped_column(String(16), default="single")      # single|list
     target_minutes: Mapped[int] = mapped_column(Integer, default=6)
+    video: Mapped[str] = mapped_column(String(8), default="long")      # long | short (a Short only)
+    target_seconds: Mapped[int] = mapped_column(Integer, default=50)   # for a Short
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved
     research: Mapped[dict | None] = mapped_column(JSON)    # {notes, sources: [{n, url, title}], searches}
     sections: Mapped[list] = mapped_column(JSON, default=list)   # [{key, heading, text, short}]
@@ -280,6 +283,8 @@ class AiUsage(Base):
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str] = mapped_column(Text, default="")
     duration_s: Mapped[float] = mapped_column(Float, default=0.0)
+    # what the call was for: "idea:3", "script:4", "storyboard:8", "video:12"; NULL before this existed
+    ref: Mapped[str | None] = mapped_column(String(40), index=True)
 
 
 class Moment(Base):

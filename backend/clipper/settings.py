@@ -61,6 +61,9 @@ class Settings(BaseModel):
     language: str = Field("en", pattern=r"^[a-z]{2}$")
     whisper_engine: Literal["auto", "mlx", "faster-whisper"] = "auto"
     whisper_model: Literal["small", "medium", "large-v3-turbo"] = "large-v3-turbo"
+    # Timing a voice take only has to find words we already know: a small model is enough,
+    # and it needs a fraction of the memory (the large one can run Docker out of memory).
+    voice_align_model: Literal["small", "medium", "large-v3-turbo"] = "small"
 
     # Download
     max_height: Literal[720, 1080] = 1080

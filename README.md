@@ -110,6 +110,16 @@ the same angle. "Beats, competition and score" shows every line and the
 YouTube results it used. Without `YOUTUBE_API_KEY` in `.env`, only Claude's
 part is scored (out of 40) and the card says so.
 
+A checked idea also suggests a length, from the same results and shown with
+its reason: when the best Short has more than twice the views of the best long
+video, a Short of about 50 seconds; otherwise the middle length of the five
+most-viewed long videos, kept between 4 and 15 minutes (8 at least for a list).
+Without YouTube data it falls back on the format. An approved idea is either a
+**long video** (Shorts can still be cut from its sections) or **Shorts only**:
+its script is then written as one section of 15 to 90 seconds, and its Videos
+tab offers only the Short. The length field next to "Write the script" starts
+from the suggestion.
+
 ## Studio scripts
 
 On an approved idea, "Write the script" starts a job with three steps:
@@ -134,7 +144,11 @@ answers without citations, which the fact check depends on.
 
 ## Studio voice
 
-Below the script, the Voice panel makes takes of the script as it is saved:
+Below the script, the Voice panel makes takes of the script as it is saved.
+Every take is timed word by word with Whisper "small" (Settings, Timing
+model): it only has to find words the script already has, and the large model
+can run Docker out of memory. A take whose timing failed says why and offers
+"Time it again".
 
 - **Record yourself:** the browser records your microphone while the script is
   shown as a teleprompter. Browser voice processing is off; the server evens
@@ -322,11 +336,19 @@ which lists every call by task with tokens, web searches and an estimated cost
 props are drawn once and reused, fact checks search the web only for claims the
 research does not cover, ideas are checked only when you ask.
 
+**Cost per video.** Every AI call is tagged with what it was for (an idea, a
+script, a storyboard or a clipped video). The script page shows what its idea,
+the script and all its videos cost so far; a storyboard page shows the cost of
+that video from idea to render, step by step (planning again adds to it;
+rendering is free); a clipped video's page shows what its moments and brief
+checks cost. Calls made before tagging existed were matched to the jobs that
+were running at the time; idea checks from back then cannot be traced.
+
 ## Seeing what is happening
 
-- **Activity page:** every job with its stages, timing and full log, plus one
-  combined log you can filter to warnings and errors. Jobs can be cancelled and
-  failed jobs retried from there.
+- **Activity page:** what is running now (with its stages and log, and Cancel),
+  then recent jobs one line each (filter to failed ones; "Log" opens a job's
+  full log), and the combined log, folded until you open it.
 - **Container logs:** `docker compose logs -f worker` (or `api`). One JSON
   object per line, with `job_id`, `video_id` and `request_id` fields.
 - **Health:** `GET /healthz` checks the API and the database.

@@ -6,6 +6,7 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { AppSettings, Idea, IdeaPatch, IdeaStatus, IdeaVideo } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 
 type Tab = 'generate' | 'review' | 'approved' | 'parked' | 'skipped';
 
@@ -19,6 +20,7 @@ type Tab = 'generate' | 'review' | 'approved' | 'parked' | 'skipped';
 export class IdeasPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   protected readonly store = inject(JobsStore);
   private readonly router = inject(Router);
   protected readonly starting = signal<number | null>(null);
@@ -223,14 +225,30 @@ export class IdeasPage {
     });
   }
 
+  /** The length to start from: what the check suggested, else the usual length for the format. */
+  protected suggestedMinutes(idea: Idea): number {
+    return idea.length?.minutes ?? (idea.format === 'list' ? 10 : 6);
+  }
+
+  protected suggestedSeconds(idea: Idea): number {
+    return idea.length?.seconds ?? 50;
+  }
+
+  /** A long video (with Shorts cut from its sections), or Shorts only. */
+  protected setVideo(idea: Idea, video: 'long' | 'short'): void {
+    if (idea.video !== video) this.patch(idea, { video });
+  }
+
   /** Research and write the script for an approved idea, then open it. */
-  protected writeScript(idea: Idea, minutes: number): void {
-    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30) {
-      this.toasts.error('Choose a length between 1 and 30 minutes');
+  protected writeScript(idea: Idea, length: number): void {
+    const short = idea.video === 'short';
+    const [low, high] = short ? [15, 90] : [1, 30];
+    if (!Number.isInteger(length) || length < low || length > high) {
+      this.toasts.error(short ? 'Choose a length between 15 and 90 seconds' : 'Choose a length between 1 and 30 minutes');
       return;
     }
     this.starting.set(idea.id);
-    this.api.startScript(idea.id, minutes).subscribe({
+    this.api.startScript(idea.id, idea.video, length).subscribe({
       next: (script) => {
         this.starting.set(null);
         this.store.refresh();
@@ -248,9 +266,10 @@ export class IdeasPage {
     this.patch(idea, { status: keep ? 'new' : 'skipped' });
   }
 
-  protected keepAll(keep: boolean): void {
+  protected async keepAll(keep: boolean): Promise<void> {
     const list = this.shown().filter((i) => i.status === 'inbox');
-    if (!keep && !confirm(`Let go of all ${list.length} ideas here? They move to Skipped.`)) return;
+    if (!keep && !(await this.confirm.ask({ title: `Let go of all ${list.length} ideas here?`,
+      message: 'They move to Skipped, where you can bring any of them back.', confirm: 'Let them go' }))) return;
     for (const idea of list) this.keep(idea, keep);
   }
 
@@ -271,8 +290,9 @@ export class IdeasPage {
     this.patch(idea, patch, 'Saved. Check it again to update the score.');
   }
 
-  protected remove(idea: Idea): void {
-    if (!confirm(`Remove "${idea.title}"?`)) return;
+  protected async remove(idea: Idea): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Remove "${idea.title}"?`, message: 'The idea is deleted. Scripts written from it are kept.',
+      confirm: 'Remove', danger: true }))) return;
     this.api.deleteIdea(idea.id).subscribe({
       next: () => this.ideas.update((list) => (list ?? []).filter((i) => i.id !== idea.id)),
       error: (err) => this.toasts.error(err),

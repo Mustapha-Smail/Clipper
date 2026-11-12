@@ -288,3 +288,28 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+.suggested {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.kind {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+
+  button {
+    border: 0;
+    border-radius: 0;
+
+    &.on {
+      background: var(--text);
+      color: var(--bg);
+    }
+  }
+}

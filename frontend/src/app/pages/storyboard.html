@@ -7,6 +7,7 @@
         <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
           {{ ink() ? 'ink sketch' : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
           {{ scenes().length }} {{ ink() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
+        <app-cost-report [of]="{ storyboard: b.id }" label="AI cost of this video, idea to render" />
       </div>
       @if (b.has_video) {
         <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">

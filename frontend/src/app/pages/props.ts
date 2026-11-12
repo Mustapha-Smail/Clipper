@@ -4,6 +4,7 @@ import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { Asset, MusicFound, MusicTrack } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 import { CAST, EXPRESSIONS, POSES } from './storyboard';
 
 /** The prop library and the cast: everything the animated videos are drawn with. */
@@ -191,6 +192,7 @@ import { CAST, EXPRESSIONS, POSES } from './storyboard';
 export class PropsPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
 
   protected readonly cast = CAST;
   protected readonly poses = POSES;
@@ -278,8 +280,9 @@ export class PropsPage {
     });
   }
 
-  protected removeMusic(track: MusicTrack): void {
-    if (!confirm(`Delete "${track.name}"? Videos that use it render without music.`)) return;
+  protected async removeMusic(track: MusicTrack): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Delete "${track.name}"?`, message: 'Videos that use it will render without music.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteMusic(track.id).subscribe({
       next: () => this.tracks.update((list) => list.filter((t) => t.id !== track.id)),
       error: (err) => this.toasts.error(err),
@@ -314,9 +317,10 @@ export class PropsPage {
     });
   }
 
-  protected remove(a: Asset): void {
-    const where = a.used_in ? ` It is used in ${a.used_in} storyboards and will be drawn again when they render.` : '';
-    if (!confirm(`Delete the prop "${a.name}"?${where}`)) return;
+  protected async remove(a: Asset): Promise<void> {
+    const where = a.used_in ? `It is used in ${a.used_in} storyboards and will be drawn again when they render.`
+      : 'It is removed from the library.';
+    if (!(await this.confirm.ask({ title: `Delete the prop "${a.name}"?`, message: where, confirm: 'Delete', danger: true }))) return;
     this.api.deleteAsset(a.name).subscribe({
       next: () => this.assets.update((list) => (list ?? []).filter((x) => x.name !== a.name)),
       error: (err) => this.toasts.error(err),

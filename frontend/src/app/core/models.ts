@@ -204,6 +204,7 @@ export interface AppSettings {
   language: string;
   whisper_engine: string;
   whisper_model: string;
+  voice_align_model: string;
   max_height: number;
   cookies_file: string;
   encoder: string;
@@ -273,6 +274,7 @@ export interface Idea {
   beats: { text: string; short: boolean }[];
   angle: string;
   format: 'single' | 'list';
+  video: 'long' | 'short';
   search_query: string;
   origin: 'claude' | 'you';
   status: IdeaStatus;
@@ -297,10 +299,13 @@ export interface Idea {
     best_small_views: number | null; best_small_channel: string | null;
     old_share: string; videos: number;
   } | null;
+  /** After a check: what length the results point to, and why. */
+  length: { video: 'long' | 'short'; minutes: number | null; seconds: number | null; reason: string } | null;
   script_id: number | null;
 }
 
-export type IdeaPatch = Partial<Pick<Idea, 'status' | 'notes' | 'title' | 'hook' | 'answer' | 'angle' | 'search_query'>>;
+export type IdeaPatch = Partial<Pick<Idea, 'status' | 'notes' | 'title' | 'hook' | 'answer' | 'angle' | 'search_query'
+  | 'video'>>;
 
 export type ClaimVerdict = 'supported' | 'contradicted' | 'unclear' | 'joke';
 
@@ -325,6 +330,8 @@ export interface ScriptSummary {
   title: string;
   format: 'single' | 'list';
   target_minutes: number;
+  video: 'long' | 'short';
+  target_seconds: number;
   status: 'draft' | 'approved';
   created_at: string;
   updated_at: string;
@@ -384,6 +391,7 @@ export interface VoiceTake {
   ready: boolean;
   current: boolean;
   job: Job | null;
+  failure: string | null;
 }
 
 export interface StoryElement {
@@ -555,4 +563,25 @@ export interface Chapters {
   text: string;
   valid: boolean;
   problems: string[];
+}
+
+export interface CostLine {
+  step: string;
+  task: string;
+  label: string;
+  calls: number;
+  cost: number;
+}
+
+export interface CostReport {
+  lines: CostLine[];
+  total: number;
+  note: string;
+}
+
+/** Which video (or script, or clipped video) a cost report is about. */
+export interface CostOf {
+  script?: number;
+  storyboard?: number;
+  video?: string;
 }

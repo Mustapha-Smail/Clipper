@@ -6,6 +6,8 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { ClaimVerdict, Script, ScriptClaim, ScriptSection } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
+import { CostReportView } from '../shared/cost-report';
 import { JobCard } from '../shared/job-card';
 import { StoryboardsPanel } from '../shared/storyboards-panel';
 import { VoicePanel } from '../shared/voice-panel';
@@ -23,13 +25,14 @@ interface Proposal {
 /** One script: edit the narration section by section, see its fact check, approve it. */
 @Component({
   selector: 'app-script-page',
-  imports: [FormsModule, RouterLink, JobCard, VoicePanel, StoryboardsPanel, AgoPipe],
+  imports: [FormsModule, RouterLink, JobCard, VoicePanel, StoryboardsPanel, AgoPipe, CostReportView],
   templateUrl: './script.html',
   styleUrl: './script.scss',
 })
 export class ScriptPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
   protected readonly store = inject(JobsStore);
   private readonly route = inject(ActivatedRoute);
@@ -120,9 +123,12 @@ export class ScriptPage {
       ...list.slice(0, after + 1), { key: null, heading: 'New section', text: '', short: false }, ...list.slice(after + 1)]);
   }
 
-  protected remove(index: number): void {
+  protected async remove(index: number): Promise<void> {
     const section = this.drafts()[index];
-    if (section.text.trim() && !confirm(`Remove the section "${section.heading}"?`)) return;
+    if (section.text.trim() && !(await this.confirm.ask({ title: `Remove the section "${section.heading}"?`,
+      message: 'Its text leaves the draft. Nothing is saved until you press Save.', confirm: 'Remove', danger: true }))) {
+      return;
+    }
     this.drafts.update((list) => list.filter((_, i) => i !== index));
   }
 
@@ -136,9 +142,11 @@ export class ScriptPage {
     });
   }
 
-  protected discard(): void {
+  protected async discard(): Promise<void> {
     const script = this.script();
-    if (script && confirm('Discard your unsaved edits?')) this.drafts.set(script.sections.map((s) => ({ ...s })));
+    if (!script || !(await this.confirm.ask({ title: 'Discard your unsaved edits?', message: 'The script goes back to its last saved version.',
+      confirm: 'Discard', danger: true }))) return;
+    this.drafts.set(script.sections.map((s) => ({ ...s })));
   }
 
   protected save(): void {
@@ -209,12 +217,13 @@ export class ScriptPage {
     this.queue(this.api.factcheck(this.id), 'Fact check queued');
   }
 
-  protected makeSpoken(): void {
+  protected async makeSpoken(): Promise<void> {
     if (this.dirty()) {
       this.toasts.error('Save your edits first, so the rewrite starts from them');
       return;
     }
-    if (!confirm('Rewrite the whole script so it sounds spoken? Every fact is kept, and you can undo it.')) return;
+    if (!(await this.confirm.ask({ title: 'Rewrite the whole script so it sounds spoken?',
+      message: 'Every fact is kept, and you can switch back to the previous version.', confirm: 'Rewrite' }))) return;
     this.queue(this.api.makeSpoken(this.id), 'Rewrite queued. About a minute.');
   }
 
@@ -229,8 +238,9 @@ export class ScriptPage {
     });
   }
 
-  protected redraft(): void {
-    if (!confirm('Write the whole script again from the same research? Your edits will be replaced.')) return;
+  protected async redraft(): Promise<void> {
+    if (!(await this.confirm.ask({ title: 'Write the whole script again?', message: 'It is written again from the same research. Your edits are replaced.',
+      confirm: 'Write again', danger: true }))) return;
     this.queue(this.api.redraft(this.id), 'Redraft queued');
   }
 
@@ -254,7 +264,7 @@ export class ScriptPage {
     });
   }
 
-  protected approve(on: boolean): void {
+  protected async approve(on: boolean): Promise<void> {
     const script = this.script();
     if (!script) return;
     if (on && this.dirty()) {
@@ -262,9 +272,11 @@ export class ScriptPage {
       return;
     }
     if (on && (!script.claims || !script.checked_current)) {
-      if (!confirm('The current text has not been fact-checked. Approve it anyway?')) return;
+      if (!(await this.confirm.ask({ title: 'Approve without a fact check?', message: 'The current text has not been fact-checked.',
+        confirm: 'Approve anyway' }))) return;
     } else if (on && script.claim_counts?.contradicted) {
-      if (!confirm(`${script.claim_counts.contradicted} claims are contradicted by the sources. Approve anyway?`)) return;
+      if (!(await this.confirm.ask({ title: `${script.claim_counts.contradicted} claims are contradicted by the sources`,
+        message: 'Approve the script anyway?', confirm: 'Approve anyway', danger: true }))) return;
     }
     this.api.updateScript(this.id, { status: on ? 'approved' : 'draft' }).subscribe({
       next: (updated) => {
@@ -286,8 +298,9 @@ export class ScriptPage {
     });
   }
 
-  protected deleteScript(): void {
-    if (!confirm('Delete this script? Its research and fact check go with it.')) return;
+  protected async deleteScript(): Promise<void> {
+    if (!(await this.confirm.ask({ title: 'Delete this script?', message: 'Its research and fact check go with it.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteScript(this.id).subscribe({
       next: () => this.router.navigate(['/scripts']),
       error: (err) => this.toasts.error(err),

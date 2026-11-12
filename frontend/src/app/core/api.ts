@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, AiModels,
+  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -129,8 +129,9 @@ export class Api {
   }
 
   // Studio scripts
-  startScript(ideaId: number, targetMinutes?: number): Observable<Script> {
-    return this.http.post<Script>(`${BASE}/ideas/${ideaId}/script`, { target_minutes: targetMinutes ?? null });
+  startScript(ideaId: number, video: 'long' | 'short', length: number): Observable<Script> {
+    const body = video === 'short' ? { video, target_seconds: length } : { video, target_minutes: length };
+    return this.http.post<Script>(`${BASE}/ideas/${ideaId}/script`, body);
   }
   scripts(): Observable<ScriptSummary[]> {
     return this.http.get<ScriptSummary[]>(`${BASE}/scripts`);
@@ -260,6 +261,13 @@ export class Api {
   }
   allStoryboards(): Observable<StoryboardListItem[]> {
     return this.http.get<StoryboardListItem[]>(`${BASE}/storyboards`);
+  }
+  costs(of: CostOf): Observable<CostReport> {
+    const params: Record<string, number | string> = {};
+    if (of.storyboard) params['storyboard_id'] = of.storyboard;
+    else if (of.script) params['script_id'] = of.script;
+    else if (of.video) params['video_id'] = of.video;
+    return this.http.get<CostReport>(`${BASE}/system/costs`, { params });
   }
   aiUsage(days: number): Observable<UsageReport> {
     return this.http.get<UsageReport>(`${BASE}/system/ai-usage`, { params: { days } });

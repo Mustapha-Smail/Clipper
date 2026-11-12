@@ -29,6 +29,14 @@ import { Toasts } from '../core/toast';
             <option value="flat">Flat colour: the first style, scene by scene</option>
           </select>
         </label>
+        @if (script().video === 'short') {
+          <div class="row">
+            <button class="primary" (click)="make(script().sections[0].key!)"
+                    [disabled]="busy() || !script().sections.length || starting() !== null">
+              {{ starting() ? 'Starting…' : 'Make the Short (9:16)' }}</button>
+            <span class="small muted">This idea is Shorts only: no long video.</span>
+          </div>
+        } @else {
         <div class="row">
           <button class="primary" (click)="makeLong()" [disabled]="busy() || starting() === 'long'">
             {{ starting() === 'long' ? 'Starting…' : 'Make the long video (16:9)' }}</button>
@@ -45,6 +53,7 @@ import { Toasts } from '../core/toast';
             </li>
           }
         </ul>
+        }
       }
 
       @for (b of boards(); track b.id) {

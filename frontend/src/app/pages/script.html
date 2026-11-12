@@ -7,9 +7,11 @@
         <input class="title-input" type="text" [value]="s.title" (change)="rename($any($event.target).value)"
                aria-label="Video title" [disabled]="busy()" />
         <p class="muted small">
-          {{ s.format === 'list' ? 'List video' : 'Single topic' }} · {{ s.theme }} · updated {{ s.updated_at | ago }}
+          {{ s.video === 'short' ? 'Short only, about ' + s.target_seconds + ' s' : s.format === 'list' ? 'List video' : 'Single topic' }}
+          · {{ s.theme }} · updated {{ s.updated_at | ago }}
           @if (s.idea_id) { · <a routerLink="/ideas">from an idea</a> }
         </p>
+        <app-cost-report [of]="{ script: s.id }" label="AI cost of this script and its videos" />
       </div>
       <span class="pill" [class.approved]="s.status === 'approved'">{{ s.status }}</span>
     </div>

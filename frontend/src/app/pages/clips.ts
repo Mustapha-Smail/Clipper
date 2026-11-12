@@ -5,6 +5,7 @@ import { AgoPipe, MegabytesPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { ClipListItem, ClipStatus } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 import { BriefCheck } from '../shared/brief-check';
 
 type Filter = 'all' | ClipStatus;
@@ -123,6 +124,7 @@ export class ClipsPage {
   protected readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
 
   protected readonly tabs: { value: Filter; label: string }[] = [
     { value: 'pending', label: 'To review' },
@@ -169,8 +171,9 @@ export class ClipsPage {
       () => this.toasts.error('The browser blocked copying. Open the video to copy the caption by hand.'));
   }
 
-  protected remove(clip: ClipListItem): void {
-    if (!confirm(`Delete the clip "${clip.title}"? The moment stays and can be rendered again.`)) return;
+  protected async remove(clip: ClipListItem): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Delete the clip "${clip.title}"?`, message: 'The moment stays and can be rendered again.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteClip(clip.id).subscribe({
       next: () => {
         this.clips.update((clips) => (clips ?? []).filter((c) => c.id !== clip.id));

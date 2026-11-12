@@ -52,6 +52,8 @@
   </div>
 </div>
 
+<app-confirm-host />
+
 <div class="toasts" role="status" aria-live="polite">
   @for (toast of toasts.items(); track toast.id) {
     <div class="toast" [class.error]="toast.kind === 'error'" (click)="toasts.dismiss(toast.id)">{{ toast.text }}</div>

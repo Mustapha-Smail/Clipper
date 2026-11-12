@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import config, jobs
+from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, VoiceTake, utcnow
@@ -231,14 +231,16 @@ def suggest_music(body: s.SuggestMusic | None = None, board: Storyboard = Depend
     try:
         if online:
             try:
-                searches = music_pick.searches(*args)
+                with llm.attribute(f"storyboard:{board.id}"):
+                    searches = music_pick.searches(*args)
             except RuntimeError:
                 searches = []    # the fallback genres still find something
             found = music_search.candidates(searches, {t.source_url for t in tracks if t.source_url})
         if not tracks and not found:
             return {"choice": None, "level_db": -18, "searches": searches, "ranking": [],
                     "reason": "No music to choose from: the library is empty and nothing was found online."}
-        pick = music_pick.suggest(*args, tracks, found)
+        with llm.attribute(f"storyboard:{board.id}"):
+            pick = music_pick.suggest(*args, tracks, found)
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
 

@@ -81,6 +81,7 @@ export const KIND_NAMES: Record<string, string> = {
   subtitles: 'Subtitle detection',
   script: 'Script',
   redraft: 'Script redraft',
+  spoken: 'Spoken rewrite',
   factcheck: 'Fact check',
   voice_ai: 'AI voice',
   voice_rec: 'Recording',

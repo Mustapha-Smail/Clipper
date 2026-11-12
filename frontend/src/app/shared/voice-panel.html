@@ -144,10 +144,20 @@
         </details>
       }
 
+      @if (!take.job && take.duration && !take.alignment) {
+        <div class="notice bad small">
+          <span>This take has not been timed against the script yet, so it cannot be used for a video.
+            @if (take.failure) { Last attempt: {{ take.failure }} }</span>
+        </div>
+      }
+
       @if (!take.job) {
         <div class="row">
           @if (!take.chosen && take.ready) { <button class="sm" (click)="choose(take)">Use for the video</button> }
-          @if (!take.current && take.duration) {
+          @if (take.duration && !take.alignment) {
+            <button class="sm primary" (click)="realign(take)" [disabled]="working()">Time it again</button>
+          }
+          @if (!take.current && take.duration && take.alignment) {
             <button class="sm quiet" (click)="realign(take)" [disabled]="working()">Time it against the current script</button>
           }
           <button class="sm quiet danger" (click)="remove(take)">Delete</button>

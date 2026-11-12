@@ -201,11 +201,50 @@ def _published(video: dict) -> datetime | None:
         return None
 
 
+SHORT_SECONDS = 50          # the length suggested for a Short
+
+
+def suggest_length(idea: Idea) -> dict:
+    """Long video or Short, and how long, from what the check found; the reason says how it was worked out."""
+    beats = len(idea.beats or [])
+    research = idea.research
+    if research and research.get("videos"):
+        videos = research["videos"]
+        long = sorted((v for v in videos if v["duration_s"] > LONG_FORM_S), key=lambda v: v["views"], reverse=True)
+        shorts = [v for v in videos if v["duration_s"] <= LONG_FORM_S]
+        best_long = long[0]["views"] if long else 0
+        best_short = max((v["views"] for v in shorts), default=0)
+        if shorts and best_short > 2 * best_long:
+            return {"video": "short", "minutes": None, "seconds": SHORT_SECONDS,
+                    "reason": f"Shorts lead this search: the best Short has {_views(best_short)} views, the best "
+                              f"long video {_views(best_long)}. A Short of about {SHORT_SECONDS} s."}
+        if long:
+            top = long[:5]
+            minutes = sorted(v["duration_s"] / 60 for v in top)
+            middle = minutes[len(minutes) // 2]
+            target = max(4, min(15, round(middle)))
+            if idea.format == "list":
+                target = max(target, 8)
+            return {"video": "long", "minutes": target, "seconds": None,
+                    "reason": f"The {len(top)} most-viewed long videos run {minutes[0]:.0f} to {minutes[-1]:.0f} min "
+                              f"(middle {middle:.0f})" + (", and a list needs room for each item" if
+                                                          idea.format == "list" and target > round(middle) else "")
+                              + f": about {target} min, between 4 and 15."}
+    if idea.format == "single" and beats <= 2:
+        return {"video": "short", "minutes": None, "seconds": SHORT_SECONDS,
+                "reason": f"One quick fact in {beats} beat{'s' if beats != 1 else ''}: it fits a Short "
+                          "(not checked on YouTube)."}
+    target = 6 if idea.format == "single" else 9 + max(0, beats - 5)
+    return {"video": "long", "minutes": target, "seconds": None,
+            "reason": f"Not checked on YouTube: {target} min is the usual length for "
+                      + ("one topic." if idea.format == "single" else f"a list of {beats} items.")}
+
+
 def assess(idea: Idea) -> dict:
     """A 0-100 score, the lines that explain it, warnings, and the demand figures shown on the card."""
     judgement = idea.judgement
     if judgement is None:
-        return {"score": None, "complete": False, "breakdown": [], "flags": [], "demand": None}
+        return {"score": None, "complete": False, "breakdown": [], "flags": [], "demand": None, "length": None}
 
     parts: list[tuple[str, float]] = []
     flags: list[str] = []
@@ -274,4 +313,5 @@ def assess(idea: Idea) -> dict:
         "breakdown": [{"label": label, "points": round(points, 1)} for label, points in parts],
         "flags": flags,
         "demand": demand,
+        "length": suggest_length(idea),
     }

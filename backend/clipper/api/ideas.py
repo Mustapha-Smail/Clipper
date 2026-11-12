@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Idea, Script
@@ -109,7 +110,8 @@ def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
 def validate_idea(idea: Idea = Depends(get_idea), db: Session = Depends(get_db)):
     """Check what YouTube has on the topic and have Claude judge the idea. About 10 to 20 seconds."""
     try:
-        ideas_mod.validate(idea)
+        with llm.attribute(f"idea:{idea.id}"):
+            ideas_mod.validate(idea)
     except RuntimeError as err:   # YouTubeError is one
         raise HTTPException(502, str(err)) from err
     db.flush()

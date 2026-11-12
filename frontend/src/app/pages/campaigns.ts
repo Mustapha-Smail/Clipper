@@ -5,6 +5,7 @@ import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { Campaign, CampaignDecision, CampaignPatch } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 
 type Tab = 'consider' | 'joined' | 'skipped' | 'closed';
 
@@ -18,6 +19,7 @@ type Tab = 'consider' | 'joined' | 'skipped' | 'closed';
 export class CampaignsPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
 
   protected readonly tabs: { value: Tab; label: string }[] = [
     { value: 'consider', label: 'To consider' },
@@ -113,8 +115,9 @@ export class CampaignsPage {
     this.patch(campaign, { ...values, listing_status: status as Campaign['listing_status'] }, 'Terms updated');
   }
 
-  protected remove(campaign: Campaign): void {
-    if (!confirm(`Remove "${campaign.title}" from the list? Videos made for it are kept.`)) return;
+  protected async remove(campaign: Campaign): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Remove "${campaign.title}" from the list?`, message: 'Videos made for it are kept.',
+      confirm: 'Remove', danger: true }))) return;
     this.api.deleteCampaign(campaign.id).subscribe({
       next: () => {
         this.toasts.ok('Campaign removed');

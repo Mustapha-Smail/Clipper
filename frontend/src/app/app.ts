@@ -1,10 +1,11 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ConfirmHost } from './core/confirm';
 import { JobsStore } from './core/jobs-store';
 import { Toasts } from './core/toast';
 
 @Component({
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ConfirmHost],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',

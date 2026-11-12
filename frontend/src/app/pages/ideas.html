@@ -151,6 +151,17 @@
               <div class="notice small">{{ flag }}</div>
             }
 
+            @if (idea.length; as len) {
+              <p class="suggested small">
+                <strong>Suggested: {{ len.video === 'short' ? 'a Short of about ' + len.seconds + ' s' : 'about ' + len.minutes + ' min' }}.</strong>
+                <span class="muted">{{ len.reason }}</span>
+                @if (len.video !== idea.video && !idea.script_id) {
+                  <button class="sm quiet" (click)="setVideo(idea, len.video)">
+                    {{ len.video === 'short' ? 'Make it Shorts only' : 'Make it a long video' }}</button>
+                }
+              </p>
+            }
+
             <div class="row">
               <button class="sm" (click)="check(idea)" [disabled]="checking().has(idea.id) || batch() !== null">
                 {{ checking().has(idea.id) ? 'Checking…' : idea.score === null ? 'Check it' : 'Check again' }}</button>
@@ -168,11 +179,23 @@
               @if (idea.script_id) {
                 <a class="btn sm primary" [routerLink]="['/scripts', idea.script_id]">Open the script</a>
               } @else if (idea.status === 'approved') {
-                <label class="length small">Length
-                  <input #mins type="number" min="1" max="30" [value]="idea.format === 'list' ? 10 : 6"
-                         aria-label="Target length in minutes" /> min</label>
-                <button class="sm primary" (click)="writeScript(idea, +mins.value)" [disabled]="starting() === idea.id">
-                  {{ starting() === idea.id ? 'Starting…' : 'Write the script' }}</button>
+                <div class="kind" role="group" aria-label="Kind of video">
+                  <button class="sm" [class.on]="idea.video === 'long'" (click)="setVideo(idea, 'long')">Long video</button>
+                  <button class="sm" [class.on]="idea.video === 'short'" (click)="setVideo(idea, 'short')">Shorts only</button>
+                </div>
+                @if (idea.video === 'short') {
+                  <label class="length small">Length
+                    <input #secs type="number" min="15" max="90" step="5" [value]="suggestedSeconds(idea)"
+                           aria-label="Target length in seconds" /> s</label>
+                  <button class="sm primary" (click)="writeScript(idea, +secs.value)" [disabled]="starting() === idea.id">
+                    {{ starting() === idea.id ? 'Starting…' : 'Write the Short' }}</button>
+                } @else {
+                  <label class="length small">Length
+                    <input #mins type="number" min="1" max="30" [value]="suggestedMinutes(idea)"
+                           aria-label="Target length in minutes" /> min</label>
+                  <button class="sm primary" (click)="writeScript(idea, +mins.value)" [disabled]="starting() === idea.id">
+                    {{ starting() === idea.id ? 'Starting…' : 'Write the script' }}</button>
+                }
               }
             </div>
 

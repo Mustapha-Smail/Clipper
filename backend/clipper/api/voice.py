@@ -36,7 +36,18 @@ def _take_jobs(db: Session) -> dict[int, Job]:
     return {job.take_id: job for job in running if job.take_id}
 
 
-def take_out(take: VoiceTake, script: Script, job: Job | None) -> s.TakeOut:
+def _failures(db: Session) -> dict[int, str]:
+    """The error of the latest failed voice job of each take."""
+    failed = db.scalars(select(Job).where(Job.state == "failed", Job.kind.in_(("voice_ai", "voice_rec", "align")))
+                        .order_by(Job.id.desc()).limit(200)).all()
+    out: dict[int, str] = {}
+    for job in failed:
+        if job.take_id and job.take_id not in out:
+            out[job.take_id] = (job.error or "Failed").strip().splitlines()[0][:400]
+    return out
+
+
+def take_out(take: VoiceTake, script: Script, job: Job | None, failure: str | None = None) -> s.TakeOut:
     alignment = take.alignment
     return s.TakeOut(
         id=take.id, script_id=take.script_id, source=take.source, voice=take.voice, speed=take.speed,
@@ -45,6 +56,7 @@ def take_out(take: VoiceTake, script: Script, job: Job | None) -> s.TakeOut:
         ready=bool(take.path and alignment and job is None),
         current=take.script_hash == script_mod.text_hash(script.sections),
         job=s.JobOut.model_validate(job) if job else None,
+        failure=failure if job is None and not alignment else None,
     )
 
 
@@ -101,7 +113,8 @@ def voice_sample(body: s.VoiceSample):
 @router.get("/scripts/{script_id}/takes", response_model=list[s.TakeOut])
 def list_takes(script: Script = Depends(get_script), db: Session = Depends(get_db)):
     running = _take_jobs(db)
-    return [take_out(t, script, running.get(t.id)) for t in reversed(script.takes)]
+    failures = _failures(db)
+    return [take_out(t, script, running.get(t.id), failures.get(t.id)) for t in reversed(script.takes)]
 
 
 @router.post("/scripts/{script_id}/takes/ai", response_model=s.TakeOut, status_code=202)

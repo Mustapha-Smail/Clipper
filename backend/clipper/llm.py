@@ -12,8 +12,10 @@ call is logged (tokens, web searches, estimated cost) so Settings can show
 where the money goes.
 """
 
+import contextvars
 import logging
 import time
+from contextlib import contextmanager
 
 from pydantic import BaseModel
 
@@ -53,6 +55,25 @@ PRICES = {
 SEARCH_PRICE = 0.01
 
 PROVIDERS = {"anthropic": claude, "openai": openai_compat}
+
+# What the calls are for, so a video's cost can be added up: "idea:3", "script:4",
+# "storyboard:8", "video:12". The worker sets `job_ref` for the job it runs (one at a
+# time, used from any thread); API requests use `attribute()`.
+_ref: contextvars.ContextVar[str | None] = contextvars.ContextVar("ai_ref", default=None)
+job_ref: str | None = None
+
+
+@contextmanager
+def attribute(ref: str | None):
+    token = _ref.set(ref)
+    try:
+        yield
+    finally:
+        _ref.reset(token)
+
+
+def current_ref() -> str | None:
+    return _ref.get() or job_ref
 
 KNOWN = {   # shown first in Settings, with a short description
     "anthropic": {"claude-opus-5-5": "Opus 5.5 · best writing", "claude-sonnet-5-5": "Sonnet 5.5 · balanced",
@@ -123,7 +144,8 @@ def _record(task: str, tier: str, provider: str, model: str, usage: dict, starte
                            output_tokens=usage.get("output", 0),
                            cache_read_tokens=usage.get("cache_read", 0), searches=usage.get("searches", 0),
                            cost_usd=estimate(model, usage) if not error else None, ok=error is None,
-                           error=(error or "")[:500], duration_s=round(time.monotonic() - started, 2)))
+                           error=(error or "")[:500], duration_s=round(time.monotonic() - started, 2),
+                           ref=current_ref()))
     except Exception:  # noqa: BLE001 - the log must never break the call it describes
         log.warning("could not record AI usage", exc_info=True)
 
@@ -144,6 +166,28 @@ def ask(task: str, system: str, content, output_format: type[BaseModel], effort:
         raise
     _record(task, tier, provider, model, usage, started)
     return parsed
+
+
+def costs(steps: list[tuple[str, list[str]]]) -> dict:
+    """What AI cost for the given steps: [(step label, [refs])] -> lines per step and task, and the total."""
+    from sqlalchemy import func, select
+
+    refs = {ref: step for step, group in steps for ref in group}
+    lines: dict[tuple[str, str], dict] = {}
+    with session_scope() as db:
+        rows = db.execute(select(AiUsage.ref, AiUsage.task, func.count(), func.sum(AiUsage.cost_usd))
+                          .where(AiUsage.ref.in_(list(refs))).group_by(AiUsage.ref, AiUsage.task)).all()
+    for ref, task, calls, cost in rows:
+        key = (refs[ref], task)
+        line = lines.setdefault(key, {"step": refs[ref], "task": task, "label": TASKS.get(task, (0, task))[1],
+                                      "calls": 0, "cost": 0.0})
+        line["calls"] += calls
+        line["cost"] += cost or 0.0
+    order = [step for step, _ in steps]
+    out = sorted(lines.values(), key=lambda x: (order.index(x["step"]), -x["cost"]))
+    for line in out:
+        line["cost"] = round(line["cost"], 4)
+    return {"lines": out, "total": round(sum(x["cost"] for x in out), 4)}
 
 
 class Sources:

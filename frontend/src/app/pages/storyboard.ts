@@ -6,6 +6,8 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard, SuggestedTrack } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
+import { CostReportView } from '../shared/cost-report';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -48,13 +50,14 @@ function blank(kind: StoryElement['kind']): StoryElement {
 /** One storyboard: its scenes with a preview frame each, every element editable; render and review. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
 export class StoryboardPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
   protected readonly store = inject(JobsStore);
   private readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id'));
@@ -325,14 +328,14 @@ export class StoryboardPage {
     this.change(scene, { lines: text.split('\n') });
   }
 
-  protected removeScene(index: number): void {
+  protected async removeScene(index: number): Promise<void> {
     const what = this.ink() ? 'shot' : 'scene';
     if (index === 0) {
       this.toasts.error(`The first ${what} cannot be removed; edit it instead`);
       return;
     }
     const after = this.ink() ? 'Its beats go too.' : 'The previous scene stays on screen for its words.';
-    if (!confirm(`Remove this ${what}? ${after}`)) return;
+    if (!(await this.confirm.ask({ title: `Remove this ${what}?`, message: after, confirm: 'Remove', danger: true }))) return;
     this.scenes.update((list) => list.filter((_, i) => i !== index));
   }
 
@@ -397,8 +400,9 @@ export class StoryboardPage {
     else go();
   }
 
-  protected replan(): void {
-    if (!confirm('Plan all scenes again from scratch? Your edits are replaced.')) return;
+  protected async replan(): Promise<void> {
+    if (!(await this.confirm.ask({ title: 'Plan again from scratch?', message: 'Your edits are replaced by a new plan.',
+      confirm: 'Plan again', danger: true }))) return;
     this.api.replan(this.id).subscribe({
       next: () => {
         this.store.refresh();
@@ -415,9 +419,10 @@ export class StoryboardPage {
     });
   }
 
-  protected remove(): void {
+  protected async remove(): Promise<void> {
     const board = this.board();
-    if (!board || !confirm('Delete this storyboard and its video?')) return;
+    if (!board || !(await this.confirm.ask({ title: 'Delete this storyboard?', message: 'Its rendered video is deleted too.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteStoryboard(this.id).subscribe({
       next: () => this.router.navigate(['/scripts', board.script_id]),
       error: (err) => this.toasts.error(err),

@@ -510,8 +510,9 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
     with _still_lock:
         composer = _still_cache.get(key)
         if composer is None:
-            composer = composer_for(board, props, settings, None)
             _still_cache.clear()
+            composer = composer_for(board, props, settings, None)
+            composer.cache_limit = 80     # previews: one frame here and there, not a whole video
             _still_cache[key] = composer
         image = composer.frame(max(0.0, min(t, composer.duration - 0.01))).convert("RGB")
     image = image.resize((width, round(image.height * width / image.width)), Image.LANCZOS)

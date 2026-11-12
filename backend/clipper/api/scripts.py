@@ -9,7 +9,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import jobs
+from .. import jobs, llm
 from ..db import get_db
 from ..db.models import Idea, Job, Script
 from ..studio import script as script_mod
@@ -80,9 +80,12 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
     if idea is None:
         raise HTTPException(404, "Idea not found")
     idea.status = "approved"
+    video = (body.video if body else None) or idea.video or "long"
     minutes = (body.target_minutes if body else None) or DEFAULT_MINUTES.get(idea.format, 6)
+    seconds = (body.target_seconds if body else None) or 50
     script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, format=idea.format,
-                    target_minutes=minutes, sections=[])
+                    target_minutes=1 if video == "short" else minutes, video=video, target_seconds=seconds,
+                    sections=[])
     db.add(script)
     db.flush()
     job = _start(db, script, "script")
@@ -135,7 +138,8 @@ def save_sections(body: s.ScriptSections, script: Script = Depends(get_script), 
 def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script)):
     """A new version of one section, following your instruction. Not saved: you keep or discard it."""
     try:
-        text = script_mod.rewrite_section(script, body.key, body.instruction)
+        with llm.attribute(f"script:{script.id}"):
+            text = script_mod.rewrite_section(script, body.key, body.instruction)
     except ValueError as err:
         raise HTTPException(404, str(err)) from err
     except RuntimeError as err:

@@ -161,6 +161,15 @@ import { Toasts } from '../core/toast';
                 </select>
                 <small>Kokoro reads one sentence at a time and pauses like a narrator: longer after questions and punchlines.</small>
               </label>
+              <label class="field"><span>Timing model</span>
+                <select [(ngModel)]="f.voice_align_model">
+                  <option value="small">Small (recommended)</option>
+                  <option value="medium">Medium</option>
+                  <option value="large-v3-turbo">Large v3 turbo</option>
+                </select>
+                <small>Whisper only has to find words the script already knows. Small is quick and light; the large
+                  model can run Docker out of memory.</small>
+              </label>
             </div>
           </section>
 

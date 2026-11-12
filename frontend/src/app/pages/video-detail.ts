@@ -7,7 +7,9 @@ import { LengthPipe, MegabytesPipe, formatTime, parseTime } from '../core/format
 import { JobsStore } from '../core/jobs-store';
 import { AppSettings, Campaign, ClipStatus, Moment, MomentInput, SubtitleMode, VideoDetail } from '../core/models';
 import { Toasts } from '../core/toast';
+import { Confirm } from '../core/confirm';
 import { BriefCheck } from '../shared/brief-check';
+import { CostReportView } from '../shared/cost-report';
 import { JobCard } from '../shared/job-card';
 
 /** The editable copy of a moment shown in a card. `moment` is the saved version. */
@@ -31,7 +33,7 @@ const MODE_LABELS: Record<SubtitleMode, string> = {
 
 @Component({
   selector: 'app-video-detail-page',
-  imports: [FormsModule, RouterLink, JobCard, BriefCheck, LengthPipe, MegabytesPipe],
+  imports: [FormsModule, RouterLink, JobCard, BriefCheck, LengthPipe, MegabytesPipe, CostReportView],
   templateUrl: './video-detail.html',
   styleUrl: './video-detail.scss',
 })
@@ -39,6 +41,7 @@ export class VideoDetailPage {
   protected readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
 
   /** Route parameter. */
@@ -188,9 +191,9 @@ export class VideoDetailPage {
       key: this.nextKey++, id: null, title: '', hook: '', start: '', end: '', caption: '', moment: null }]);
   }
 
-  protected removeMoment(draft: Draft): void {
+  protected async removeMoment(draft: Draft): Promise<void> {
     const warning = draft.moment?.clip ? 'Remove this moment and delete its rendered clip?' : 'Remove this moment?';
-    if (!confirm(warning)) return;
+    if (!(await this.confirm.ask({ title: warning, confirm: 'Remove', danger: true }))) return;
     this.drafts.update((drafts) => drafts.filter((d) => d !== draft));
     if (draft.id !== null) this.save();
   }
@@ -236,9 +239,10 @@ export class VideoDetailPage {
     });
   }
 
-  protected setCampaign(id: number | null): void {
+  protected async setCampaign(id: number | null): Promise<void> {
     const replace = id !== null && (!this.video()?.brief ||
-      confirm("Replace this video's brief with the campaign's rules?"));
+      await this.confirm.ask({ title: "Replace this video's brief?", message: "The campaign's rules replace the brief you have now.",
+        confirm: 'Replace', cancel: 'Keep my brief' }));
     this.api.updateVideo(this.id(), { campaign_id: id, use_campaign_brief: replace }).subscribe({
       next: (video) => {
         this.video.set(video);
@@ -268,10 +272,11 @@ export class VideoDetailPage {
       .pipe(tap(() => (fold.open = false))));
   }
 
-  protected deleteSourceFile(): void {
+  protected async deleteSourceFile(): Promise<void> {
     const video = this.video();
-    if (!video || !confirm(`Delete the source video file (${video.file_mb} MB)? Clips, transcript and moments are kept, ` +
-      'but you cannot render new clips until you add the video again.')) return;
+    if (!video || !(await this.confirm.ask({ title: `Delete the source video file (${video.file_mb} MB)?`,
+      message: 'Clips, transcript and moments are kept, but you cannot render new clips until you add the video again.',
+      confirm: 'Delete the file', danger: true }))) return;
     this.api.deleteSourceFile(this.id()).subscribe({
       next: () => {
         this.toasts.ok('Source file deleted');
@@ -281,11 +286,12 @@ export class VideoDetailPage {
     });
   }
 
-  protected deleteVideo(): void {
+  protected async deleteVideo(): Promise<void> {
     const video = this.video();
     if (!video) return;
     const clips = video.clip_count ? ` and its ${video.clip_count} rendered ${video.clip_count === 1 ? 'clip' : 'clips'}` : '';
-    if (!confirm(`Delete "${video.title}"${clips}? This cannot be undone.`)) return;
+    if (!(await this.confirm.ask({ title: `Delete "${video.title}"${clips}?`, message: 'This cannot be undone.',
+      confirm: 'Delete', danger: true }))) return;
     this.api.deleteVideo(this.id()).subscribe({
       next: () => {
         this.toasts.ok('Video deleted');

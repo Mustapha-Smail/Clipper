@@ -13,7 +13,7 @@ import socket
 import threading
 import time
 
-from . import jobs, pipeline
+from . import jobs, llm, pipeline
 from . import settings as settings_mod
 from .db import session_scope
 from .db.models import Job, Worker, utcnow
@@ -35,6 +35,9 @@ def run_job(job_id: int) -> None:
 
     rep = jobs.JobReporter(job_id)
     started = time.monotonic()
+    llm.job_ref = (f"storyboard:{params['storyboard_id']}" if params.get("storyboard_id")
+                   else f"script:{params['script_id']}" if params.get("script_id")
+                   else f"video:{video_id}" if video_id else None)
     log.info("job started", extra={"job_id": job_id, "kind": kind, "video_id": video_id})
     try:
         settings = settings_mod.load()
@@ -90,6 +93,26 @@ def run_job(job_id: int) -> None:
         outcome = "failed"
     log.info("job finished", extra={"job_id": job_id, "outcome": outcome,
                                     "duration_s": round(time.monotonic() - started, 1)})
+    llm.job_ref = None
+    release_memory()
+
+
+def release_memory() -> None:
+    """Hand freed memory back to the system between jobs.
+
+    Renders and voices leave large freed blocks inside the process; on Linux
+    glibc keeps them unless asked, and the next job's child process (Whisper)
+    can then run out of memory in Docker.
+    """
+    import gc
+
+    gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError:      # not glibc (macOS): nothing to do
+        pass
 
 
 def _heartbeat(worker_id: str, stop: threading.Event) -> None:

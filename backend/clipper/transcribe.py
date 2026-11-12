@@ -148,6 +148,10 @@ def transcribe_isolated(src_dir: Path, language: str, engine: str, model: str,
         if proc.poll() is None:
             proc.kill()
         proc.wait()
+    if proc.returncode in (-9, 137):
+        raise RuntimeError(f"Transcription ran out of memory ({model} model) and was stopped by the system. "
+                           "Pick a smaller Whisper model in Settings, or give Docker more memory "
+                           "(Docker Desktop, Settings, Resources).")
     if proc.returncode != 0:
         raise RuntimeError("Transcription failed.\n" + "\n".join(tail))
     return json.loads(out_path.read_text())

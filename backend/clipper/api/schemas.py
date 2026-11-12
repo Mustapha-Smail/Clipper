@@ -226,6 +226,7 @@ class IdeaOut(Model):
     beats: list[IdeaBeat]
     angle: str
     format: str
+    video: Literal["long", "short"] = "long"
     search_query: str
     origin: str
     status: IdeaStatus
@@ -240,6 +241,7 @@ class IdeaOut(Model):
     breakdown: list[ScoreLine]
     flags: list[str]
     demand: IdeaDemand | None
+    length: dict | None = None      # after a check: {video, minutes, seconds, reason}
     script_id: int | None = None
 
 
@@ -270,9 +272,24 @@ class IdeaPatch(BaseModel):
     answer: str | None = None
     angle: str | None = None
     search_query: str | None = Field(None, min_length=2)
+    video: Literal["long", "short"] | None = None
 
 
 # --- videos ---------------------------------------------------------------------
+
+class CostLine(BaseModel):
+    step: str
+    task: str
+    label: str
+    calls: int
+    cost: float
+
+
+class CostReport(BaseModel):
+    lines: list[CostLine]
+    total: float
+    note: str = ""
+
 
 class SubtitleResult(BaseModel):
     detected: bool
@@ -417,6 +434,8 @@ class ScriptSummary(Model):
     title: str
     format: str
     target_minutes: int
+    video: Literal["long", "short"] = "long"
+    target_seconds: int = 50
     status: Literal["draft", "approved"]
     created_at: UtcDatetime
     updated_at: UtcDatetime
@@ -439,6 +458,8 @@ class ScriptOut(ScriptSummary):
 
 class ScriptCreate(BaseModel):
     target_minutes: int | None = Field(None, ge=1, le=30, description="Defaults to 6 for one topic, 10 for a list")
+    video: Literal["long", "short"] | None = Field(None, description="Defaults to the idea's choice")
+    target_seconds: int | None = Field(None, ge=15, le=90, description="For a Short; defaults to 50")
 
 
 class ScriptPatch(BaseModel):
@@ -529,6 +550,7 @@ class TakeOut(Model):
     ready: bool
     current: bool          # made from the script as it is now
     job: JobOut | None
+    failure: str | None = None    # why the last attempt to make or time it failed
 
 
 class AiTakeCreate(BaseModel):

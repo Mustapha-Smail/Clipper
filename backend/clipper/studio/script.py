@@ -55,10 +55,18 @@ def plain_text(script: Script) -> str:
 
 def _brief(script: Script) -> str:
     idea = script.idea
-    lines = [f"Title: {script.title}", f"Channel theme: {script.theme}",
-             f"Format: {'one topic' if script.format == 'single' else 'a list, one chapter per item'}",
-             f"Target length: about {script.target_minutes} minutes "
-             f"({script.target_minutes * WORDS_PER_MINUTE} words of narration)"]
+    if script.video == "short":
+        words = round(script.target_seconds * WORDS_PER_MINUTE / 60)
+        lines = [f"Title: {script.title}", f"Channel theme: {script.theme}",
+                 "Format: a YouTube Short only (vertical, no long video). Write exactly ONE section: the hook in "
+                 "the first two seconds, then the surprising answer, ending on the payoff line. No intro, no "
+                 "outro, no call to subscribe.",
+                 f"Target length: about {script.target_seconds} seconds ({words} words of narration)"]
+    else:
+        lines = [f"Title: {script.title}", f"Channel theme: {script.theme}",
+                 f"Format: {'one topic' if script.format == 'single' else 'a list, one chapter per item'}",
+                 f"Target length: about {script.target_minutes} minutes "
+                 f"({script.target_minutes * WORDS_PER_MINUTE} words of narration)"]
     if idea is not None:
         lines += [f"Hook: {idea.hook}", f"The surprising answer: {idea.answer}", f"Angle: {idea.angle}", "Beats:"]
         lines += [f"- {b['text']}" for b in idea.beats]
@@ -163,6 +171,8 @@ def write(script_id: int, rep: Reporter) -> None:
     rep.info("Writing the narration")
     draft = llm.ask("script_write", WRITE, prompt, Draft, effort="high")
     sections = [{"key": uuid.uuid4().hex[:8], **s.model_dump()} for s in draft.sections]
+    if script.video == "short":       # a Short is one section, and it is the Short
+        sections = [{**sections[0], "text": "\n\n".join(s["text"] for s in sections), "short": True}]
     words = word_count(sections)
     rep.info(f"Draft written: {len(sections)} sections, {words} words, about {words / WORDS_PER_MINUTE:.1f} minutes")
     with session_scope() as db:

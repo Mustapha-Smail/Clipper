@@ -386,8 +386,8 @@ def align(take_id: int, settings: Settings, rep: Reporter) -> None:
         raise RuntimeError("The take has no audio yet")
     folder = take_dir(take.script_id, take.id)
     engine = resolve_whisper_engine(settings)
-    rep.info(f"Transcribing the take ({engine}, {settings.whisper_model})")
-    transcript = transcribe_mod.transcribe_isolated(folder, settings.language, engine, settings.whisper_model,
+    rep.info(f"Transcribing the take ({engine}, {settings.voice_align_model})")
+    transcript = transcribe_mod.transcribe_isolated(folder, settings.language, engine, settings.voice_align_model,
                                                     force=True, progress=rep.progress, media=Path(take.path))
     result = match(script.sections, transcript["words"])
     timeline_path(take).write_text(json.dumps(result.pop("timeline")))
