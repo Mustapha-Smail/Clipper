@@ -178,25 +178,74 @@ def _download_kokoro(rep: Reporter) -> None:
         partial.replace(target)
 
 
-def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter) -> None:
+PAUSE_SCALE = {"tight": 0.7, "natural": 1.0, "relaxed": 1.3}
+ROOM_TONE_DB = -62
+
+
+def sentences(text: str) -> list[str]:
+    """Split narration into sentences (an ellipsis ends one too); very long ones into pieces."""
+    out = []
+    for sentence in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        if sentence:
+            out.extend(_chunks(sentence) if len(sentence) > 400 else [sentence])
+    return out
+
+
+def delivery(sentence: str, last_in_paragraph: bool, rng: np.random.Generator) -> tuple[float, float]:
+    """(speed factor, pause after) for one sentence, the way a narrator would say it.
+
+    Short punchy lines are a touch slower and get room to land; long ones run a
+    little quicker; questions and ellipses hold a beat; a paragraph ends on a breath.
+    """
+    words = len(sentence.split())
+    speed = (0.94 if words <= 4 else 1.04 if words >= 18 else 1.0) * rng.uniform(0.97, 1.03)
+    if last_in_paragraph:
+        pause = 0.95
+    elif sentence.endswith("?"):
+        pause = 0.55
+    elif sentence.endswith("…"):
+        pause = 0.7
+    elif words <= 4:
+        pause = 0.65
+    else:
+        pause = 0.42
+    return speed, pause * rng.uniform(0.85, 1.15)
+
+
+def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter,
+                 pauses: str = "natural") -> None:
+    """Read the sections one sentence at a time, with a narrator's pauses and pace, over quiet room tone."""
     if voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
     _download_kokoro(rep)
     from kokoro_onnx import Kokoro
 
     engine = Kokoro(str(kokoro_dir() / "kokoro-v1.0.fp16.onnx"), str(kokoro_dir() / "voices-v1.0.bin"))
-    pieces = [(i, chunk) for i, s in enumerate(sections) for chunk in _chunks(s["text"])]
+    rng = np.random.default_rng(len(sections) * 7919 + len(voice))
+    scale = PAUSE_SCALE.get(pauses, 1.0)
+    lines = []   # (sentence, last in its paragraph, last in its section)
+    for i, section in enumerate(sections):
+        paragraphs = [p for p in re.split(r"\n\s*\n", section["text"]) if p.strip()] or [section["text"]]
+        for pi, paragraph in enumerate(paragraphs):
+            parts = sentences(paragraph)
+            for si, sentence in enumerate(parts):
+                lines.append((sentence, si == len(parts) - 1, si == len(parts) - 1 and pi == len(paragraphs) - 1
+                              and i < len(sections) - 1))
     audio, rate = [], 24_000
-    for n, (section_index, chunk) in enumerate(pieces):
-        if n and pieces[n - 1][0] != section_index:
-            audio.append(np.zeros(int(rate * SECTION_PAUSE), dtype=np.float32))
-        elif n:
-            audio.append(np.zeros(int(rate * SENTENCE_PAUSE), dtype=np.float32))
-        samples, rate = engine.create(chunk, voice=voice, speed=speed, lang="en-us")
+    for n, (sentence, paragraph_end, section_end) in enumerate(lines):
+        factor, pause = delivery(sentence, paragraph_end, rng)
+        samples, rate = engine.create(sentence, voice=voice, speed=max(0.5, min(2.0, speed * factor)), lang="en-us")
         audio.append(samples.astype(np.float32))
-        rep.progress(0.3 + 0.7 * (n + 1) / len(pieces), f"Speaking: {n + 1} of {len(pieces)} passages")
+        if section_end:
+            pause = max(pause, SECTION_PAUSE + 0.3)
+        audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
+        rep.progress(0.3 + 0.7 * (n + 1) / len(lines), f"Speaking: {n + 1} of {len(lines)} sentences")
     del engine
-    _write_wav(out, np.concatenate(audio), rate)
+    track = np.concatenate(audio)
+    # Room tone: very quiet filtered noise, so a pause sounds like a room, not like a switch.
+    noise = np.convolve(rng.standard_normal(len(track)), np.ones(40) / 40, mode="same").astype(np.float32)
+    track += noise * (10 ** (ROOM_TONE_DB / 20)) / (noise.std() + 1e-9)
+    _write_wav(out, track, rate)
 
 
 def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json") -> bytes:
@@ -241,12 +290,12 @@ def elevenlabs_voices() -> list[dict]:
 _sample_lock = threading.Lock()
 
 
-def sample_kokoro(voice: str, speed: float, text: str) -> Path:
+def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") -> Path:
     """A few seconds of `text` in a Kokoro voice, cached so each sample is made once."""
     if voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
     text = " ".join(text.split())[:300] or "Your fridge has never made cold. It just moves heat around."
-    key = hashlib.sha256(f"{voice}|{speed:.2f}|{text}".encode()).hexdigest()[:20]
+    key = hashlib.sha256(f"{voice}|{speed:.2f}|{pauses}|{text}|v2".encode()).hexdigest()[:20]
     folder = config.data_dir() / "cache" / "voice-samples"
     out = folder / f"{key}.wav"
     if out.is_file():
@@ -255,7 +304,7 @@ def sample_kokoro(voice: str, speed: float, text: str) -> Path:
     with _sample_lock:   # one sample at a time keeps memory flat
         if not out.is_file():
             partial = out.with_suffix(".partial.wav")
-            speak_kokoro([{"text": text}], voice, speed, partial, Reporter())   # the base reporter is silent
+            speak_kokoro([{"text": text}], voice, speed, partial, Reporter(), pauses)   # the base reporter is silent
             partial.replace(out)
     return out
 
@@ -298,9 +347,10 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     sections = [s for s in script.sections if s["text"].strip()]
     if not sections:
         raise RuntimeError("The script has no text to speak")
-    rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}")
+    rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}"
+             + (f", {take.pauses} pauses" if take.source == "kokoro" else ""))
     if take.source == "kokoro":
-        speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep)
+        speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
     elif take.source == "elevenlabs":
         speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep)
     else:

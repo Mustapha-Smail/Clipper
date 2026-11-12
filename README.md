@@ -141,6 +141,18 @@ Below the script, the Voice panel makes takes of the script as it is saved:
   205 MB, downloads once into `data/cache/kokoro`), or ElevenLabs with
   `ELEVENLABS_API_KEY` in `.env` (your account's voices appear in the list).
 
+**Sounding human.** Scripts are written for the ear (contractions, questions to
+the viewer, varied rhythm, signposts like "So." and "Here's the thing:", beats
+marked with "…", a new paragraph where the narrator breathes). For a script
+written before that, "Make it sound spoken" rewrites the whole text in one call,
+keeping every fact; "Switch versions" swaps back. Kokoro reads one sentence at a
+time: short punchy lines a touch slower with room to land, long ones a little
+quicker, longer pauses after questions, ellipses and paragraphs, quiet room tone
+instead of digital silence. "Pauses" (tight, natural, relaxed) sets how much
+room it leaves; natural pauses make a video about 15 to 20 percent longer than
+tight ones. Kokoro still has no breaths or emotion: your own recording, or
+ElevenLabs, sounds more human.
+
 To compare AI voices before making a take, open "Compare voices": each Kokoro
 voice reads the start of your script (free, cached after the first play); each
 ElevenLabs voice plays ElevenLabs' own preview clip (no credits used).

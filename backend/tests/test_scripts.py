@@ -143,3 +143,39 @@ def test_write_refuses_without_research(app_env, idea):
         script_id = row.id
     with pytest.raises(RuntimeError, match="Research the script first"):
         script_mod.write(script_id, ConsoleReporter())
+
+
+
+def test_spoken_rewrite_keeps_keys_and_can_be_undone(client, idea, fake_claude, monkeypatch):
+    body = client.post(f"/api/v1/ideas/{idea}/script", json={}).json()
+    run_job(body["job"]["id"])
+    with session_scope() as db:
+        db.get(Job, body["job"]["id"]).state = "succeeded"
+    before = client.get(f"/api/v1/scripts/{body['id']}").json()
+    keys = [s["key"] for s in before["sections"]]
+
+    def fake_ask(task, system, content, output_format, effort="high"):
+        assert task == "script_write" and "Write for the ear" in system and keys[0] in content
+        return script_mod.SpokenScript(sections=[
+            script_mod.SpokenSection(key=keys[0], text="So. Your fridge? Never made cold."),
+            script_mod.SpokenSection(key="made-up", text="Nope.")])
+    monkeypatch.setattr(llm, "ask", fake_ask)
+    job = client.post(f"/api/v1/scripts/{body['id']}/spoken").json()
+    assert job["stages"] == ["spoken"]
+    script_mod.make_spoken(body["id"], ConsoleReporter())
+    with session_scope() as db:
+        db.get(Job, job["id"]).state = "succeeded"
+    after = client.get(f"/api/v1/scripts/{body['id']}").json()
+    assert [s["key"] for s in after["sections"]] == keys                       # same sections, same order
+    assert after["sections"][0]["text"] == "So. Your fridge? Never made cold."
+    assert after["sections"][1]["text"] == before["sections"][1]["text"]      # not returned: kept
+    assert after["can_undo_rewrite"] and not after["checked_current"]
+
+    undone = client.post(f"/api/v1/scripts/{body['id']}/undo-rewrite").json()
+    assert undone["sections"][0]["text"] == before["sections"][0]["text"] and undone["can_undo_rewrite"]
+    redone = client.post(f"/api/v1/scripts/{body['id']}/undo-rewrite").json()
+    assert redone["sections"][0]["text"].startswith("So.")
+
+
+def test_new_scripts_are_written_for_the_ear():
+    assert "Write for the ear" in script_mod.WRITE and "Contractions" in script_mod.WRITE

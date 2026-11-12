@@ -424,6 +424,7 @@ class ScriptOut(ScriptSummary):
     research: ScriptResearch | None
     sections: list[ScriptSection]
     claims: list[ScriptClaim] | None
+    can_undo_rewrite: bool = False
 
 
 class ScriptCreate(BaseModel):
@@ -462,6 +463,7 @@ class VoiceChoice(BaseModel):
 class VoiceSample(BaseModel):
     voice: str = Field(min_length=2, max_length=64)
     speed: float = Field(1.0, ge=0.7, le=1.3)
+    pauses: Literal["tight", "natural", "relaxed"] = "natural"
     text: str = Field("", max_length=600)
 
 
@@ -508,6 +510,7 @@ class TakeOut(Model):
     source: Literal["recording", "kokoro", "elevenlabs"]
     voice: str
     speed: float | None
+    pauses: str | None = None
     duration: float | None
     chosen: bool
     created_at: UtcDatetime
@@ -522,6 +525,7 @@ class AiTakeCreate(BaseModel):
     engine: Literal["kokoro", "elevenlabs"]
     voice: str = Field(min_length=1, max_length=64)
     speed: float = Field(1.0, ge=0.7, le=1.3)
+    pauses: Literal["tight", "natural", "relaxed"] = "natural"
 
 
 # --- studio storyboards and assets ---------------------------------------------------------

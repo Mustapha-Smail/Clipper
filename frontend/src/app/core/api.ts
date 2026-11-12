@@ -147,6 +147,12 @@ export class Api {
   factcheck(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/factcheck`, {});
   }
+  makeSpoken(id: number): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/scripts/${id}/spoken`, {});
+  }
+  undoRewrite(id: number): Observable<Script> {
+    return this.http.post<Script>(`${BASE}/scripts/${id}/undo-rewrite`, {});
+  }
   redraft(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/redraft`, {});
   }
@@ -164,8 +170,8 @@ export class Api {
   takes(scriptId: number): Observable<VoiceTake[]> {
     return this.http.get<VoiceTake[]>(`${BASE}/scripts/${scriptId}/takes`);
   }
-  createAiTake(scriptId: number, engine: string, voice: string, speed: number): Observable<VoiceTake> {
-    return this.http.post<VoiceTake>(`${BASE}/scripts/${scriptId}/takes/ai`, { engine, voice, speed });
+  createAiTake(scriptId: number, engine: string, voice: string, speed: number, pauses: string): Observable<VoiceTake> {
+    return this.http.post<VoiceTake>(`${BASE}/scripts/${scriptId}/takes/ai`, { engine, voice, speed, pauses });
   }
   uploadRecording(scriptId: number, file: Blob, name: string): Observable<VoiceTake> {
     const form = new FormData();
@@ -234,8 +240,8 @@ export class Api {
     return this.http.post<MusicTrack>(`${BASE}/music/import`, { openverse_id: openverseId });
   }
   /** A few seconds of `text` in a Kokoro voice, as a playable object URL. */
-  voiceSample(voice: string, speed: number, text: string): Observable<Blob> {
-    return this.http.post(`${BASE}/voices/sample`, { voice, speed, text }, { responseType: 'blob' });
+  voiceSample(voice: string, speed: number, text: string, pauses: string): Observable<Blob> {
+    return this.http.post(`${BASE}/voices/sample`, { voice, speed, text, pauses }, { responseType: 'blob' });
   }
   suggestMusic(storyboardId: number, online: boolean): Observable<MusicSuggestion> {
     return this.http.post<MusicSuggestion>(`${BASE}/storyboards/${storyboardId}/suggest-music`, { online });

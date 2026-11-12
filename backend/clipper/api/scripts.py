@@ -57,8 +57,10 @@ def summary_out(script: Script, job: Job | None) -> s.ScriptSummary:
 
 
 def script_out(script: Script, job: Job | None) -> s.ScriptOut:
-    fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job"}
-    return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job))
+    fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job",
+                                              "can_undo_rewrite"}
+    return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
+                       can_undo_rewrite=bool(script.previous_sections))
 
 
 def _require_idle(db: Session, script: Script) -> None:
@@ -146,6 +148,26 @@ def check_facts(script: Script = Depends(get_script), db: Session = Depends(get_
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
     return _start(db, script, "factcheck")
+
+
+@router.post("/scripts/{script_id}/spoken", response_model=s.JobOut, status_code=202)
+def make_spoken(script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Rewrite the whole script so it sounds spoken, keeping the facts. Undo brings the old text back."""
+    if not script.sections:
+        raise HTTPException(409, "The script has no text yet")
+    return _start(db, script, "spoken")
+
+
+@router.post("/scripts/{script_id}/undo-rewrite", response_model=s.ScriptOut)
+def undo_rewrite(script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Swap back to the text from before the last whole-script rewrite (and again to redo)."""
+    _require_idle(db, script)
+    if not script.previous_sections:
+        raise HTTPException(409, "There is no earlier version to go back to")
+    script.sections, script.previous_sections = script.previous_sections, script.sections
+    script.status = "draft"
+    db.flush()
+    return script_out(script, None)
 
 
 @router.post("/scripts/{script_id}/redraft", response_model=s.JobOut, status_code=202)

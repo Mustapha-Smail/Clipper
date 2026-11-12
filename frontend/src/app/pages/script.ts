@@ -209,6 +209,26 @@ export class ScriptPage {
     this.queue(this.api.factcheck(this.id), 'Fact check queued');
   }
 
+  protected makeSpoken(): void {
+    if (this.dirty()) {
+      this.toasts.error('Save your edits first, so the rewrite starts from them');
+      return;
+    }
+    if (!confirm('Rewrite the whole script so it sounds spoken? Every fact is kept, and you can undo it.')) return;
+    this.queue(this.api.makeSpoken(this.id), 'Rewrite queued. About a minute.');
+  }
+
+  protected undoRewrite(): void {
+    this.api.undoRewrite(this.id).subscribe({
+      next: (script) => {
+        this.script.set(script);
+        this.drafts.set(script.sections.map((s) => ({ ...s })));
+        this.toasts.ok('Swapped back. Click again to return to the rewrite.');
+      },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
   protected redraft(): void {
     if (!confirm('Write the whole script again from the same research? Your edits will be replaced.')) return;
     this.queue(this.api.redraft(this.id), 'Redraft queued');

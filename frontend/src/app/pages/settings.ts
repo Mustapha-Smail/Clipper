@@ -153,6 +153,14 @@ import { Toasts } from '../core/toast';
                 <input type="number" min="0.7" max="1.3" step="0.05" [(ngModel)]="f.voice_speed" />
                 <small>1 is the voice's natural pace.</small>
               </label>
+              <label class="field"><span>Pauses (Kokoro)</span>
+                <select [(ngModel)]="f.voice_pauses">
+                  <option value="tight">Tight (brisk)</option>
+                  <option value="natural">Natural</option>
+                  <option value="relaxed">Relaxed</option>
+                </select>
+                <small>Kokoro reads one sentence at a time and pauses like a narrator: longer after questions and punchlines.</small>
+              </label>
             </div>
           </section>
 

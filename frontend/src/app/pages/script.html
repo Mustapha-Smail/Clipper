@@ -61,6 +61,11 @@
 
       <div class="row">
         <button (click)="checkFacts()" [disabled]="busy() || !s.sections.length">Check the facts</button>
+        <button (click)="makeSpoken()" [disabled]="busy() || !s.sections.length"
+                title="Rewrite the whole script for the ear: contractions, questions, beats. Keeps every fact.">Make it sound spoken</button>
+        @if (s.can_undo_rewrite) {
+          <button class="quiet" (click)="undoRewrite()" [disabled]="busy()" title="Swap between the text before and after the last rewrite">Switch versions</button>
+        }
         @if (s.status === 'approved') {
           <button class="on-good" (click)="approve(false)">Approved · back to draft</button>
         } @else {

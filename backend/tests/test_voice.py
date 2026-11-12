@@ -84,15 +84,15 @@ def run_job(job_id: int) -> None:
 
 
 def test_ai_take_is_spoken_normalised_and_timed(client, script, fake_whisper, monkeypatch):
-    def fake_kokoro(sections, name, speed, out, rep):
-        assert name == "bm_george" and speed == 1.1 and len(sections) == 2
+    def fake_kokoro(sections, name, speed, out, rep, pauses="natural"):
+        assert name == "bm_george" and speed == 1.1 and len(sections) == 2 and pauses == "relaxed"
         voice._write_wav(out, tone(2.0), 24000)
     monkeypatch.setattr(voice, "speak_kokoro", fake_kokoro)
 
     assert client.post(f"/api/v1/scripts/{script}/takes/ai",
                        json={"engine": "kokoro", "voice": "nobody", "speed": 1}).status_code == 400
     take = client.post(f"/api/v1/scripts/{script}/takes/ai",
-                       json={"engine": "kokoro", "voice": "bm_george", "speed": 1.1}).json()
+                       json={"engine": "kokoro", "voice": "bm_george", "speed": 1.1, "pauses": "relaxed"}).json()
     assert take["job"]["stages"] == ["speak", "align"] and take["job"]["take_id"] == take["id"]
     assert not take["ready"] and take["current"]
     # One job per script at a time.
@@ -167,7 +167,7 @@ def test_voice_options_without_elevenlabs(client, monkeypatch):
 def test_voice_samples_are_made_once(client, monkeypatch):
     calls = []
 
-    def fake_kokoro(sections, name, speed, out, rep):
+    def fake_kokoro(sections, name, speed, out, rep, pauses="natural"):
         calls.append(sections[0]["text"])
         voice._write_wav(out, tone(0.5), 24000)
     monkeypatch.setattr(voice, "speak_kokoro", fake_kokoro)
@@ -177,3 +177,41 @@ def test_voice_samples_are_made_once(client, monkeypatch):
     assert first.status_code == 200 and first.content[:4] == b"RIFF" and second.content == first.content
     assert calls == ["There is no white LED. Well, almost none."]          # cached, spaces tidied
     assert client.post("/api/v1/voices/sample", json={**body, "voice": "nobody"}).status_code == 400
+
+
+
+def test_sentences_and_a_narrators_delivery():
+    text = "Here's the thing: there's no white LED. Well… almost none. The bulb in your lamp? Blue."
+    assert voice.sentences(text) == ["Here's the thing: there's no white LED.", "Well…", "almost none.",
+                                     "The bulb in your lamp?", "Blue."]
+    rng = np.random.default_rng(0)
+    punch_speed, punch_pause = voice.delivery("Not white.", False, rng)
+    long_speed, long_pause = voice.delivery(" ".join(["word"] * 20) + ".", False, rng)
+    _, question = voice.delivery("Why would it be blue at all?", False, rng)
+    _, paragraph = voice.delivery("And that is the whole trick of it.", True, rng)
+    assert punch_speed < 1 < long_speed and punch_pause > long_pause
+    assert question > long_pause * 1.1 and paragraph > 0.8
+
+
+def test_kokoro_reads_sentence_by_sentence_with_pauses(app_env, monkeypatch):
+    spoken = []
+
+    class FakeKokoro:
+        def __init__(self, *a):
+            pass
+
+        def create(self, text, voice, speed, lang):
+            spoken.append((text, round(speed, 2)))
+            return np.ones(2400, dtype=np.float32) * 0.1, 24000
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, "kokoro_onnx", types.SimpleNamespace(Kokoro=FakeKokoro))
+    monkeypatch.setattr(voice, "_download_kokoro", lambda rep: None)
+    sections = [{"text": "One idea here. Blue.\n\nA new paragraph."}, {"text": "Next section."}]
+    lengths = {}
+    for pauses in ("tight", "relaxed"):
+        out = app_env / f"{pauses}.wav"
+        voice.speak_kokoro(sections, "am_michael", 1.0, out, voice.Reporter(), pauses)
+        lengths[pauses] = voice.duration_of(out)
+    assert [t for t, _ in spoken[:4]] == ["One idea here.", "Blue.", "A new paragraph.", "Next section."]
+    assert lengths["relaxed"] > lengths["tight"] + 0.8      # four pauses, each 30% longer or shorter

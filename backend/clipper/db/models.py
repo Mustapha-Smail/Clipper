@@ -147,6 +147,7 @@ class Script(Base):
     sections: Mapped[list] = mapped_column(JSON, default=list)   # [{key, heading, text, short}]
     claims: Mapped[list | None] = mapped_column(JSON)      # [{section, claim, verdict, note, sources}]
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # hash of the text the claims were checked on
+    previous_sections: Mapped[list | None] = mapped_column(JSON)  # the text before the last whole-script rewrite
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -176,6 +177,7 @@ class VoiceTake(Base):
     source: Mapped[str] = mapped_column(String(16))                 # recording|kokoro|elevenlabs
     voice: Mapped[str] = mapped_column(String(120), default="")     # AI voice name, or the uploaded file name
     speed: Mapped[float | None] = mapped_column(Float)
+    pauses: Mapped[str | None] = mapped_column(String(16))          # AI takes: tight | natural | relaxed
     path: Mapped[str | None] = mapped_column(Text)                  # the prepared WAV, absolute
     duration: Mapped[float | None] = mapped_column(Float)
     script_hash: Mapped[str] = mapped_column(String(64))

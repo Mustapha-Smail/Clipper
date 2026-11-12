@@ -40,6 +40,8 @@ class Settings(BaseModel):
     elevenlabs_voice: str = Field("", max_length=64)       # a voice_id from your ElevenLabs account
     elevenlabs_model: Literal["eleven_multilingual_v2", "eleven_v3", "eleven_flash_v2_5"] = "eleven_multilingual_v2"
     voice_speed: float = Field(1.0, ge=0.7, le=1.3)
+    # Kokoro reads one sentence at a time; this sets how long it pauses between them.
+    voice_pauses: Literal["tight", "natural", "relaxed"] = "natural"
 
     # Moment selection and brief checks
     clips_per_video: int = Field(5, ge=1, le=20)

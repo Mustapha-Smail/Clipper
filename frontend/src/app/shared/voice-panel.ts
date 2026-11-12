@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Script, VoiceChoice, VoiceOptions, VoiceTake } from '../core/models';
+import { Pauses, Script, VoiceChoice, VoiceOptions, VoiceTake } from '../core/models';
 import { Toasts } from '../core/toast';
 import { JobCard } from './job-card';
 import { Recorder } from './recorder';
@@ -33,6 +33,7 @@ export class VoicePanel implements OnDestroy {
   protected readonly engine = signal<'kokoro' | 'elevenlabs'>('kokoro');
   protected readonly voice = signal('');
   protected readonly speed = signal(1);
+  protected readonly pauses = signal<Pauses>('natural');
 
   protected readonly voices = computed(() => {
     const options = this.options();
@@ -73,14 +74,14 @@ export class VoicePanel implements OnDestroy {
       if (v.preview) start(v.preview);
       return;
     }
-    const key = `${v.id}|${this.speed()}`;
+    const key = `${v.id}|${this.speed()}|${this.pauses()}`;
     const cached = this.samples.get(key);
     if (cached) {
       start(cached);
       return;
     }
     this.loading.set(true);
-    this.api.voiceSample(v.id, this.speed(), this.sampleText()).subscribe({
+    this.api.voiceSample(v.id, this.speed(), this.sampleText(), this.pauses()).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         this.samples.set(key, url);
@@ -106,6 +107,7 @@ export class VoicePanel implements OnDestroy {
         this.engine.set(options.defaults.engine === 'elevenlabs' && options.elevenlabs_available ? 'elevenlabs' : 'kokoro');
         this.pickDefaultVoice();
         this.speed.set(options.defaults.speed);
+        this.pauses.set(options.defaults.pauses ?? 'natural');
       },
       error: (err) => this.toasts.error(err),
     });
@@ -139,7 +141,8 @@ export class VoicePanel implements OnDestroy {
     const options = this.options();
     const list = take.source === 'kokoro' ? options?.kokoro : options?.elevenlabs;
     const name = list?.find((v) => v.id === take.voice)?.label.split(' · ')[0] ?? take.voice;
-    return `${take.source === 'kokoro' ? 'Kokoro' : 'ElevenLabs'} · ${name}${take.speed && take.speed !== 1 ? ` · ${take.speed}×` : ''}`;
+    const pauses = take.pauses && take.pauses !== 'natural' ? ` · ${take.pauses} pauses` : '';
+    return `${take.source === 'kokoro' ? 'Kokoro' : 'ElevenLabs'} · ${name}${take.speed && take.speed !== 1 ? ` · ${take.speed}×` : ''}${pauses}`;
   }
 
   protected time(seconds: number | null | undefined): string {
@@ -155,7 +158,7 @@ export class VoicePanel implements OnDestroy {
       this.toasts.error('Choose a voice first');
       return;
     }
-    this.api.createAiTake(this.script().id, this.engine(), this.voice(), this.speed()).subscribe({
+    this.api.createAiTake(this.script().id, this.engine(), this.voice(), this.speed(), this.pauses()).subscribe({
       next: () => {
         this.mode.set('none');
         this.toasts.ok('The AI voice is being made. A six-minute script takes about two minutes.');

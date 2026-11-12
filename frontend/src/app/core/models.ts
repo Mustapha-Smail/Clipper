@@ -186,6 +186,7 @@ export interface AppSettings {
   elevenlabs_voice: string;
   elevenlabs_model: string;
   voice_speed: number;
+  voice_pauses: Pauses;
   audience_tier1_share: number | null;
   platforms: string[];
   output_dir: string;
@@ -340,6 +341,7 @@ export interface Script extends ScriptSummary {
   research: { notes: string; sources: { n: number; url: string; title: string }[]; searches: number } | null;
   sections: ScriptSection[];
   claims: ScriptClaim[] | null;
+  can_undo_rewrite: boolean;
 }
 
 export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minutes' | 'notes'>>;
@@ -356,8 +358,10 @@ export interface VoiceOptions {
   elevenlabs: VoiceChoice[];
   elevenlabs_available: boolean;
   elevenlabs_error: string | null;
-  defaults: { engine: 'kokoro' | 'elevenlabs'; kokoro_voice: string; elevenlabs_voice: string; speed: number };
+  defaults: { engine: 'kokoro' | 'elevenlabs'; kokoro_voice: string; elevenlabs_voice: string; speed: number; pauses: Pauses };
 }
+
+export type Pauses = 'tight' | 'natural' | 'relaxed';
 
 export interface VoiceTake {
   id: number;
@@ -365,6 +369,7 @@ export interface VoiceTake {
   source: 'recording' | 'kokoro' | 'elevenlabs';
   voice: string;
   speed: number | null;
+  pauses: Pauses | null;
   duration: number | null;
   chosen: boolean;
   created_at: string;

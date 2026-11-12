@@ -40,6 +40,7 @@ def take_out(take: VoiceTake, script: Script, job: Job | None) -> s.TakeOut:
     alignment = take.alignment
     return s.TakeOut(
         id=take.id, script_id=take.script_id, source=take.source, voice=take.voice, speed=take.speed,
+        pauses=take.pauses,
         duration=take.duration, chosen=take.chosen, created_at=take.created_at, alignment=alignment,
         ready=bool(take.path and alignment and job is None),
         current=take.script_hash == script_mod.text_hash(script.sections),
@@ -79,7 +80,8 @@ def voice_options():
         "kokoro_downloaded": voice_mod.kokoro_ready(),
         "elevenlabs": eleven, "elevenlabs_available": available, "elevenlabs_error": error,
         "defaults": {"engine": settings.voice_engine, "kokoro_voice": settings.kokoro_voice,
-                     "elevenlabs_voice": settings.elevenlabs_voice, "speed": settings.voice_speed},
+                     "elevenlabs_voice": settings.elevenlabs_voice, "speed": settings.voice_speed,
+                     "pauses": settings.voice_pauses},
     }
 
 
@@ -90,7 +92,7 @@ def voice_sample(body: s.VoiceSample):
     ElevenLabs voices are compared with their own preview clips instead, which
     cost no credits."""
     try:
-        path = voice_mod.sample_kokoro(body.voice, body.speed, body.text)
+        path = voice_mod.sample_kokoro(body.voice, body.speed, body.text, body.pauses)
     except ValueError as err:
         raise HTTPException(400, str(err)) from err
     return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
@@ -109,6 +111,7 @@ def create_ai_take(body: s.AiTakeCreate, script: Script = Depends(get_script), d
     if body.engine == "kokoro" and body.voice not in voice_mod.KOKORO_VOICES:
         raise HTTPException(400, f"Unknown Kokoro voice: {body.voice}")
     take = _new_take(db, script, body.engine, body.voice, body.speed)
+    take.pauses = body.pauses if body.engine == "kokoro" else None
     job = jobs.enqueue(db, "voice_ai", script.title, {"script_id": script.id, "take_id": take.id})
     log.info("ai voice queued", extra={"take_id": take.id, "engine": body.engine, "voice": body.voice})
     return take_out(take, script, job)

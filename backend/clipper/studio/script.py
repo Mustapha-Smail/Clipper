@@ -122,12 +122,24 @@ class Draft(BaseModel):
     sections: list[Section]
 
 
+SPOKEN = """\
+Write for the ear, as a person talking to one viewer, not as an article read aloud:
+- Talk to the viewer: "you", "your", and now and then a rhetorical question.
+- Contractions everywhere a person would use them (it's, you'd, that's, doesn't).
+- Vary the rhythm: some two-word sentences, some long ones that run on with commas and "and".
+- Signpost like someone explaining across a table: "So.", "Now,", "Here's the thing:", "Okay, but".
+- Mark a beat with an ellipsis (…) before a punchline, and put asides between em dashes.
+- At most one light filler per paragraph ("well,", "honestly,", "basically"); never "um" or "uh".
+- One idea per paragraph; a new paragraph is where the narrator takes a breath."""
+
+
 WRITE = """\
 You write narration for a faceless animated YouTube channel: simple drawn characters on \
 screen, one narrator. The voice is deadpan and dry, with jokes that come from the facts \
-themselves, understatement and quick asides, never from mocking the viewer. Short \
-sentences that sound natural read aloud. No stage directions, no music cues, no source \
-markers, no emojis.
+themselves, understatement and quick asides, never from mocking the viewer. No stage \
+directions, no music cues, no source markers, no emojis.
+
+""" + SPOKEN + """
 
 Structure:
 - A cold open of at most 20 seconds that states the hook and makes the viewer need the answer.
@@ -180,6 +192,48 @@ def rewrite_section(script: Script, key: str, instruction: str) -> str:
               f"<script>\n{numbered(script.sections)}\n</script>\n\n"
               f"Rewrite the section with key \"{key}\" ({section['heading']}). Instruction: {instruction}")
     return llm.ask("rewrite", REWRITE, prompt, Rewrite, effort="medium").text.strip()
+
+
+class SpokenSection(BaseModel):
+    key: str
+    text: str
+
+
+class SpokenScript(BaseModel):
+    sections: list[SpokenSection]
+
+
+MAKE_SPOKEN = """\
+You turn an existing narration, written to be read, into narration written to be spoken \
+by the dry, deadpan, curious narrator of a faceless animated YouTube channel.
+
+""" + SPOKEN + """
+
+Keep every fact exactly as it is: no new facts, numbers, names or claims, none dropped. \
+Keep the jokes and keep each section's job. Return every section with its key, in order; \
+the length may grow by at most 15 percent."""
+
+
+def make_spoken(script_id: int, rep: Reporter) -> None:
+    """Rewrite the whole script for the ear in one call, keeping the facts. The old text is kept for undo."""
+    script = _load(script_id)
+    if not script.sections:
+        raise RuntimeError("The script has no text yet")
+    rep.info("Rewriting the script so it sounds spoken")
+    result = llm.ask("script_write", MAKE_SPOKEN, f"<script>\n{numbered(script.sections)}\n</script>",
+                     SpokenScript, effort="high")
+    by_key = {s.key: s.text.strip() for s in result.sections if s.text.strip()}
+    missing = [s["heading"] for s in script.sections if s["key"] not in by_key]
+    if missing:
+        rep.warn(f"Kept as it was (not returned by the model): {', '.join(missing)}")
+    sections = [{**s, "text": by_key.get(s["key"], s["text"])} for s in script.sections]
+    before, after = word_count(script.sections), word_count(sections)
+    with session_scope() as db:
+        row = db.get(Script, script_id)
+        row.previous_sections = script.sections
+        row.sections = sections
+        row.status = "draft"
+    rep.info(f"Done: {before} words before, {after} after. Check the facts again before recording.")
 
 
 # --- 3. fact check -------------------------------------------------------------------
