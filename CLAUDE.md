@@ -107,6 +107,8 @@ Test a pipeline change in both runtimes.
 - The app's dev-server preview cannot read the Desktop folder; start servers
   from the shell and open the URL instead.
 - `data/` is gitignored and disposable.
+- The code is in a local git repository (branch `main`, no remote yet). Never commit `.env`
+  (API keys) or anything under `data/`.
 - Every clip must pass human review before it is posted. Do not add auto-posting
   without that gate. The brief check advises; it never approves.
 - Clip only from sources a campaign authorises.
