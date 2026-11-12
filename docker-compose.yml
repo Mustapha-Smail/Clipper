@@ -1,0 +1,88 @@
+# Clipper: Postgres, API, worker and web UI.
+#
+#   docker compose up -d --build      then open http://localhost:8000
+#   docker compose logs -f worker     watch jobs run
+#
+# Optional variables, set in .env next to ANTHROPIC_API_KEY:
+#   CLIPPER_PORT       port of the web UI on this machine (default 8000)
+#   CLIPPER_DATA       working data: downloads, transcripts, model caches (default ./data)
+#   CLIPPER_OUTPUT     separate folder for finished clips; then set "Output folder"
+#                      to /output on the Settings page (default ./data/clips)
+#   CLIPPER_VIDEOS     local videos to clip; in the UI type /videos/<file> (default ./videos)
+#   POSTGRES_PASSWORD  database password (default clipper; the database is not exposed)
+name: clipper
+
+x-backend: &backend
+  build: ./backend
+  image: clipper-backend:latest
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    CLIPPER_DATABASE_URL: postgresql+psycopg://clipper:${POSTGRES_PASSWORD:-clipper}@db:5432/clipper
+  volumes:
+    - ${CLIPPER_DATA:-./data}:/data
+    - ${CLIPPER_OUTPUT:-./data/clips}:/output
+    - ${CLIPPER_VIDEOS:-./videos}:/videos:ro
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clipper
+      POSTGRES_DB: clipper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clipper}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipper -d clipper"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Applies database migrations, then exits. The API and worker wait for it.
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["clipper", "db", "upgrade"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    command: ["clipper", "api", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  # Exactly one worker: it runs jobs one at a time and assumes it owns the queue.
+  worker:
+    <<: *backend
+    command: ["clipper", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    image: clipper-web:latest
+    restart: unless-stopped
+    ports:
+      # Bound to this machine only. The UI has no login: on a VM, reach it through
+      # an SSH tunnel (ssh -L 8000:localhost:8000 user@vm) instead of opening the port.
+      - "127.0.0.1:${CLIPPER_PORT:-8000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:

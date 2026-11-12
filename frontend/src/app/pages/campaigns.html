@@ -1,0 +1,145 @@
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Campaigns</h1>
+      <p class="muted">Ranked by what a clip is likely to earn you after fees, and how well it fits your channel.</p>
+    </div>
+    <div class="tabs" role="tablist">
+      @for (t of tabs; track t.value) {
+        <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="tab.set(t.value)">
+          {{ t.label }} <span class="muted num">{{ counts()[t.value] }}</span>
+        </button>
+      }
+    </div>
+  </div>
+
+  <details class="fold card" #add>
+    <summary>Add a campaign</summary>
+    <div class="stack">
+      <p class="small muted">
+        Open the campaign's page, select everything (Cmd+A), copy, and paste it here. Claude reads the rate, caps, budget
+        and rules out of it. Adding the same link again refreshes the terms and keeps your decision and notes.
+      </p>
+      <label class="field"><span>Link to the listing</span>
+        <input type="text" [(ngModel)]="url" placeholder="https://contentrewards.com/c/campaigns/…" autocomplete="off" /></label>
+      <label class="field"><span>Page text</span>
+        <textarea [(ngModel)]="text" rows="5" placeholder="Paste the whole page here"></textarea></label>
+      <div><button class="primary" (click)="read(add)" [disabled]="reading()">{{ reading() ? 'Reading…' : 'Read the listing' }}</button></div>
+    </div>
+  </details>
+
+  @if (campaigns(); as all) {
+    <div class="stack" style="margin-top:12px">
+      @for (c of shown(); track c.id) {
+        <article class="card campaign">
+          <div class="score" [class.low]="!c.joinable" [attr.aria-label]="'Score ' + c.score + ' out of 100'">
+            <strong class="num">{{ c.score }}</strong><span>/ 100</span>
+          </div>
+
+          <div class="body">
+            <div class="row spread top">
+              <div class="grow">
+                <h3>{{ c.title }}</h3>
+                <p class="small muted">
+                  @if (c.brand) { {{ c.brand }} · }{{ c.source }}@if (c.category) { · {{ c.category }} }
+                  · {{ c.platforms.join(', ') || 'platforms not stated' }} · seen {{ c.last_seen | ago }}
+                </p>
+              </div>
+              <div class="row">
+                @if (c.decision !== 'new') { <span class="pill" [class.approved]="c.decision === 'joined'">{{ c.decision }}</span> }
+                <span class="pill" [class.succeeded]="c.listing_status === 'open'" [class.cancelled]="c.listing_status === 'paused'"
+                      [class.failed]="c.listing_status === 'ended'">{{ c.listing_status }}</span>
+              </div>
+            </div>
+
+            <dl class="metrics">
+              <div><dt>Net per 1,000 views@if (c.rate_platform) { <span>on {{ c.rate_platform }}</span> }</dt>
+                <dd class="num">{{ money(c, c.net_rate, 2) }}</dd></div>
+              <div><dt>A 100K-view clip pays</dt><dd class="num">{{ money(c, c.payout_100k) }}</dd></div>
+              <div><dt>Most per clip</dt><dd class="num">{{ money(c, c.best_max_payout) }}</dd></div>
+              <div><dt>Budget left</dt><dd class="num">{{ money(c, c.budget_left) }}</dd></div>
+              <div><dt>Fits your theme</dt><dd class="num">{{ c.theme_fit ?? '—' }}<small>/10</small></dd></div>
+            </dl>
+
+            <p class="small">{{ c.summary }}</p>
+
+            @for (flag of c.flags; track flag) {
+              <div class="notice small">{{ flag }}</div>
+            }
+
+            <div class="row">
+              <button class="sm" [class.primary]="c.decision === 'interested'" (click)="decide(c, 'interested')">
+                {{ c.decision === 'interested' ? 'Interested' : 'Mark interested' }}</button>
+              <button class="sm" [class.on-good]="c.decision === 'joined'" (click)="decide(c, 'joined')">
+                {{ c.decision === 'joined' ? 'Joined' : 'I joined it' }}</button>
+              <button class="sm" [class.on-bad]="c.decision === 'skipped'" (click)="decide(c, 'skipped')">
+                {{ c.decision === 'skipped' ? 'Skipped' : 'Skip' }}</button>
+              <a class="btn sm quiet" routerLink="/" [queryParams]="{ campaign: c.id }">Clip a video for it</a>
+              @if (c.url) { <a class="btn sm quiet" [href]="c.url" target="_blank" rel="noopener">Open listing</a> }
+              @if (c.video_count) { <span class="small muted">{{ c.video_count }} {{ c.video_count === 1 ? 'video' : 'videos' }}</span> }
+            </div>
+
+            <details class="fold small">
+              <summary class="muted">Rules, score and notes</summary>
+              <div class="more">
+                <div>
+                  <h4>Rules</h4>
+                  <pre>{{ c.brief }}</pre>
+                </div>
+                <div>
+                  <h4>Why this score</h4>
+                  <ul class="why">
+                    @for (line of c.breakdown; track line.label) {
+                      <li><span>{{ line.label }}</span><span class="num" [class.muted]="line.points >= 0" [class.minus]="line.points < 0">{{ line.points >= 0 ? '+' : '' }}{{ line.points }}</span></li>
+                    }
+                  </ul>
+                  <p class="muted">{{ c.theme_reason }}</p>
+
+                  @if (c.platform_rates.length) {
+                    <h4>Rates by platform, before the {{ c.fee_pct }}% fee</h4>
+                    <ul class="why">
+                      @for (r of c.platform_rates; track r.platform) {
+                        <li><span>{{ r.platform }}</span>
+                          <span class="num muted">{{ money(c, r.rate_per_1k, 2) }} / 1K · {{ money(c, r.min_payout) }} to {{ money(c, r.max_payout) }} per clip</span></li>
+                      }
+                    </ul>
+                  }
+
+                  <h4>Correct the terms</h4>
+                  <div class="fix">
+                    <label class="field"><span>Rate / 1K</span><input #rate type="number" min="0" step="0.05" [value]="c.rate_per_1k ?? ''" /></label>
+                    <label class="field"><span>Max / clip</span><input #max type="number" min="0" [value]="c.max_payout ?? ''" /></label>
+                    <label class="field"><span>Budget left</span><input #left type="number" min="0" [value]="c.budget_left ?? ''" /></label>
+                    <label class="field"><span>Status</span>
+                      <select #status [value]="c.listing_status">
+                        <option value="open">open</option><option value="paused">paused</option>
+                        <option value="ended">ended</option><option value="unknown">unknown</option>
+                      </select></label>
+                  </div>
+                  <button class="sm" (click)="correct(c, rate.value, max.value, left.value, status.value)">Save terms</button>
+
+                  <h4>Notes</h4>
+                  <textarea #notes [value]="c.notes" placeholder="Anything you want to remember about this campaign"></textarea>
+                  <div class="row" style="margin-top:8px">
+                    <button class="sm" (click)="saveNotes(c, notes.value)">Save notes</button>
+                    <button class="sm quiet danger" (click)="remove(c)">Remove campaign</button>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+      } @empty {
+        <div class="empty">
+          @if (!all.length) {
+            No campaigns yet. Add one above by pasting its page.
+          } @else {
+            Nothing in this list.
+          }
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="stack" style="margin-top:12px"><div class="skeleton" style="height:160px"></div></div>
+  }
+</div>

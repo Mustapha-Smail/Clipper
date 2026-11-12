@@ -1,0 +1,269 @@
+# Clipper
+
+Turns a long video into captioned vertical clips. Paste a link or pick a file,
+Claude chooses the moments, and you review, edit and approve each clip in the
+browser before anything is posted.
+
+## How it is built
+
+```
+            browser
+               │
+        ┌──────▼──────┐
+        │  web (nginx) │  Angular app; proxies /api
+        └──────┬──────┘
+        ┌──────▼──────┐        ┌────────────┐
+        │  api         │◄──────►│  database  │  videos, moments, clips,
+        │  (FastAPI)   │        │            │  jobs, job logs, settings
+        └─────────────┘        └─────▲──────┘
+        ┌─────────────┐              │
+        │  worker      │◄────────────┘   takes jobs off the queue, one at a time
+        └──────┬──────┘
+               ▼
+        data folder: downloads, transcripts, rendered clips
+```
+
+| Part | Where | Stack |
+|---|---|---|
+| Web UI | `frontend/` | Angular 22, no UI library |
+| API | `backend/clipper/api/` | FastAPI, versioned under `/api/v1`, docs at `/api/docs` |
+| Worker and pipeline | `backend/clipper/` | Python: yt-dlp, Whisper, Claude, OpenCV, ffmpeg |
+| Database | Postgres in Docker, SQLite natively | SQLAlchemy, Alembic migrations |
+
+## Run it in Docker
+
+```bash
+docker compose up -d --build
+```
+
+Open http://localhost:8000. Needs `ANTHROPIC_API_KEY` in `.env` (see `.env.example`).
+
+This starts five containers: `db` (Postgres), `migrate` (applies migrations and
+exits), `api`, `worker` and `web`. Everything runs on CPU.
+
+| What | In the containers | On the host (change in `.env`) |
+|---|---|---|
+| Downloads, transcripts, model caches | `/data` | `CLIPPER_DATA`, default `./data` |
+| Finished clips, default | `/data/clips` | inside the data folder |
+| Finished clips, separate disk | `/output` | `CLIPPER_OUTPUT` |
+| Local videos to clip | `/videos` (read-only) | `CLIPPER_VIDEOS`, default `./videos` |
+| Database | `pgdata` volume | managed by Docker |
+
+To send clips to another disk: set `CLIPPER_OUTPUT=/path/on/host` in `.env`,
+restart, then set **Output folder** to `/output` on the Settings page.
+
+## Run it natively on a Mac (faster)
+
+Uses the Mac's GPU for transcription and its hardware video encoder, and a
+SQLite file instead of Postgres.
+
+```bash
+make install     # once
+make run         # builds the UI, then serves everything on http://localhost:8000
+```
+
+Needs `brew install ffmpeg uv` and Node 24 (`nvm use` inside `frontend/`).
+
+The native app and the Docker stack share the data folder but not the database,
+so each has its own list of videos. A video already downloaded by one is not
+downloaded again by the other.
+
+## Campaigns
+
+The Campaigns page lists clipping campaigns ranked for you: net rate after the
+platform fee on the best platform you post on, what a 100K-view clip would pay
+given the per-clip cap, budget left, fit with your theme, and warnings (location
+rules, restricted products, closed listings). Open "Rules, score and notes" on
+any campaign to see exactly how its score was reached.
+
+Two ways to add campaigns:
+
+- **Paste:** on the Campaigns page, "Add a campaign", paste the listing's page
+  text and its link. Claude extracts the terms.
+- **Scout:** ask Claude Code to "run the campaign scout". It reads public
+  listings in its browser and loads them (see `.claude/skills/campaign-scout/`).
+
+Mark a campaign as joined, then "Clip a video for it": its rules become the
+video's brief, which drives both moment selection and the pre-post check.
+
+Set your theme, platforms and audience split under Settings, "Your channel".
+
+## Studio ideas
+
+The Ideas page (under Studio) is the first step of the animated channel. Write
+the channel's theme and ask for ideas, or add your own and let Claude develop
+it into a title, hook, beats and a YouTube search. "Check it" then:
+
+1. searches YouTube for the topic (official YouTube Data API v3, about 102 of
+   the 10,000 free daily quota units per check), and
+2. asks Claude to judge the hook, how drawable it is, how settled the facts
+   are, whether the angle is already taken and whether ads would be limited.
+
+The score out of 100 adds demand (views of the 3rd most-viewed long video),
+room for a small channel (best views from a channel under 100K subscribers),
+age of the top videos, a free angle, the hook, drawability, facts and Shorts
+potential, minus penalties for limited ads or a big channel's recent video on
+the same angle. "Beats, competition and score" shows every line and the
+YouTube results it used. Without `YOUTUBE_API_KEY` in `.env`, only Claude's
+part is scored (out of 40) and the card says so.
+
+## Studio scripts
+
+On an approved idea, "Write the script" starts a job with three steps:
+
+1. **Research:** Claude searches the web (up to 10 searches) and writes notes
+   grouped by beat, every fact followed by its numbered source, plus the myths
+   to avoid.
+2. **Write:** Claude writes the narration from those notes only, in sections
+   (cold open, body, outro), aiming at the target length at 150 words a minute.
+3. **Fact check:** every factual claim is checked against the notes; claims the
+   notes do not cover are searched on the web. Each claim is marked supported,
+   contradicted, unclear or joke, with links to its sources.
+
+On the script page you edit each section, reorder or add sections, ask Claude
+to rewrite one section ("shorter", "simpler words") and keep or discard its
+version, then save. Editing marks the fact check out of date until you run it
+again. "Download as text" gives the script to read from. A full run takes about
+four minutes.
+
+Search uses Claude's basic web search tool on purpose: the newer one returned
+answers without citations, which the fact check depends on.
+
+## Studio voice
+
+Below the script, the Voice panel makes takes of the script as it is saved:
+
+- **Record yourself:** the browser records your microphone while the script is
+  shown as a teleprompter. Browser voice processing is off; the server evens
+  out the loudness.
+- **Upload a recording:** any audio file, or a video with sound.
+- **AI voice:** Kokoro runs locally for free (22 English voices; the model,
+  205 MB, downloads once into `data/cache/kokoro`), or ElevenLabs with
+  `ELEVENLABS_API_KEY` in `.env` (your account's voices appear in the list).
+
+Every take becomes a 48 kHz mono WAV normalised to about -16 LUFS, then
+Whisper times it and the words are matched to the script: each section's time
+range, passages not spoken as written, and speech that is not in the script
+(retakes, asides). The word timeline is kept for the storyboard. Mark one take
+"Use for the video". Editing the script marks takes as out of date; "Time it
+against the current script" re-times a take without re-recording.
+
+Timing on this Mac: a 6-minute script takes about 2 minutes to speak with
+Kokoro in Docker and about 3 minutes to time with Whisper on the CPU (faster
+natively, where Whisper uses the GPU).
+
+## Studio videos (animated Shorts)
+
+Once a take is marked "Use for the video", the Videos panel on the script page
+makes a Short from any section:
+
+1. **Plan:** Claude reads the section's words with their times and cuts them
+   into scenes (usually one per sentence). Each scene has a background, a camera
+   move and up to four elements placed in named slots: cast members (pose,
+   expression, talking or not), props, big text, numbers and arrows. Elements
+   can appear on the word that introduces them.
+2. **Draw:** any prop the library lacks is drawn by Claude as SVG in the house
+   style (thick black outlines, a fixed palette, no text), checked, and kept for
+   every later video. The Props page shows the library; redraw any prop with an
+   instruction.
+3. **Edit:** the storyboard page shows a preview frame per scene; every
+   element is editable, scenes can be split or removed.
+4. **Render:** every frame is drawn with Pillow (pop-ins, motion, camera,
+   mouths that move with the voice, blinking), with the same word-by-word
+   captions as clips, encoded with the voice at 1080x1920, 24 fps. A one-minute
+   Short takes under a minute to render in Docker.
+5. **Review:** approve or reject the video; nothing is posted for you.
+
+The cast (narrator, person, scientist, worker, royal, fancy, kid, chef) is
+drawn by code in `studio/art.py`; props are rendered with resvg.
+
+## Studio long videos, sound and publishing files
+
+- **Formats:** a Short is vertical 9:16 (1080x1920) and tells one section,
+  with burned-in captions. The long video is horizontal 16:9 (1920x1080) and
+  tells the whole script, without burned-in captions (upload the .srt instead).
+- **Long storyboards** are planned one chapter (script section) at a time, in
+  parallel, then joined; each chapter opens on its own scene and a "Chapter N"
+  banner slides in at the top left.
+- **Music:** under Library, Music, either upload a track (for example from the
+  YouTube Audio Library, which has no API: download it in YouTube Studio) or
+  use "Find free music online", which searches Openverse (Jamendo, Freesound,
+  ccMixter...) for CC0, public-domain and CC BY tracks only. A CC BY track keeps
+  its credit line, which appears in the storyboard's For YouTube box. Each track is normalised to -16 LUFS on
+  upload. On a storyboard, pick a track and a level (default -18 dB below the
+  voice); it loops, fades in and out, and drops about 7 dB more while the voice
+  speaks.
+- **Sound effects:** soft pops and whooshes, synthesised in code, on element
+  entrances. On by default; switch off per storyboard.
+- **For YouTube:** download the subtitles (.srt, the script's exact words with
+  the take's timing) and copy the chapter list for the description. The app
+  warns when YouTube's chapter rules (3 or more, 10 s each, from 0:00) are not
+  met.
+
+## AI models and spending
+
+Every AI call names a task, and each task belongs to a tier (Settings, AI
+models):
+
+| Tier | Tasks | Default |
+|---|---|---|
+| Writing | moments, ideas, scripts, section rewrites, fact-check claims, storyboards | Claude Opus 5.5 |
+| Quick tasks | idea checks, campaign terms, brief checks, reading fact-check results, drawing props | Claude Haiku 5.5 |
+| Research | script research and claim look-ups, with web search and citations | Claude Sonnet 5.5 |
+
+Each tier can use Claude or OpenAI (`OPENAI_API_KEY`), or any OpenAI-compatible
+server (`OPENAI_BASE_URL`: OpenRouter, a local Ollama...). Compatible servers
+have no web search, so Research needs Claude or OpenAI itself.
+
+Quick tasks default to Claude Haiku 5.5, about a fortieth of Opus's price. If a
+quick task's results look weak (prop drawings first), move that tier to Sonnet
+5.5. Check the spending table under Settings,
+which lists every call by task with tokens, web searches and an estimated cost
+(list prices; unknown models show "+?"). The app already avoids repeat calls:
+props are drawn once and reused, fact checks search the web only for claims the
+research does not cover, ideas are checked only when you ask.
+
+## Seeing what is happening
+
+- **Activity page:** every job with its stages, timing and full log, plus one
+  combined log you can filter to warnings and errors. Jobs can be cancelled and
+  failed jobs retried from there.
+- **Container logs:** `docker compose logs -f worker` (or `api`). One JSON
+  object per line, with `job_id`, `video_id` and `request_id` fields.
+- **Health:** `GET /healthz` checks the API and the database.
+  `GET /api/v1/system/status` adds worker heartbeat, queue depth and disk space.
+
+Set `CLIPPER_LOG_LEVEL=DEBUG` to also log the UI's polling requests.
+
+## Moving to a VM
+
+1. Copy the project folder and your `.env`. Set a real `POSTGRES_PASSWORD`.
+2. `docker compose up -d --build`.
+3. Reach the UI through an SSH tunnel: `ssh -L 8000:localhost:8000 user@vm`.
+   The UI has no login, so the port is bound to localhost on purpose.
+4. YouTube often blocks downloads from cloud servers. If links fail, export a
+   `cookies.txt` from your browser, put it in the data folder and set
+   **Cookies file** to `/data/cookies.txt` on the Settings page.
+5. If the VM's user is not uid 1000, add `user: "<uid>:<gid>"` to the backend
+   block in `docker-compose.yml` so the containers can write to the data folder.
+
+A VM without a GPU transcribes on CPU. Pick the **Small** or **Medium** speech
+model on the Settings page if the large one is too slow.
+
+## Development
+
+```bash
+make dev-api     # API + worker on :8000
+make dev-ui      # Angular dev server on :4200, proxying /api to :8000
+make test lint   # backend tests and lint
+```
+
+Database changes: edit `backend/clipper/db/models.py`, then
+`cd backend && uv run clipper db revision -m "what changed"` and review the new
+file in `backend/clipper/db/migrations/versions/`. Migrations are applied by
+`clipper ui` on start and by the `migrate` container in Docker.
+
+Without the UI: `cd backend && uv run clipper run <url-or-file> --n 5`.
+
+When downloads stop working, update yt-dlp:
+`cd backend && uv lock --upgrade-package yt-dlp && uv sync`, then rebuild.

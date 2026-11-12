@@ -1,0 +1,113 @@
+# Clipping pipeline
+
+Semi-automatic tool that turns long videos into captioned vertical clips for
+paid clipping campaigns (English market, operated from France). PLAN.md has the
+roadmap and the owner's setup checklist; README.md has run and ops instructions.
+
+## Layout
+
+- `backend/` Python package `clipper`: API (`api/`), database (`db/`), job queue
+  (`jobs.py`), worker (`worker.py`), pipeline stages (`pipeline.py` plus one
+  module per stage), CLI (`cli.py`). Tests in `backend/tests/`.
+  `studio/` is the animated-channel side (ideas now; script, voice, storyboard
+  and renderer later), one module per step, same rules as the pipeline.
+- `frontend/` Angular 22 app. Standalone components, signals, zoneless, plain
+  SCSS (design tokens in `src/styles.scss`). No UI library.
+- `docker-compose.yml`: db (Postgres), migrate, api, worker, web (nginx).
+
+## Commands
+
+```bash
+make run          # native: build UI, run API + worker on :8000 (SQLite)
+make up           # Docker stack on :8000 (Postgres)
+make test lint    # backend tests and ruff
+make dev-api      # then `make dev-ui` for the Angular dev server on :4200
+```
+
+Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/bin:$PATH"`.
+
+## Rules of the codebase
+
+- New pipeline behaviour goes in `pipeline.py` or a stage module, never in the
+  API routes or the CLI. Stages report through the `Reporter` they are given
+  (`rep.info`, `rep.warn`, `rep.progress`); that is what fills the job log.
+- User-tunable values live in `settings.py` (stored in the database, edited on
+  the Settings page). `config.py` is environment and constants only.
+- Schema changes need an Alembic migration (`uv run clipper db revision -m ...`).
+  It must work on both SQLite and Postgres.
+- Media stays on disk; the database holds metadata. A clip row stores its
+  absolute path, so clips survive a change of output folder.
+- AI calls go through `llm.py` only: `llm.ask(task, ...)` / `llm.search(task, ...)`.
+  A task maps to a tier (writing, quick, research) whose provider and model come
+  from Settings; providers live in `claude.py` (Anthropic) and
+  `openai_compat.py` (OpenAI Responses API, or Chat Completions for
+  compatible servers). Every call is logged in `ai_usage`. New AI work needs a
+  task in `llm.TASKS`, never a direct SDK call.
+- `moments.py`: the model answers with transcript line numbers, never timestamps.
+- `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
+  subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.
+- `subtitles.py`: burned-in captions are detected as a band of changing text,
+  not by matching the transcript (many sources use summary cards).
+- `campaigns.py`: listings arrive as page text; Claude extracts the terms, and
+  `assess()` ranks them with plain arithmetic whose lines are shown to the user.
+  Keep the score explainable: every adjustment must appear in the breakdown.
+  The app never scrapes marketplaces itself; the `campaign-scout` skill does the
+  reading from public pages and posts `{url, text}` to `/api/v1/campaigns`.
+- `studio/ideas.py`: same rule as campaigns. The score is arithmetic on the
+  stored YouTube results and Claude's judgement, every line in the breakdown.
+  YouTube data comes only from the official Data API (`studio/youtube.py`,
+  `YOUTUBE_API_KEY`), never from scraping. Editing an idea's text clears its
+  check, because the old score no longer applies.
+- `studio/script.py`: research, write and factcheck are worker job stages
+  (`jobs.STAGES`), tied to a script by `params["script_id"]`. The writer may use
+  only the research notes; every web fact keeps its numbered source. Web search
+  goes through `claude.search` (basic `web_search_20250305`, which returns
+  citations); structured answers through `claude.ask`. The two cannot be one
+  call. A fact check stores the hash of the text it checked.
+- `studio/voice.py`: takes are job stages (speak or prepare, then align) keyed
+  by `params["take_id"]`. Every take ends as `voice.wav` (48 kHz mono,
+  loudnorm) under `data/studio/script-N/take-M/`, with `timeline.json` (script
+  words with times). Alignment is difflib over normalised words; differences
+  shorter than 3 words are ignored as transcription noise. Kokoro is loaded per
+  job and released; its model downloads to `data/cache/kokoro` on first use.
+- `studio/storyboard.py`, `studio/animate.py`, `studio/art.py`: Claude plans
+  scenes by word number (never timestamps) in a fixed vocabulary that the
+  renderer knows; `storyboard.clean()` makes any plan or user edit safe. Props
+  are SVG in `studio_assets`, checked by `art.check_prop_svg` (no text, scripts,
+  styles, links or images) and rasterised with resvg. The renderer's layout
+  pass keeps elements inside the stage and apart; keep it when adding element
+  kinds. Captions reuse `captions.py`.
+- `studio/music_search.py`: Openverse only, filtered to cc0, pdm and by; never
+  scrape the YouTube Audio Library. Keep the attribution of CC BY tracks.
+- Ideas generated by the model start in status `inbox` (the Generate tab);
+  your own ideas start as `new`.
+- `studio/sound.py`: effects are synthesised (no sound files), music is
+  normalised at upload and ducked with sidechaincompress; subtitles come from
+  the storyboard's words (script spelling), never from Whisper's text.
+  Shorts are 9:16 with captions; long videos are 16:9 without (.srt instead).
+- nginx re-resolves the API through Docker DNS, so the api container can be
+  restarted alone.
+
+## Two runtimes, one codebase
+
+| | Mac (native) | Docker / Linux |
+|---|---|---|
+| Transcription | mlx-whisper (GPU) | faster-whisper (CPU) |
+| Encoder | h264_videotoolbox | libx264 |
+| Database | SQLite file in `data/` | Postgres |
+
+Platform differences go through the `resolve_*` functions in `settings.py`.
+Test a pipeline change in both runtimes.
+
+## Constraints
+
+- Machine is an M1 with 8 GB RAM: keep local models light, no local LLM.
+  Transcription runs in a child process so its memory is freed afterwards.
+- Exactly one worker; jobs run one at a time on purpose.
+- The app's dev-server preview cannot read the Desktop folder; start servers
+  from the shell and open the URL instead.
+- `data/` is gitignored and disposable.
+- Every clip must pass human review before it is posted. Do not add auto-posting
+  without that gate. The brief check advises; it never approves.
+- Clip only from sources a campaign authorises.
+- The UI has no login. Keep ports bound to localhost.

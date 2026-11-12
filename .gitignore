@@ -1,0 +1,24 @@
+.env
+data/
+videos/
+__pycache__/
+*.pyc
+.DS_Store
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Secrets and local settings
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Tools and editors
+.coverage
+htmlcov/
+.idea/
+.vscode/
+*.partial.*

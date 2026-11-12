@@ -1,0 +1,199 @@
+<div class="page">
+  <a class="small muted" routerLink="/">← All videos</a>
+
+  @if (loadError(); as message) {
+    <div class="empty" style="margin-top:16px">
+      {{ message }}
+      <div style="margin-top:12px"><a class="btn" routerLink="/">Back to videos</a></div>
+    </div>
+  } @else if (video(); as v) {
+    <div class="page-head" style="margin-top:8px">
+      <div>
+        <h1>{{ v.title }}</h1>
+        <p class="muted">
+          @if (v.uploader) { {{ v.uploader }} · }{{ v.duration | length }} · {{ v.width }}×{{ v.height }}
+          @if (v.url) { · <a [href]="v.url" target="_blank" rel="noopener">Open source</a> }
+        </p>
+      </div>
+      <div class="row">
+        @if (v.has_file) {
+          <button class="quiet danger" (click)="deleteSourceFile()" [disabled]="busy()">Free up space</button>
+        }
+        <button class="quiet danger" (click)="deleteVideo()" [disabled]="busy()">Delete</button>
+      </div>
+    </div>
+
+    @if (!v.has_file) {
+      <div class="notice" style="margin-bottom:12px">
+        The source video file was deleted. Existing clips still play, but rendering needs the video added again.
+      </div>
+    }
+
+    @if (jobs().length) {
+      <div class="stack" style="margin-bottom:12px">
+        @for (job of jobs(); track job.id) {
+          <app-job-card [job]="job" />
+        }
+      </div>
+    }
+
+    <div class="context">
+      <section class="card">
+        <h3>Source subtitles</h3>
+        @if (v.subtitles === null) {
+          <p class="small muted">Not checked yet.</p>
+          <div><button class="sm" (click)="detectSubtitles()" [disabled]="busy() || !v.has_file || !v.has_transcript">Look for subtitles</button></div>
+        } @else if (v.subtitles.detected) {
+          <p class="small">
+            This video has {{ v.subtitles.kind === 'verbatim' ? 'subtitles' : 'caption cards' }} burned into the picture
+            <span class="muted">(in {{ (v.subtitles.hit_rate * 100).toFixed(0) }}% of sampled frames@if (v.subtitles.example) {, for example “{{ v.subtitles.example }}”}).</span>
+          </p>
+          <label class="field">
+            <span>How to handle them</span>
+            <select [ngModel]="v.subtitle_mode ?? 'default'" (ngModelChange)="setSubtitleMode($event)" [disabled]="busy()">
+              <option value="default">Default: {{ defaultModeLabel() }}</option>
+              @for (mode of modes; track mode[0]) {
+                <option [value]="mode[0]">{{ mode[1] }}</option>
+              }
+            </select>
+            <small>Applies the next time you render a clip.</small>
+          </label>
+        } @else {
+          <p class="small muted">None found in this video.</p>
+          <div><button class="sm quiet" (click)="detectSubtitles()" [disabled]="busy() || !v.has_file">Look again</button></div>
+        }
+      </section>
+
+      <section class="card">
+        <h3>Campaign brief</h3>
+        @if (campaigns().length || v.campaign) {
+          <label class="field">
+            <span>Campaign</span>
+            <select [ngModel]="v.campaign?.id ?? null" (ngModelChange)="setCampaign($event)">
+              <option [ngValue]="null">None</option>
+              @if (v.campaign; as linked) {
+                <option [ngValue]="linked.id">{{ linked.title }}</option>
+              }
+              @for (c of campaigns(); track c.id) {
+                @if (c.id !== v.campaign?.id) {
+                  <option [ngValue]="c.id">{{ c.title }}</option>
+                }
+              }
+            </select>
+          </label>
+        }
+        <textarea [(ngModel)]="briefText" aria-label="Campaign brief"
+                  placeholder="Paste the campaign's rules: required hashtags, banned topics, length limits, tone."></textarea>
+        <div class="row">
+          <button class="sm" (click)="saveBrief()" [disabled]="!briefChanged()">Save brief</button>
+          <button class="sm" (click)="checkAll()" [disabled]="busy() || !v.brief || briefChanged() || !hasClips()"
+                  [title]="!v.brief ? 'Save a brief first' : ''">Check all clips</button>
+          <span class="small muted">Used to choose moments and to check clips before you post.</span>
+        </div>
+      </section>
+    </div>
+
+    <details class="fold card" #again style="margin-top:12px">
+      <summary>Choose moments again</summary>
+      <div class="stack">
+        <p class="small muted">
+          Claude picks a new list using the saved brief. Moments with an approved clip are kept; the others, and their clips, are replaced.
+        </p>
+        <div class="option-grid">
+          <label class="field"><span>Clips</span><input type="number" min="1" max="20" [(ngModel)]="count" /></label>
+          <label class="field"><span>Shortest (s)</span><input type="number" min="5" max="600" [(ngModel)]="minLen" /></label>
+          <label class="field"><span>Longest (s)</span><input type="number" min="10" max="900" [(ngModel)]="maxLen" /></label>
+        </div>
+        <div><button (click)="reselect(again)" [disabled]="busy() || !v.has_transcript">Ask Claude</button></div>
+      </div>
+    </details>
+
+    <div class="row spread" style="margin-top:36px">
+      <h2 style="margin:0">Clips</h2>
+      <div class="row">
+        <button class="sm" (click)="addMoment()">Add a moment</button>
+        <button class="sm" (click)="save()" [disabled]="busy()">Save edits</button>
+        <button class="sm" (click)="renderAll()" [disabled]="busy() || !v.has_file || !drafts().length">Save and render all</button>
+      </div>
+    </div>
+
+    <div class="stack" style="margin-top:12px">
+      @for (draft of drafts(); track draft.key; let i = $index) {
+        <article class="card moment">
+          <div>
+            @if (draft.moment?.clip; as clip) {
+              @if (clip.file_exists) {
+                <div class="player"><video controls preload="metadata" playsinline [src]="api.clipUrl(clip)"></video></div>
+              } @else {
+                <div class="player none">The clip file is missing from disk. Render it again.</div>
+              }
+            } @else {
+              <div class="player none">Not rendered yet</div>
+            }
+          </div>
+
+          <div class="fields">
+            <div class="row spread">
+              <span class="label">CLIP {{ i + 1 }}@if (draft.moment?.score; as score) { · SCORE {{ score }}/10 }</span>
+              <div class="row">
+                @if (edited(draft)) { <span class="pill">unsaved edits</span> }
+                <span class="pill" [class]="draft.moment?.clip?.status ?? ''">{{ draft.moment?.clip?.status ?? 'not rendered' }}</span>
+              </div>
+            </div>
+
+            <label class="field"><span>Title</span><input type="text" [(ngModel)]="draft.title" /></label>
+            <label class="field"><span>Hook shown on screen</span><input type="text" [(ngModel)]="draft.hook" /></label>
+            <div class="times">
+              <label class="field"><span>Start</span><input type="text" [(ngModel)]="draft.start" placeholder="m:ss" inputmode="decimal" /></label>
+              <label class="field"><span>End</span><input type="text" [(ngModel)]="draft.end" placeholder="m:ss" inputmode="decimal" /></label>
+              <div class="span small muted num">{{ span(draft) }}</div>
+            </div>
+            <label class="field"><span>Post caption</span><textarea [(ngModel)]="draft.caption"></textarea></label>
+
+            @if (draft.moment?.reason; as reason) {
+              <p class="small muted">{{ reason }}</p>
+            }
+
+            @if (draft.moment?.clip; as clip) {
+              @if (clip.compliance) {
+                <app-brief-check [result]="clip.compliance" />
+              }
+            }
+
+            <div class="row">
+              <button class="primary" (click)="renderOne(draft)" [disabled]="busy() || !v.has_file">
+                {{ draft.moment?.clip ? 'Save and re-render' : 'Save and render' }}
+              </button>
+              @if (draft.moment?.clip; as clip) {
+                <button [class.on-good]="clip.status === 'approved'" (click)="mark(draft, 'approved')">
+                  {{ clip.status === 'approved' ? 'Approved' : 'Approve' }}
+                </button>
+                <button [class.on-bad]="clip.status === 'rejected'" (click)="mark(draft, 'rejected')">
+                  {{ clip.status === 'rejected' ? 'Rejected' : 'Reject' }}
+                </button>
+              }
+              <button class="quiet" (click)="copyCaption(draft)">Copy caption</button>
+              @if (draft.moment?.clip; as clip) {
+                @if (v.brief) {
+                  <button class="quiet" (click)="checkOne(draft)" [disabled]="busy()">
+                    {{ clip.compliance ? 'Check again' : 'Check against brief' }}
+                  </button>
+                }
+                @if (clip.file_exists) {
+                  <a class="btn quiet" [href]="api.clipUrl(clip, true)">Download ({{ clip.size_bytes | megabytes }})</a>
+                }
+              }
+              <button class="quiet danger" (click)="removeMoment(draft)" [disabled]="busy()">Remove</button>
+            </div>
+          </div>
+        </article>
+      } @empty {
+        <div class="empty">
+          {{ v.has_transcript ? 'No moments yet. Use “Choose moments again” to ask Claude, or add one by hand.' : 'This video is still being processed.' }}
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="stack" style="margin-top:16px"><div class="skeleton"></div><div class="skeleton" style="height:240px"></div></div>
+  }
+</div>

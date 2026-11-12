@@ -1,0 +1,391 @@
+"""Voice for a script: your own recording, or an AI voice, then timing every word.
+
+Every take ends as `voice.wav` (48 kHz mono, loudness-normalised for YouTube)
+in its own folder, plus `timeline.json`: each script word with the time it is
+spoken, which the storyboard and renderer will follow.
+
+  speak    AI voice. Kokoro runs on this machine (free, about five times faster
+           than real time on an M1); ElevenLabs is a paid cloud service.
+  prepare  Your recording: any audio or video file, converted and normalised.
+  align    Whisper transcribes the take; the words are matched to the script,
+           so the app knows when each section starts and which lines were
+           skipped, changed or added.
+"""
+
+import difflib
+import json
+import logging
+import re
+import shutil
+import urllib.error
+import urllib.request
+import wave
+from pathlib import Path
+
+import numpy as np
+
+from .. import config
+from .. import transcribe as transcribe_mod
+from ..db import session_scope
+from ..db.models import Script, VoiceTake
+from ..ffutil import ToolError, require, run
+from ..jobs import Reporter
+from ..settings import Settings, resolve_whisper_engine
+from . import script as script_mod
+
+log = logging.getLogger("clipper.studio")
+
+SAMPLE_RATE = 48_000
+LOUDNESS = "loudnorm=I=-16:TP=-1.5:LRA=11"     # YouTube plays at about -14 LUFS; -16 leaves headroom
+SECTION_PAUSE = 0.7      # seconds of silence between sections in an AI take
+SENTENCE_PAUSE = 0.12
+
+KOKORO_RELEASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+KOKORO_FILES = {"kokoro-v1.0.fp16.onnx": 177_464_787, "voices-v1.0.bin": 28_214_398}
+# The English voices, with what they sound like. Kokoro has more languages; this channel is English.
+KOKORO_VOICES = {
+    "am_michael": "Michael · American man, calm",
+    "am_adam": "Adam · American man, deep",
+    "am_eric": "Eric · American man, bright",
+    "am_liam": "Liam · American man, young",
+    "am_onyx": "Onyx · American man, low",
+    "am_puck": "Puck · American man, playful",
+    "am_fenrir": "Fenrir · American man, rough",
+    "am_echo": "Echo · American man, soft",
+    "bm_george": "George · British man, warm",
+    "bm_lewis": "Lewis · British man, deep",
+    "bm_daniel": "Daniel · British man, measured",
+    "bm_fable": "Fable · British man, storyteller",
+    "af_heart": "Heart · American woman, warm",
+    "af_bella": "Bella · American woman, lively",
+    "af_nicole": "Nicole · American woman, close",
+    "af_sarah": "Sarah · American woman, clear",
+    "af_sky": "Sky · American woman, light",
+    "af_nova": "Nova · American woman, even",
+    "bf_emma": "Emma · British woman, clear",
+    "bf_isabella": "Isabella · British woman, warm",
+    "bf_alice": "Alice · British woman, crisp",
+    "bf_lily": "Lily · British woman, soft",
+}
+
+ELEVENLABS = "https://api.elevenlabs.io"
+
+
+# --- where things are ----------------------------------------------------------------
+
+def take_dir(script_id: int, take_id: int) -> Path:
+    return config.studio_dir() / f"script-{script_id}" / f"take-{take_id}"
+
+
+def script_media_dir(script_id: int) -> Path:
+    return config.studio_dir() / f"script-{script_id}"
+
+
+def timeline_path(take: VoiceTake) -> Path:
+    return take_dir(take.script_id, take.id) / "timeline.json"
+
+
+def remove_take_files(script_id: int, take_id: int) -> None:
+    shutil.rmtree(take_dir(script_id, take_id), ignore_errors=True)
+
+
+def _take(take_id: int) -> tuple[VoiceTake, Script]:
+    with session_scope() as db:
+        take = db.get(VoiceTake, take_id)
+        if take is None:
+            raise RuntimeError(f"Voice take {take_id} no longer exists")
+        script = take.script
+        db.expunge(take)
+        db.expunge(script)
+        return take, script
+
+
+def _update(take_id: int, **fields) -> None:
+    with session_scope() as db:
+        take = db.get(VoiceTake, take_id)
+        for name, value in fields.items():
+            setattr(take, name, value)
+
+
+def duration_of(path: Path) -> float:
+    out = run([require("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)])
+    return round(float(json.loads(out)["format"]["duration"]), 2)
+
+
+def _normalise(src: Path, out: Path, highpass: bool) -> None:
+    """Convert anything with an audio track to a loudness-normalised 48 kHz mono WAV."""
+    filters = ("highpass=f=70," if highpass else "") + LOUDNESS
+    partial = out.with_suffix(".partial.wav")
+    run([require("ffmpeg"), "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
+         "-af", filters, "-c:a", "pcm_s16le", str(partial)])
+    partial.replace(out)
+
+
+def _write_wav(path: Path, samples: np.ndarray, rate: int) -> None:
+    pcm = (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2")
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        wav.writeframes(pcm.tobytes())
+
+
+def _chunks(text: str, limit: int = 400) -> list[str]:
+    """Split narration at sentence ends into pieces short enough for one synthesis call."""
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    chunks, current = [], ""
+    for sentence in sentences:
+        if current and len(current) + len(sentence) + 1 > limit:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+# --- AI voices -----------------------------------------------------------------------
+
+def kokoro_dir() -> Path:
+    return config.data_dir() / "cache" / "kokoro"
+
+
+def kokoro_ready() -> bool:
+    return all((kokoro_dir() / name).is_file() for name in KOKORO_FILES)
+
+
+def _download_kokoro(rep: Reporter) -> None:
+    folder = kokoro_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, size in KOKORO_FILES.items():
+        target = folder / name
+        if target.is_file() and target.stat().st_size == size:
+            continue
+        rep.info(f"Downloading the Kokoro voice model ({name}, {size / 1e6:.0f} MB), once")
+        partial = target.with_suffix(target.suffix + ".partial")
+        with urllib.request.urlopen(KOKORO_RELEASE + name, timeout=60) as response, partial.open("wb") as out:
+            done = 0
+            while block := response.read(1 << 20):
+                out.write(block)
+                done += len(block)
+                rep.progress(min(done / size, 1.0) * 0.3, f"Downloading the voice model: {done / 1e6:.0f} MB")
+        if partial.stat().st_size != size:
+            partial.unlink(missing_ok=True)
+            raise RuntimeError(f"The Kokoro download of {name} was incomplete. Retry the job.")
+        partial.replace(target)
+
+
+def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter) -> None:
+    if voice not in KOKORO_VOICES:
+        raise ValueError(f"Unknown Kokoro voice: {voice}")
+    _download_kokoro(rep)
+    from kokoro_onnx import Kokoro
+
+    engine = Kokoro(str(kokoro_dir() / "kokoro-v1.0.fp16.onnx"), str(kokoro_dir() / "voices-v1.0.bin"))
+    pieces = [(i, chunk) for i, s in enumerate(sections) for chunk in _chunks(s["text"])]
+    audio, rate = [], 24_000
+    for n, (section_index, chunk) in enumerate(pieces):
+        if n and pieces[n - 1][0] != section_index:
+            audio.append(np.zeros(int(rate * SECTION_PAUSE), dtype=np.float32))
+        elif n:
+            audio.append(np.zeros(int(rate * SENTENCE_PAUSE), dtype=np.float32))
+        samples, rate = engine.create(chunk, voice=voice, speed=speed, lang="en-us")
+        audio.append(samples.astype(np.float32))
+        rep.progress(0.3 + 0.7 * (n + 1) / len(pieces), f"Speaking: {n + 1} of {len(pieces)} passages")
+    del engine
+    _write_wav(out, np.concatenate(audio), rate)
+
+
+def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json") -> bytes:
+    key = config.elevenlabs_api_key()
+    if not key:
+        raise RuntimeError("No ElevenLabs key. Put ELEVENLABS_API_KEY in .env and restart, or use Kokoro.")
+    request = urllib.request.Request(ELEVENLABS + path, method=method,
+                                     data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": accept})
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            return response.read()
+    except urllib.error.HTTPError as err:
+        try:
+            detail = json.load(err).get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, dict):
+            detail = detail.get("message") or detail.get("status")
+        elif isinstance(detail, list):
+            detail = "; ".join(str(d.get("msg", d)) for d in detail)
+        if err.code == 401:
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"ElevenLabs rejected the key in ELEVENLABS_API_KEY{suffix}") from err
+        raise RuntimeError(f"ElevenLabs error ({err.code}){': ' + str(detail) if detail else ''}") from err
+    except (urllib.error.URLError, TimeoutError) as err:
+        raise RuntimeError("Could not reach ElevenLabs. Check your connection.") from err
+
+
+def elevenlabs_voices() -> list[dict]:
+    data = json.loads(_elevenlabs("GET", "/v2/voices?page_size=100&sort=name&sort_direction=asc"))
+    voices = []
+    for v in data.get("voices", []):
+        labels = ", ".join(str(x) for x in (v.get("labels") or {}).values() if x)
+        voices.append({"id": v["voice_id"], "label": v.get("name", v["voice_id"]) + (f" · {labels}" if labels else "")})
+    return voices
+
+
+def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: float, out: Path,
+                     rep: Reporter) -> None:
+    """One request per section, joined with a pause. Neighbouring text keeps the delivery continuous."""
+    if not voice_id:
+        raise RuntimeError("Choose an ElevenLabs voice first")
+    folder = out.parent / "parts"
+    folder.mkdir(exist_ok=True)
+    parts = []
+    for i, section in enumerate(sections):
+        body = {"text": section["text"], "model_id": model,
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": speed},
+                "previous_text": sections[i - 1]["text"][-500:] if i else None,
+                "next_text": sections[i + 1]["text"][:500] if i + 1 < len(sections) else None}
+        audio = _elevenlabs("POST", f"/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", body,
+                            accept="audio/mpeg")
+        part = folder / f"{i:03d}.mp3"
+        part.write_bytes(audio)
+        parts.append(part)
+        rep.progress((i + 1) / len(sections), f"Speaking: section {i + 1} of {len(sections)}")
+    # Join with silence after each section, decoded to one mono WAV.
+    inputs = [arg for part in parts for arg in ("-i", str(part))]
+    graph = "".join(f"[{i}:a]aformat=channel_layouts=mono,apad=pad_dur={SECTION_PAUSE}[p{i}];"
+                    for i in range(len(parts)))
+    graph += "".join(f"[p{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1[out]"
+    run([require("ffmpeg"), "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[out]", str(out)])
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+# --- job stages ------------------------------------------------------------------------
+
+def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
+    take, script = _take(take_id)
+    folder = take_dir(take.script_id, take.id)
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = folder / "raw.wav"
+    sections = [s for s in script.sections if s["text"].strip()]
+    if not sections:
+        raise RuntimeError("The script has no text to speak")
+    rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}")
+    if take.source == "kokoro":
+        speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep)
+    elif take.source == "elevenlabs":
+        speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep)
+    else:
+        raise RuntimeError(f"Not an AI take: {take.source}")
+    out = folder / "voice.wav"
+    _normalise(raw, out, highpass=False)
+    raw.unlink(missing_ok=True)
+    seconds = duration_of(out)
+    _update(take_id, path=str(out), duration=seconds)
+    rep.info(f"Voice ready: {seconds / 60:.1f} minutes")
+
+
+def prepare(take_id: int, settings: Settings, rep: Reporter) -> None:
+    take, _ = _take(take_id)
+    folder = take_dir(take.script_id, take.id)
+    original = next((p for p in folder.glob("original.*")), None)
+    if original is None:
+        raise RuntimeError("The uploaded recording is missing. Upload it again.")
+    out = folder / "voice.wav"
+    rep.info("Converting the recording and evening out its loudness")
+    try:
+        _normalise(original, out, highpass=True)
+    except ToolError as err:
+        raise RuntimeError("Could not read the recording. Is it an audio or video file?\n" + str(err)) from err
+    seconds = duration_of(out)
+    _update(take_id, path=str(out), duration=seconds)
+    rep.info(f"Recording ready: {seconds / 60:.1f} minutes")
+
+
+def align(take_id: int, settings: Settings, rep: Reporter) -> None:
+    take, script = _take(take_id)
+    if not take.path or not Path(take.path).is_file():
+        raise RuntimeError("The take has no audio yet")
+    folder = take_dir(take.script_id, take.id)
+    engine = resolve_whisper_engine(settings)
+    rep.info(f"Transcribing the take ({engine}, {settings.whisper_model})")
+    transcript = transcribe_mod.transcribe_isolated(folder, settings.language, engine, settings.whisper_model,
+                                                    force=True, progress=rep.progress, media=Path(take.path))
+    result = match(script.sections, transcript["words"])
+    timeline_path(take).write_text(json.dumps(result.pop("timeline")))
+    result["script_hash"] = script_mod.text_hash(script.sections)
+    _update(take_id, alignment=result)
+    rep.info(f"{result['coverage']:.0%} of the script was found in the take")
+    if result["missing"]:
+        rep.warn(f"{len(result['missing'])} passages of the script were not spoken or were said differently")
+    if result["extra"]:
+        rep.info(f"{len(result['extra'])} stretches of speech are not in the script (retakes, asides)")
+
+
+# --- matching speech to the script ---------------------------------------------------------
+
+def _norm(word: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", word.lower().replace("’", "'"))
+
+
+MIN_RUN = 3    # shorter mismatches are usually transcription noise, not real differences
+
+
+def match(sections: list[dict], spoken: list[dict]) -> dict:
+    """Line the spoken words up with the script's words.
+
+    Returns each section's time range, a timeline of script words with times
+    (words that were not recognised get times between their neighbours),
+    script passages that were not spoken, speech that is not in the script,
+    and the share of script words found.
+    """
+    script_words = [(i, w) for i, s in enumerate(sections) for w in s["text"].split()]
+    a = [_norm(w) for _, w in script_words]
+    b = [_norm(w["w"]) for w in spoken]
+    matcher = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
+    times: list[tuple[float, float] | None] = [None] * len(a)
+    missing, extra, found = [], [], 0
+    for op, a0, a1, b0, b1 in matcher.get_opcodes():
+        if op == "equal":
+            found += a1 - a0
+            for k in range(a1 - a0):
+                times[a0 + k] = (spoken[b0 + k]["s"], spoken[b0 + k]["e"])
+            continue
+        if op == "replace" and a1 - a0 == b1 - b0:   # same length: misheard words, still timed in place
+            for k in range(a1 - a0):
+                times[a0 + k] = (spoken[b0 + k]["s"], spoken[b0 + k]["e"])
+        if op in ("delete", "replace") and a1 - a0 >= MIN_RUN:
+            section = sections[script_words[a0][0]]
+            missing.append({"section": section["key"], "heading": section["heading"],
+                            "text": " ".join(w for _, w in script_words[a0:a1]),
+                            "heard": " ".join(w["w"] for w in spoken[b0:b1])})
+        if op in ("insert", "replace") and b1 - b0 >= MIN_RUN and b1 - b0 > a1 - a0:
+            extra.append({"at": spoken[b0]["s"], "text": " ".join(w["w"] for w in spoken[b0:b1])})
+
+    # Words that were not recognised share the time between their nearest timed neighbours.
+    known = [k for k, t in enumerate(times) if t is not None]
+    filled = list(times)
+    for k in range(len(a)):
+        if times[k] is not None or not known:
+            continue
+        before = max((j for j in known if j < k), default=None)
+        after = min((j for j in known if j > k), default=None)
+        start = times[before][1] if before is not None else times[after][0]
+        end = times[after][0] if after is not None else times[before][1]
+        first = before + 1 if before is not None else 0
+        last = after - 1 if after is not None else len(a) - 1
+        step = (end - start) / (last - first + 1)
+        filled[k] = (round(start + step * (k - first), 3), round(start + step * (k - first + 1), 3))
+    timeline = [{"section": sections[i]["key"], "w": word, "s": filled[k][0] if filled[k] else 0.0,
+                 "e": filled[k][1] if filled[k] else 0.0}
+                for k, (i, word) in enumerate(script_words)]
+
+    ranges = []
+    for section in sections:
+        entries = [t for t in timeline if t["section"] == section["key"]]
+        if entries:
+            ranges.append({"key": section["key"], "heading": section["heading"],
+                           "start": entries[0]["s"], "end": entries[-1]["e"]})
+    return {"coverage": round(found / len(a), 3) if a else 0.0, "sections": ranges,
+            "missing": missing, "extra": extra, "spoken_words": len(spoken), "timeline": timeline}

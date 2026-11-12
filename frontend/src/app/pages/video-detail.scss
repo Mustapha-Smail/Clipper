@@ -1,0 +1,61 @@
+.context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 12px;
+
+  section {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+}
+
+.moment {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+}
+
+.fields {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: 120px 120px 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.span {
+  padding-bottom: 10px;
+}
+
+@media (max-width: 760px) {
+  .context,
+  .moment {
+    grid-template-columns: 1fr;
+  }
+
+  .moment .player {
+    max-width: 220px;
+  }
+
+  .times {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .span {
+    grid-column: 1 / -1;
+    padding: 0;
+  }
+}

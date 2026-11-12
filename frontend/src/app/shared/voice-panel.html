@@ -1,0 +1,132 @@
+<section class="card voice">
+  <div class="row spread">
+    <div>
+      <h3>Voice</h3>
+      <p class="small muted">Record yourself, upload a recording, or have an AI voice read the script. Every take is timed word by word against the script.</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <button [class.primary]="mode() === 'record'" (click)="mode.set(mode() === 'record' ? 'none' : 'record')" [disabled]="working()">
+      Record yourself</button>
+    <button (click)="picker.click()" [disabled]="working() || uploading()">{{ uploading() ? 'Uploading…' : 'Upload a recording' }}</button>
+    <input #picker type="file" accept="audio/*,video/*,.m4a,.opus,.flac" hidden (change)="pickFile(picker)" />
+    <button [class.primary]="mode() === 'ai'" (click)="mode.set(mode() === 'ai' ? 'none' : 'ai')" [disabled]="working()">
+      Generate an AI voice</button>
+  </div>
+
+  @if (mode() === 'record') {
+    <app-recorder [sections]="script().sections" (recorded)="upload($event.blob, $event.name)" (closed)="mode.set('none')" />
+  }
+
+  @if (mode() === 'ai') {
+    @if (options(); as o) {
+      <div class="ai">
+        <label class="field"><span>Engine</span>
+          <select [ngModel]="engine()" (ngModelChange)="engine.set($event); pickDefaultVoice()">
+            <option value="kokoro">Kokoro · free, runs on this machine</option>
+            <option value="elevenlabs" [disabled]="!o.elevenlabs_available || !o.elevenlabs.length">
+              ElevenLabs · paid{{ o.elevenlabs_available ? '' : ', needs ELEVENLABS_API_KEY' }}</option>
+          </select>
+        </label>
+        <label class="field"><span>Voice</span>
+          <select [ngModel]="voice()" (ngModelChange)="voice.set($event)">
+            @for (v of voices(); track v.id) { <option [value]="v.id">{{ v.label }}</option> }
+          </select>
+        </label>
+        <label class="field"><span>Speed {{ speed() }}×</span>
+          <input type="range" min="0.7" max="1.3" step="0.05" [ngModel]="speed()" (ngModelChange)="speed.set(+$event)" />
+        </label>
+        <div class="go">
+          <button class="primary" (click)="generate()">Read the script</button>
+        </div>
+      </div>
+      @if (engine() === 'kokoro' && !o.kokoro_downloaded) {
+        <p class="small muted">The first Kokoro voice downloads its model once (205 MB) into the data folder.</p>
+      }
+      @if (o.elevenlabs_error) {
+        <div class="notice bad small"><span>ElevenLabs: {{ o.elevenlabs_error }}</span></div>
+      }
+      <p class="small muted">An AI voice reads the script as it is saved now. YouTube may limit monetisation of channels
+        that rely on synthetic voices without adding much of their own; your own voice is the safer choice for the final video.</p>
+    }
+  }
+
+  @for (take of takes(); track take.id) {
+    <article class="take" [class.chosen]="take.chosen">
+      <div class="row spread">
+        <div>
+          <strong>{{ label(take) }}</strong>
+          <span class="small muted"> · {{ time(take.duration) }} · {{ take.created_at | ago }}</span>
+        </div>
+        <div class="row">
+          @if (take.chosen) { <span class="pill approved">Used for the video</span> }
+          @if (!take.current) { <span class="pill cancelled">Script changed since</span> }
+        </div>
+      </div>
+
+      @if (take.job; as j) {
+        <app-job-card [job]="j" />
+      }
+
+      @if (take.duration && !take.job) {
+        <audio controls preload="none" [src]="audio(take)"></audio>
+      }
+
+      @if (take.alignment; as a) {
+        <p class="small summary">
+          <strong [class.warn]="a.coverage < 0.9">{{ (a.coverage * 100).toFixed(0) }}%</strong> of the script found in the take
+          @if (a.missing.length) { · <span class="warn">{{ a.missing.length }} {{ a.missing.length === 1 ? 'passage' : 'passages' }} not spoken as written</span> }
+          @if (a.extra.length) { · {{ a.extra.length }} {{ a.extra.length === 1 ? 'stretch' : 'stretches' }} of speech not in the script }
+        </p>
+        <details class="fold small">
+          <summary class="muted">Timing and differences</summary>
+          <div class="detail">
+            <div>
+              <h4>Sections</h4>
+              <ul class="times">
+                @for (s of a.sections; track s.key) {
+                  <li><span>{{ s.heading }}</span><span class="num muted">{{ time(s.start) }} – {{ time(s.end) }}</span></li>
+                }
+              </ul>
+            </div>
+            <div>
+              @if (a.missing.length) {
+                <h4>Not spoken as written</h4>
+                <ul class="diff">
+                  @for (m of a.missing; track $index) {
+                    <li><span class="muted">{{ m.heading }}:</span> “{{ m.text }}”
+                      @if (m.heard) { <span class="muted">· heard “{{ m.heard }}”</span> }</li>
+                  }
+                </ul>
+              }
+              @if (a.extra.length) {
+                <h4>Not in the script</h4>
+                <ul class="diff">
+                  @for (e of a.extra; track $index) {
+                    <li><span class="num muted">{{ time(e.at) }}</span> “{{ e.text }}”</li>
+                  }
+                </ul>
+              }
+              @if (!a.missing.length && !a.extra.length) {
+                <p class="muted">The take follows the script word for word.</p>
+              }
+            </div>
+          </div>
+        </details>
+      }
+
+      @if (!take.job) {
+        <div class="row">
+          @if (!take.chosen && take.ready) { <button class="sm" (click)="choose(take)">Use for the video</button> }
+          @if (!take.current && take.duration) {
+            <button class="sm quiet" (click)="realign(take)" [disabled]="working()">Time it against the current script</button>
+          }
+          <button class="sm quiet danger" (click)="remove(take)">Delete</button>
+        </div>
+      }
+    </article>
+  } @empty {
+    <p class="small muted">No takes yet.</p>
+  }
+</section>

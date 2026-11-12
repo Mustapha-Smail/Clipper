@@ -1,0 +1,59 @@
+<div class="shell">
+  <aside class="side">
+    <a class="brand" routerLink="/"><span class="mark"></span>Clipper</a>
+
+    <nav aria-label="Main">
+      <span class="group">Clipping</span>
+      <a routerLink="/" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }">Videos</a>
+      <a routerLink="/campaigns" routerLinkActive="on">Campaigns</a>
+      <a routerLink="/clips" routerLinkActive="on">Review</a>
+      <span class="group">Studio</span>
+      <a routerLink="/ideas" routerLinkActive="on">Ideas</a>
+      <a routerLink="/scripts" routerLinkActive="on">Scripts</a>
+      <a routerLink="/animations" routerLinkActive="on">Animations</a>
+      <a routerLink="/props" routerLinkActive="on">Library</a>
+      <span class="group"></span>
+      <a routerLink="/activity" routerLinkActive="on">
+        Activity
+        @if (store.active().length; as count) {
+          <span class="count">{{ count }}</span>
+        }
+      </a>
+      <a routerLink="/settings" routerLinkActive="on">Settings</a>
+    </nav>
+
+    <div class="system small">
+      @if (store.status(); as status) {
+        <div class="row">
+          <span class="dot" [class.on]="status.worker_online" [class.off]="!status.worker_online"></span>
+          {{ status.worker_online ? 'Worker online' : 'Worker offline' }}
+        </div>
+        <div class="muted">
+          {{ status.running ? 'Working on a job' : 'Idle' }}@if (status.queued) {
+            · {{ status.queued }} queued
+          }
+        </div>
+        <div class="muted">v{{ status.version }} · {{ status.database }}</div>
+      } @else {
+        <div class="muted">Connecting…</div>
+      }
+    </div>
+  </aside>
+
+  <div class="main">
+    @if (problems().length) {
+      <div class="problems" role="alert">
+        @for (problem of problems(); track problem) {
+          <div class="notice bad">{{ problem }}</div>
+        }
+      </div>
+    }
+    <router-outlet />
+  </div>
+</div>
+
+<div class="toasts" role="status" aria-live="polite">
+  @for (toast of toasts.items(); track toast.id) {
+    <div class="toast" [class.error]="toast.kind === 'error'" (click)="toasts.dismiss(toast.id)">{{ toast.text }}</div>
+  }
+</div>

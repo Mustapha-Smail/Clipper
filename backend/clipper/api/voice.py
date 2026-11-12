@@ -1,0 +1,160 @@
+"""Studio voice: AI voices and your recordings for a script, each timed against it."""
+
+import json
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .. import config, jobs
+from .. import settings as settings_mod
+from ..db import get_db
+from ..db.models import Job, Script, VoiceTake
+from ..studio import script as script_mod
+from ..studio import voice as voice_mod
+from . import schemas as s
+from .scripts import get_script
+
+router = APIRouter(tags=["studio"])
+log = logging.getLogger("clipper.studio")
+
+AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".mp4", ".mov", ".aiff", ".aif"}
+
+
+def get_take(take_id: int, db: Session = Depends(get_db)) -> VoiceTake:
+    take = db.get(VoiceTake, take_id)
+    if take is None:
+        raise HTTPException(404, "Voice take not found")
+    return take
+
+
+def _take_jobs(db: Session) -> dict[int, Job]:
+    running = db.scalars(select(Job).where(Job.state.in_(jobs.ACTIVE)).order_by(Job.id)).all()
+    return {job.take_id: job for job in running if job.take_id}
+
+
+def take_out(take: VoiceTake, script: Script, job: Job | None) -> s.TakeOut:
+    alignment = take.alignment
+    return s.TakeOut(
+        id=take.id, script_id=take.script_id, source=take.source, voice=take.voice, speed=take.speed,
+        duration=take.duration, chosen=take.chosen, created_at=take.created_at, alignment=alignment,
+        ready=bool(take.path and alignment and job is None),
+        current=take.script_hash == script_mod.text_hash(script.sections),
+        job=s.JobOut.model_validate(job) if job else None,
+    )
+
+
+def _busy(db: Session, script: Script) -> None:
+    active = db.scalars(select(Job).where(Job.state.in_(jobs.ACTIVE))).all()
+    if any(j.script_id == script.id for j in active):
+        raise HTTPException(409, "The script is being worked on. Wait for that job to finish.")
+
+
+def _new_take(db: Session, script: Script, source: str, voice: str, speed: float | None) -> VoiceTake:
+    if not any(sec["text"].strip() for sec in script.sections):
+        raise HTTPException(409, "The script has no text yet")
+    take = VoiceTake(script_id=script.id, source=source, voice=voice, speed=speed,
+                     script_hash=script_mod.text_hash(script.sections))
+    db.add(take)
+    db.flush()
+    return take
+
+
+@router.get("/voices", response_model=s.VoiceOptions)
+def voice_options():
+    """The AI voices you can use. ElevenLabs voices come from your account when a key is set."""
+    settings = settings_mod.load()
+    eleven, error = [], None
+    available = bool(config.elevenlabs_api_key())
+    if available:
+        try:
+            eleven = voice_mod.elevenlabs_voices()
+        except RuntimeError as err:
+            error = str(err)
+    return {
+        "kokoro": [{"id": k, "label": v} for k, v in voice_mod.KOKORO_VOICES.items()],
+        "kokoro_downloaded": voice_mod.kokoro_ready(),
+        "elevenlabs": eleven, "elevenlabs_available": available, "elevenlabs_error": error,
+        "defaults": {"engine": settings.voice_engine, "kokoro_voice": settings.kokoro_voice,
+                     "elevenlabs_voice": settings.elevenlabs_voice, "speed": settings.voice_speed},
+    }
+
+
+@router.get("/scripts/{script_id}/takes", response_model=list[s.TakeOut])
+def list_takes(script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    running = _take_jobs(db)
+    return [take_out(t, script, running.get(t.id)) for t in reversed(script.takes)]
+
+
+@router.post("/scripts/{script_id}/takes/ai", response_model=s.TakeOut, status_code=202)
+def create_ai_take(body: s.AiTakeCreate, script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Have an AI voice read the script as it is now, then time it."""
+    _busy(db, script)
+    if body.engine == "kokoro" and body.voice not in voice_mod.KOKORO_VOICES:
+        raise HTTPException(400, f"Unknown Kokoro voice: {body.voice}")
+    take = _new_take(db, script, body.engine, body.voice, body.speed)
+    job = jobs.enqueue(db, "voice_ai", script.title, {"script_id": script.id, "take_id": take.id})
+    log.info("ai voice queued", extra={"take_id": take.id, "engine": body.engine, "voice": body.voice})
+    return take_out(take, script, job)
+
+
+@router.post("/scripts/{script_id}/takes/recording", response_model=s.TakeOut, status_code=202)
+async def upload_recording(file: UploadFile, script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Your own recording of the script: any audio file, or a video with sound."""
+    _busy(db, script)
+    suffix = Path(file.filename or "recording.webm").suffix.lower()
+    if suffix not in AUDIO_SUFFIXES:
+        raise HTTPException(400, "Unsupported file type. Use wav, mp3, m4a, flac, ogg, webm or a video file.")
+    take = _new_take(db, script, "recording", Path(file.filename or "recording").name[:120], None)
+    folder = voice_mod.take_dir(script.id, take.id)
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / f"original{suffix}").open("wb") as out:
+        while chunk := await file.read(4 * 1024 * 1024):
+            out.write(chunk)
+    job = jobs.enqueue(db, "voice_rec", script.title, {"script_id": script.id, "take_id": take.id})
+    return take_out(take, script, job)
+
+
+@router.get("/takes/{take_id}/audio")
+def take_audio(take: VoiceTake = Depends(get_take)):
+    if not take.path or not Path(take.path).is_file():
+        raise HTTPException(404, "This take has no audio yet")
+    return FileResponse(take.path, media_type="audio/wav", filename=f"voice-{take.script_id}-{take.id}.wav")
+
+
+@router.get("/takes/{take_id}/timeline")
+def take_timeline(take: VoiceTake = Depends(get_take)):
+    """Every script word with the time it is spoken."""
+    path = voice_mod.timeline_path(take)
+    if not path.is_file():
+        raise HTTPException(404, "This take has not been timed yet")
+    return JSONResponse(content=json.loads(path.read_text()))
+
+
+@router.post("/takes/{take_id}/align", response_model=s.TakeOut, status_code=202)
+def realign(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
+    """Time the take again, against the script as it is now. Use it after editing the script to match."""
+    _busy(db, take.script)
+    take.script_hash = script_mod.text_hash(take.script.sections)
+    job = jobs.enqueue(db, "align", take.script.title, {"script_id": take.script_id, "take_id": take.id})
+    return take_out(take, take.script, job)
+
+
+@router.post("/takes/{take_id}/choose", response_model=s.TakeOut)
+def choose_take(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
+    """Make this the take the video will use."""
+    for other in take.script.takes:
+        other.chosen = other.id == take.id
+    db.flush()
+    return take_out(take, take.script, _take_jobs(db).get(take.id))
+
+
+@router.delete("/takes/{take_id}", status_code=204)
+def delete_take(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
+    if take.id in _take_jobs(db):
+        raise HTTPException(409, "This take is still being made. Cancel its job first.")
+    voice_mod.remove_take_files(take.script_id, take.id)
+    db.delete(take)

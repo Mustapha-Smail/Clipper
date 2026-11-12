@@ -1,0 +1,234 @@
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1>Ideas</h1>
+      <p class="muted">Ideas for your animated channel, ranked by demand on YouTube, room for a small channel, and how strong the idea is.</p>
+    </div>
+    <div class="head-tools">
+      @if (themes().length > 1) {
+        <select class="theme-filter" [ngModel]="themeFilter()" (ngModelChange)="themeFilter.set($event)" aria-label="Theme">
+          <option value="">All themes</option>
+          @for (th of themes(); track th.name) { <option [value]="th.name">{{ th.name }} ({{ th.count }})</option> }
+        </select>
+      }
+    <div class="tabs" role="tablist">
+      @for (t of tabs; track t.value) {
+        <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="tab.set(t.value)">
+          {{ t.label }} <span class="muted num">{{ counts()[t.value] }}</span>
+        </button>
+      }
+    </div>
+    </div>
+  </div>
+
+  @if (tab() === 'generate') {
+  <section class="card start">
+    <div class="theme-row">
+      <label class="field grow"><span>Theme for this batch</span>
+        <input type="text" maxlength="300" [(ngModel)]="theme" placeholder="For example: how everyday things secretly work" /></label>
+      <label class="field count"><span>Ideas</span>
+        <input type="number" min="1" max="20" [(ngModel)]="count" /></label>
+      <button class="primary" (click)="generate()" [disabled]="generating()">
+        {{ generating() ? 'Thinking… about a minute' : 'Suggest ideas' }}</button>
+    </div>
+    <details class="fold" #own>
+      <summary class="small muted">Add an idea of your own</summary>
+      <div class="stack">
+        <label class="field"><span>Your idea</span>
+          <textarea [(ngModel)]="ownText" rows="2" placeholder="A few words are enough, for example: why barcodes don't contain prices"></textarea>
+          <small>Claude turns it into a title, a hook, beats and a YouTube search, keeping your subject.</small></label>
+        <div><button (click)="addOwn(own)" [disabled]="adding()">{{ adding() ? 'Developing…' : 'Develop it' }}</button></div>
+      </div>
+    </details>
+    @if (store.status(); as status) {
+      @if (!status.youtube_key) {
+        <div class="notice small"><span>
+          No YouTube API key yet, so ideas are scored on Claude's judgement alone (out of 40). Create a free key for the
+          YouTube Data API v3 in Google Cloud, put <code>YOUTUBE_API_KEY=…</code> in <code>.env</code>, and restart the app.
+        </span></div>
+      }
+    }
+    <p class="small muted">New ideas wait here. Keep the ones worth a closer look: they move to To review. Try other themes
+      freely; the filter above shows one theme at a time.</p>
+  </section>
+  }
+
+  @if (ideas(); as all) {
+    @if (unchecked().length) {
+      <div class="row batch">
+        @if (batch(); as b) {
+          <span class="small muted">Checking {{ b.done + 1 }} of {{ b.total }}…</span>
+        } @else {
+          <span class="small muted">{{ unchecked().length }} not checked yet. Each check takes 10 to 20 seconds.</span>
+          <button class="sm" (click)="checkAll()">Check them all</button>
+        }
+      </div>
+    }
+
+    @if (tab() === 'generate' && shown().length) {
+      <div class="row batch">
+        <span class="small muted">{{ shown().length }} new {{ shown().length === 1 ? 'idea' : 'ideas' }} waiting.</span>
+        <button class="sm" (click)="keepAll(true)">Keep them all</button>
+        <button class="sm quiet" (click)="keepAll(false)">Let them all go</button>
+      </div>
+    }
+
+    <div class="stack" style="margin-top:12px">
+      @for (group of groups(); track group.theme) {
+        @if (groups().length > 1 || !themeFilter()) {
+          <h2 class="theme-head">{{ group.theme }} <span class="muted num">{{ group.ideas.length }}</span></h2>
+        }
+        @for (idea of group.ideas; track idea.id) {
+        <article class="card idea">
+          <div class="score" [class.pending]="idea.score === null" [class.partial]="idea.score !== null && !idea.complete"
+               [attr.aria-label]="idea.score === null ? 'Not checked' : 'Score ' + idea.score + ' out of 100'">
+            @if (idea.score === null) {
+              <strong>—</strong><span>not checked</span>
+            } @else {
+              <strong class="num">{{ idea.score }}</strong><span>{{ idea.complete ? '/ 100' : '/ 100, partial' }}</span>
+            }
+          </div>
+
+          <div class="body">
+            <div class="row spread top">
+              <div class="grow">
+                <h3>{{ idea.title }}</h3>
+                <p class="small muted">
+                  {{ idea.format === 'list' ? 'List video, one chapter per item' : 'Single topic' }}
+                  · {{ idea.origin === 'you' ? 'your idea' : 'suggested' }} {{ idea.created_at | ago }}
+
+                </p>
+              </div>
+              @if (idea.status !== 'new') {
+                <span class="pill" [class.approved]="idea.status === 'approved'">{{ idea.status }}</span>
+              }
+            </div>
+
+            <p class="hook">“{{ idea.hook }}”</p>
+            <p class="small"><strong>The answer:</strong> {{ idea.answer }}</p>
+
+            @if (idea.demand; as d) {
+              <dl class="metrics">
+                <div><dt>{{ d.reference_rank }} video</dt><dd class="num">{{ views(d.reference_views) }}<small> views</small></dd></div>
+                <div><dt>Best from a channel under 100K</dt><dd class="num">{{ views(d.best_small_views) }}<small> views</small></dd></div>
+                <div><dt>Top 5 over 3 years old</dt><dd class="num">{{ d.old_share }}</dd></div>
+                @if (idea.judgement; as j) {
+                  <div><dt>Hook</dt><dd class="num">{{ j.hook_score }}<small>/10</small></dd></div>
+                  <div><dt>Facts settled</dt><dd class="num">{{ j.facts_score }}<small>/10</small></dd></div>
+                }
+              </dl>
+            } @else if (idea.judgement; as j) {
+              <dl class="metrics">
+                <div><dt>Hook</dt><dd class="num">{{ j.hook_score }}<small>/10</small></dd></div>
+                <div><dt>Drawable</dt><dd class="num">{{ j.drawable_score }}<small>/10</small></dd></div>
+                <div><dt>Facts settled</dt><dd class="num">{{ j.facts_score }}<small>/10</small></dd></div>
+              </dl>
+            }
+
+            @for (flag of idea.flags; track flag) {
+              <div class="notice small">{{ flag }}</div>
+            }
+
+            <div class="row">
+              <button class="sm" (click)="check(idea)" [disabled]="checking().has(idea.id) || batch() !== null">
+                {{ checking().has(idea.id) ? 'Checking…' : idea.score === null ? 'Check it' : 'Check again' }}</button>
+              @if (idea.status === 'inbox') {
+                <button class="sm primary" (click)="keep(idea, true)">Keep</button>
+                <button class="sm quiet" (click)="keep(idea, false)">Not interested</button>
+              } @else {
+              <button class="sm" [class.on-good]="idea.status === 'approved'" (click)="decide(idea, 'approved')">
+                {{ idea.status === 'approved' ? 'Approved' : 'Approve' }}</button>
+              <button class="sm" [class.primary]="idea.status === 'parked'" (click)="decide(idea, 'parked')">
+                {{ idea.status === 'parked' ? 'Parked' : 'Park' }}</button>
+              <button class="sm" [class.on-bad]="idea.status === 'skipped'" (click)="decide(idea, 'skipped')">
+                {{ idea.status === 'skipped' ? 'Skipped' : 'Skip' }}</button>
+              }
+              @if (idea.script_id) {
+                <a class="btn sm primary" [routerLink]="['/scripts', idea.script_id]">Open the script</a>
+              } @else if (idea.status === 'approved') {
+                <button class="sm primary" (click)="writeScript(idea)" [disabled]="starting() === idea.id">
+                  {{ starting() === idea.id ? 'Starting…' : 'Write the script' }}</button>
+              }
+            </div>
+
+            <details class="fold small">
+              <summary class="muted">Beats, competition and score</summary>
+              <div class="more">
+                <div>
+                  <h4>Beats</h4>
+                  <ol class="beats">
+                    @for (beat of idea.beats; track $index) {
+                      <li>{{ beat.text }}@if (beat.short) { <span class="pill tiny">Short</span> }</li>
+                    }
+                  </ol>
+                  <h4>Angle</h4>
+                  <p>{{ idea.angle }}</p>
+
+                  @if (idea.judgement; as j) {
+                    <h4>Claude's reading</h4>
+                    <ul class="reasons">
+                      <li><strong>Hook {{ j.hook_score }}/10.</strong> {{ j.hook_reason }}</li>
+                      <li><strong>Drawable {{ j.drawable_score }}/10.</strong> {{ j.drawable_reason }}</li>
+                      <li><strong>Facts {{ j.facts_score }}/10.</strong> {{ j.facts_reason }}</li>
+                      <li><strong>{{ j.angle_taken ? 'Angle taken.' : 'Angle free.' }}</strong> {{ j.angle_reason }}</li>
+                      <li><strong>{{ j.ad_friendly ? 'Ad-friendly.' : 'Limited ads likely.' }}</strong> {{ j.ad_reason }}</li>
+                    </ul>
+                  }
+                </div>
+                <div>
+                  @if (idea.breakdown.length) {
+                    <h4>Why this score</h4>
+                    <ul class="why">
+                      @for (line of idea.breakdown; track line.label) {
+                        <li><span>{{ line.label }}</span><span class="num" [class.muted]="line.points >= 0" [class.minus]="line.points < 0">{{ line.points >= 0 ? '+' : '' }}{{ line.points }}</span></li>
+                      }
+                    </ul>
+                  }
+
+                  @if (idea.research; as r) {
+                    <h4>On YouTube for “{{ r.query }}”, checked {{ r.checked_at | ago }}</h4>
+                    <ul class="videos">
+                      @for (v of competition(idea); track v.id) {
+                        <li>
+                          <a [href]="'https://www.youtube.com/watch?v=' + v.id" target="_blank" rel="noopener">{{ v.title }}</a>
+                          <span class="muted">{{ v.channel }} ({{ v.subscribers === null ? 'hidden' : views(v.subscribers) }}) ·
+                            <span class="num">{{ views(v.views) }}</span> views · {{ age(v) }} · {{ length(v) }}</span>
+                        </li>
+                      }
+                    </ul>
+                  }
+
+                  <h4>Edit</h4>
+                  <label class="field"><span>Title</span><input #title type="text" [value]="idea.title" /></label>
+                  <label class="field"><span>Hook</span><input #hook type="text" [value]="idea.hook" /></label>
+                  <label class="field"><span>YouTube search used to check it</span><input #query type="text" [value]="idea.search_query" /></label>
+                  <button class="sm" (click)="saveEdits(idea, title.value, hook.value, query.value)">Save changes</button>
+
+                  <h4>Notes</h4>
+                  <textarea #notes [value]="idea.notes" placeholder="Anything you want to remember about this idea"></textarea>
+                  <div class="row" style="margin-top:8px">
+                    <button class="sm" (click)="saveNotes(idea, notes.value)">Save notes</button>
+                    <button class="sm quiet danger" (click)="remove(idea)">Remove idea</button>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+        }
+      } @empty {
+        <div class="empty">
+          @if (tab() === 'generate') {
+            No new ideas waiting. Write a theme above and ask for ideas.
+          } @else if (!all.length) {
+            No ideas yet. Open Generate to ask for your first ones.
+          } @else {
+            Nothing in this list{{ themeFilter() ? ' for this theme' : '' }}.
+          }
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="stack" style="margin-top:12px"><div class="skeleton" style="height:160px"></div></div>
+  }
+</div>

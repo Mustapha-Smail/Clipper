@@ -1,0 +1,203 @@
+<div class="page">
+  <a class="back small" routerLink="/scripts">← Scripts</a>
+
+  @if (script(); as s) {
+    <div class="page-head">
+      <div class="grow">
+        <input class="title-input" type="text" [value]="s.title" (change)="rename($any($event.target).value)"
+               aria-label="Video title" [disabled]="busy()" />
+        <p class="muted small">
+          {{ s.format === 'list' ? 'List video' : 'Single topic' }} · {{ s.theme }} · updated {{ s.updated_at | ago }}
+          @if (s.idea_id) { · <a routerLink="/ideas">from an idea</a> }
+        </p>
+      </div>
+      <span class="pill" [class.approved]="s.status === 'approved'">{{ s.status }}</span>
+    </div>
+
+    <div class="tabs page-tabs" role="tablist">
+      @for (t of tabs; track t.value) {
+        <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
+          {{ t.label }}</button>
+      }
+    </div>
+
+    @if (job(); as j) {
+      <app-job-card [job]="j" />
+    }
+
+    @if (tab() === 'voice') {
+      @if (s.sections.length) { <app-voice-panel [script]="s" [busy]="busy()" /> }
+      @else { <div class="empty">The script has no text yet.</div> }
+    } @else if (tab() === 'videos') {
+      @if (s.sections.length) { <app-storyboards-panel [script]="s" [busy]="busy()" /> }
+      @else { <div class="empty">The script has no text yet.</div> }
+    } @else {
+
+    <section class="card overview">
+      <dl class="metrics">
+        <div><dt>Length</dt><dd class="num">{{ minutes().toFixed(1) }}<small> min · {{ words() }} words</small></dd></div>
+        <div><dt>Target</dt><dd class="num">
+          <input type="number" min="1" max="30" [value]="s.target_minutes" (change)="setTarget($any($event.target).value)"
+                 aria-label="Target minutes" [disabled]="busy()" /><small> min</small></dd></div>
+        @if (s.claim_counts; as c) {
+          <div><dt>Supported claims</dt><dd class="num">{{ c.supported }}</dd></div>
+          <div><dt>Contradicted</dt><dd class="num" [class.bad]="c.contradicted">{{ c.contradicted }}</dd></div>
+          <div><dt>Unclear</dt><dd class="num" [class.warn]="c.unclear">{{ c.unclear }}</dd></div>
+        } @else {
+          <div><dt>Fact check</dt><dd class="small">{{ s.sections.length ? 'Not run yet' : 'After writing' }}</dd></div>
+        }
+        <div><dt>Sources</dt><dd class="num">{{ s.research?.sources?.length ?? 0 }}</dd></div>
+      </dl>
+
+      @if (s.claims && !s.checked_current) {
+        <div class="notice small"><span>The script changed since its fact check. Check the facts again before you record.</span></div>
+      }
+      @if (problems().length && s.checked_current) {
+        <div class="notice bad small"><span>
+          {{ problems().length }} {{ problems().length === 1 ? 'claim needs' : 'claims need' }} your attention before recording:
+          contradicted or unclear claims are marked in red and amber under their section.
+        </span></div>
+      }
+
+      <div class="row">
+        <button (click)="checkFacts()" [disabled]="busy() || !s.sections.length">Check the facts</button>
+        @if (s.status === 'approved') {
+          <button class="on-good" (click)="approve(false)">Approved · back to draft</button>
+        } @else {
+          <button class="primary" (click)="approve(true)" [disabled]="busy() || !s.sections.length">Approve the script</button>
+        }
+        <a class="btn quiet" [href]="textUrl()" download>Download as text</a>
+        <span class="grow"></span>
+        <button class="quiet" (click)="redraft()" [disabled]="busy()">Redraft from research</button>
+        <button class="quiet danger" (click)="deleteScript()" [disabled]="busy()">Delete</button>
+      </div>
+    </section>
+
+    @if (!drafts().length) {
+      <div class="empty">
+        @if (busy()) {
+          Claude is researching and writing. This takes a few minutes; you can leave this page.
+        } @else {
+          No text yet. Use "Redraft from research" to write it.
+        }
+      </div>
+    }
+
+    <div class="stack sections">
+      @for (sec of drafts(); track $index; let i = $index) {
+        <article class="card section">
+          <div class="section-head">
+            <input class="heading" type="text" [value]="sec.heading" (input)="edit(i, { heading: $any($event.target).value })"
+                   aria-label="Section heading" [disabled]="busy()" />
+            <label class="check small"><input type="checkbox" [checked]="sec.short" (change)="edit(i, { short: $any($event.target).checked })"
+                                             [disabled]="busy()" /><span>Works as a Short</span></label>
+            <span class="small muted num">{{ count(sec.text) }} words · {{ seconds(sec.text) }} s</span>
+            <div class="row tools">
+              <button class="sm quiet" (click)="move(i, -1)" [disabled]="busy() || i === 0" aria-label="Move up">↑</button>
+              <button class="sm quiet" (click)="move(i, 1)" [disabled]="busy() || i === drafts().length - 1" aria-label="Move down">↓</button>
+              <button class="sm quiet" (click)="add(i)" [disabled]="busy()">Add below</button>
+              <button class="sm quiet danger" (click)="remove(i)" [disabled]="busy()">Remove</button>
+            </div>
+          </div>
+
+          <textarea class="narration" [value]="sec.text" [rows]="rows(sec.text)" (input)="edit(i, { text: $any($event.target).value })"
+                    [attr.aria-label]="'Narration for ' + sec.heading" [disabled]="busy()"></textarea>
+
+          @if (proposal(); as p) {
+            @if (p.key === sec.key) {
+              <div class="proposal">
+                <div class="small muted">Rewrite: {{ p.instruction }}</div>
+                @if (p.text === null) {
+                  <p class="small muted">Claude is rewriting this section…</p>
+                } @else {
+                  <p>{{ p.text }}</p>
+                  <div class="row">
+                    <button class="sm primary" (click)="accept(i)">Use this version</button>
+                    <button class="sm quiet" (click)="proposal.set(null)">Keep mine</button>
+                  </div>
+                }
+              </div>
+            }
+          }
+
+          <div class="row rewrite">
+            <input #instruction type="text" placeholder="Ask Claude to rewrite this section: shorter, funnier, simpler words…"
+                   (keydown.enter)="rewrite(sec, instruction.value)" [disabled]="busy() || proposal() !== null" />
+            <button class="sm" (click)="rewrite(sec, instruction.value)" [disabled]="busy() || proposal() !== null">Rewrite</button>
+          </div>
+
+          @if (sec.key && claimsBySection().get(sec.key); as claims) {
+            <ul class="claims">
+              @for (c of claims; track $index) {
+                <li [class]="c.verdict">
+                  <span class="verdict">{{ verdictLabels[c.verdict] }}</span>
+                  <span class="claim">{{ c.claim }}</span>
+                  @if (c.note && c.verdict !== 'supported') { <span class="note muted">{{ c.note }}</span> }
+                  @for (n of c.sources; track n) {
+                    @if (sourceUrl().get(n); as src) {
+                      <a class="ref" [href]="src.url" target="_blank" rel="noopener" [title]="src.title">[{{ n }}]</a>
+                    }
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </article>
+      }
+
+      @if (claimsBySection().get(''); as orphans) {
+        <section class="card">
+          <h3>Other claims</h3>
+          <p class="small muted">Claims the check could not place in a section, often because the section changed.</p>
+          <ul class="claims">
+            @for (c of orphans; track $index) {
+              <li [class]="c.verdict"><span class="verdict">{{ verdictLabels[c.verdict] }}</span>
+                <span class="claim">{{ c.claim }}</span> <span class="note muted">{{ c.note }}</span></li>
+            }
+          </ul>
+        </section>
+      }
+    </div>
+
+    @if (s.research; as r) {
+      <section class="card research">
+        <details class="fold">
+          <summary>Research: {{ r.sources.length }} sources from {{ r.searches }} web searches</summary>
+          <div class="research-grid">
+            <div>
+              <h4>Notes</h4>
+              <pre>{{ r.notes }}</pre>
+            </div>
+            <div>
+              <h4>Sources</h4>
+              <ol class="sources">
+                @for (src of r.sources; track src.n) {
+                  <li [value]="src.n"><a [href]="src.url" target="_blank" rel="noopener">{{ src.title }}</a>
+                    <span class="muted small">{{ src.url.split('/')[2] }}</span></li>
+                }
+              </ol>
+            </div>
+          </div>
+        </details>
+      </section>
+    }
+
+    <section class="card">
+      <h3>Notes</h3>
+      <textarea #notes [value]="s.notes" placeholder="Anything to remember: delivery, jokes to try, things to verify"></textarea>
+      <div class="row" style="margin-top:8px"><button class="sm" (click)="saveNotes(notes.value)">Save notes</button></div>
+    </section>
+
+    }
+
+    @if (dirty()) {
+      <div class="card savebar">
+        <span class="small">Unsaved changes</span>
+        <button class="quiet" (click)="discard()">Discard</button>
+        <button class="primary" (click)="save()" [disabled]="saving() || busy()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
+      </div>
+    }
+  } @else {
+    <div class="stack"><div class="skeleton" style="height:120px"></div><div class="skeleton" style="height:240px"></div></div>
+  }
+</div>
