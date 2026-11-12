@@ -43,6 +43,35 @@ export class IdeasPage {
   protected readonly checking = signal<Set<number>>(new Set());
   protected readonly batch = signal<{ done: number; total: number } | null>(null);
 
+  /** The magic wand: theme suggestions when inspiration runs out. */
+  protected readonly themeIdeas = signal<{ theme: string; why: string; example: string }[] | null>(null);
+  protected readonly wanding = signal(false);
+  protected readonly hintUsed = signal('');
+
+  protected wand(): void {
+    // What is already typed is taken as a direction, unless it is just the current saved theme.
+    const typed = this.theme().trim();
+    const hint = typed && typed !== this.settings?.studio_theme ? typed : '';
+    this.wanding.set(true);
+    this.api.suggestThemes(hint).subscribe({
+      next: (list) => {
+        this.wanding.set(false);
+        this.hintUsed.set(hint);
+        this.themeIdeas.set(list);
+      },
+      error: (err) => {
+        this.wanding.set(false);
+        this.toasts.error(err);
+      },
+    });
+  }
+
+  protected useTheme(theme: string): void {
+    this.theme.set(theme);
+    this.themeIdeas.set(null);
+    this.toasts.ok('Theme set. Choose how many ideas, then Suggest ideas.');
+  }
+
   /** '' shows every theme. */
   protected readonly themeFilter = signal('');
 

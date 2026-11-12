@@ -73,6 +73,20 @@ def generate_ideas(body: s.IdeaGenerate, db: Session = Depends(get_db)):
     return [idea_out(i) for i in created]
 
 
+@router.post("/themes", response_model=list[s.ThemeSuggestion])
+def suggest_themes(body: s.ThemeRequest | None = None, db: Session = Depends(get_db)):
+    """Five channel themes when inspiration runs out, different from the ones you have. Quick tier, cheap."""
+    used = list(dict.fromkeys(db.scalars(select(Idea.theme).order_by(Idea.id.desc()))))
+    settings_theme = settings_mod.load().studio_theme
+    if settings_theme and settings_theme not in used:
+        used.insert(0, settings_theme)
+    try:
+        themes = ideas_mod.suggest_themes(used, body.hint if body else "")
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    return [t.model_dump() for t in themes]
+
+
 @router.post("", response_model=s.IdeaOut)
 def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
     """Your own idea: Claude develops it into a title, hook, beats and search."""

@@ -32,6 +32,7 @@ TASKS = {
     "factcheck": ("writing", "Listing and checking claims"),
     "storyboard": ("writing", "Planning storyboards"),
     "idea_check": ("quick", "Checking ideas"),
+    "themes": ("quick", "Suggesting themes"),
     "campaign": ("quick", "Reading campaign listings"),
     "brief_check": ("quick", "Checking clips against briefs"),
     "verdicts": ("quick", "Reading fact-check results"),

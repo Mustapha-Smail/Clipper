@@ -138,6 +138,45 @@ def validate(idea: Idea) -> None:
                                     "results": len((research or {}).get("videos", []))})
 
 
+# --- themes, when inspiration runs out ---------------------------------------------------
+
+class ThemeIdea(BaseModel):
+    theme: str = Field(description="The channel theme in a few words, as it would go in the theme field")
+    why: str = Field(description="One sentence: why it works for this kind of channel")
+    example: str = Field(description="One example video title for it")
+
+
+class ThemeIdeas(BaseModel):
+    themes: list[ThemeIdea]
+
+
+THEMES = """\
+You suggest themes for a faceless YouTube channel of short animated videos: simple drawn \
+characters, deadpan comic narration, one surprising idea per video or per chapter. A \
+theme is what every video of the channel is about, narrow enough to build an audience, \
+wide enough for hundreds of videos.
+
+Good themes:
+- turn on surprising, true, explainable facts that a viewer repeats to friends;
+- can be drawn with stick figures, objects and diagrams, without footage;
+- lean towards topics advertisers pay more for (technology, science, money and \
+business, health, how things work, history) over ones they avoid (violence, tragedy, \
+divisive politics);
+- are not already crowded by huge channels doing the same thing in the same tone.
+
+Vary them: do not give five versions of one idea. Do not repeat or lightly reword the \
+themes the creator already has."""
+
+
+def suggest_themes(existing: list[str], hint: str = "") -> list[ThemeIdea]:
+    """Five themes to start from, different from the ones already used. Quick tier, a few hundred tokens."""
+    have = "\n".join(f"- {t}" for t in existing[:30]) or "(none yet)"
+    ask = (f"The creator is leaning towards: {hint}. Suggest five themes in that direction, each with its own angle."
+           if hint.strip() else "Suggest five different themes.")
+    return llm.ask("themes", THEMES, f"<themes_already_used>\n{have}\n</themes_already_used>\n\n{ask}",
+                   ThemeIdeas, effort="low").themes[:5]
+
+
 # --- the score ------------------------------------------------------------------------
 
 def _views(n: int) -> str:

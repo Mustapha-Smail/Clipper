@@ -25,12 +25,34 @@
   <section class="card start">
     <div class="theme-row">
       <label class="field grow"><span>Theme for this batch</span>
-        <input type="text" maxlength="300" [(ngModel)]="theme" placeholder="For example: how everyday things secretly work" /></label>
+        <span class="theme-input">
+          <input type="text" maxlength="300" [(ngModel)]="theme" placeholder="For example: how everyday things secretly work" />
+          <button type="button" class="wand" (click)="wand()" [disabled]="wanding()"
+                  [attr.aria-label]="'Suggest themes'" title="No inspiration? Suggest themes (uses what you typed as a direction)">
+            {{ wanding() ? '…' : '🪄' }}</button>
+        </span></label>
       <label class="field count"><span>Ideas</span>
         <input type="number" min="1" max="20" [(ngModel)]="count" /></label>
       <button class="primary" (click)="generate()" [disabled]="generating()">
         {{ generating() ? 'Thinking… about a minute' : 'Suggest ideas' }}</button>
     </div>
+    @if (themeIdeas(); as list) {
+      <div class="theme-ideas">
+        <div class="row spread">
+          <span class="small muted">Click a theme to use it{{ hintUsed() ? ' (suggested around “' + hintUsed() + '”)' : '' }}.</span>
+          <button class="sm quiet" (click)="themeIdeas.set(null)">Close</button>
+        </div>
+        <div class="theme-list">
+          @for (t of list; track t.theme) {
+            <button type="button" class="theme-card" (click)="useTheme(t.theme)">
+              <strong>{{ t.theme }}</strong>
+              <span class="small muted">{{ t.why }}</span>
+              <span class="small"><em>e.g. “{{ t.example }}”</em></span>
+            </button>
+          }
+        </div>
+      </div>
+    }
     <details class="fold" #own>
       <summary class="small muted">Add an idea of your own</summary>
       <div class="stack">

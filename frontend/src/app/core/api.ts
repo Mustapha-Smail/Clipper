@@ -112,6 +112,9 @@ export class Api {
   generateIdeas(count: number, theme: string): Observable<Idea[]> {
     return this.http.post<Idea[]>(`${BASE}/ideas/generate`, { count, theme });
   }
+  suggestThemes(hint: string): Observable<{ theme: string; why: string; example: string }[]> {
+    return this.http.post<{ theme: string; why: string; example: string }[]>(`${BASE}/ideas/themes`, { hint });
+  }
   addIdea(text: string): Observable<Idea> {
     return this.http.post<Idea>(`${BASE}/ideas`, { text });
   }

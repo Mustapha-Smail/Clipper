@@ -157,3 +157,24 @@ def test_generate_validate_decide_and_edit(client, fake_claude):
     assert mine["origin"] == "you" and mine["title"] == "Why barcodes have no prices"
     assert client.delete(f"/api/v1/ideas/{mine['id']}").status_code == 204
     assert client.get("/api/v1/system/status").json()["youtube_key"] is False
+
+
+def test_theme_suggestions_avoid_existing_themes(client, monkeypatch):
+    from clipper import llm
+    seen = {}
+
+    def fake_ask(task, system, content, output_format, effort="high"):
+        seen.update(task=task, content=content)
+        return ideas.ThemeIdeas(themes=[ideas.ThemeIdea(theme=f"Theme {i}", why="Because", example="Ex")
+                                        for i in range(7)])
+    monkeypatch.setattr(llm, "ask", fake_ask)
+    monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
+        ideas.Draft(title="T", hook="h", answer="a", angle="x", format="single", search_query="q", beats=[])])
+    client.post("/api/v1/ideas/generate", json={"count": 1, "theme": "Odd history"})
+
+    themes = client.post("/api/v1/ideas/themes", json={}).json()
+    assert len(themes) == 5 and themes[0] == {"theme": "Theme 0", "why": "Because", "example": "Ex"}
+    assert seen["task"] == "themes" and "Odd history" in seen["content"]
+    assert "How everyday things secretly work" in seen["content"] and "five different themes" in seen["content"]
+    client.post("/api/v1/ideas/themes", json={"hint": "money"})
+    assert "leaning towards: money" in seen["content"]

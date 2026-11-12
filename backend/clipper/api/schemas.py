@@ -248,6 +248,16 @@ class IdeaGenerate(BaseModel):
     theme: str | None = Field(None, max_length=300, description="Defaults to the Studio theme in Settings")
 
 
+class ThemeRequest(BaseModel):
+    hint: str = Field("", max_length=300, description="Optional: a direction to suggest themes in")
+
+
+class ThemeSuggestion(BaseModel):
+    theme: str
+    why: str
+    example: str
+
+
 class IdeaCreate(BaseModel):
     text: str = Field(min_length=3, max_length=2000, description="Your idea, in a few words or sentences")
 

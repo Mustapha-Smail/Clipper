@@ -19,6 +19,54 @@
   }
 }
 
+.theme-input {
+  display: flex;
+  gap: 6px;
+
+  input {
+    flex: 1;
+  }
+}
+
+.wand {
+  width: 42px;
+  padding: 0;
+  font-size: 18px;
+  justify-content: center;
+}
+
+.theme-ideas {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--sunken);
+  border-radius: var(--radius-sm);
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.theme-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
 .start {
   display: grid;
   gap: 12px;

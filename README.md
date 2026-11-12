@@ -90,7 +90,10 @@ Set your theme, platforms and audience split under Settings, "Your channel".
 
 ## Studio ideas
 
-The Ideas page (under Studio) is the first step of the animated channel. Write
+The Ideas page (under Studio) is the first step of the animated channel. No theme in mind? The magic wand next to the theme field suggests five,
+with a reason and an example title each, different from the themes you already
+have (type a word first, such as "money", to steer it). One quick-tier call,
+a small fraction of a cent. Write
 the channel's theme and ask for ideas, or add your own and let Claude develop
 it into a title, hook, beats and a YouTube search. "Check it" then:
 
