@@ -214,7 +214,11 @@ def test_effects_follow_entrances_without_piling_up():
     scenes = [{"start_word": 0, "elements": [element(), element(kind="prop", name="a"), element(enter="fade")]},
               {"start_word": 2, "elements": [element(enter="slide"), element(kind="arrow", to_slot="top")]}]
     events = sound.effect_events(scenes, lambda i: [0.0, 0.5, 1.0][i], 5.0)
-    assert events == [(0.0, "pop"), (1.0, "whoosh")]     # two pops at 0.0 share one sound
+    assert events == [(0.0, "character"), (1.0, "arrow")]     # entrances at the same moment share one sound
+    scenes[1]["elements"][1]["enter"] = "none"                    # arrows always draw themselves, with a zip
+    assert sound.effect_events(scenes, lambda i: [0.0, 0.5, 1.0][i], 5.0)[1] == (1.0, "arrow")
+    track = sound.effects_track([(0.1, "prop"), (0.5, "prop"), (0.9, "number"), (1.3, "bounce")], 2.0)
+    assert len(track) == 2 * sound.RATE and 0 < abs(track).max() < 1
 
 
 def test_long_video_is_planned_per_chapter(client, script_with_take, fake_claude, monkeypatch):
@@ -277,3 +281,59 @@ def test_mix_graph_shapes():
     assert out == "[mixed]" and "sidechaincompress" in graph and "amix=inputs=3" in graph and "[3:a]" in graph
     graph, _ = sound.mix_graph(10.0, effects=False, music=False, music_db=-20)
     assert "amix=inputs=1" in graph and "anullsink" in graph
+
+
+
+def test_tracks_are_measured_without_ai(tmp_path):
+    calm = tmp_path / "calm.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=110:duration=30", str(calm)],
+                   check=True)
+    clicks = tmp_path / "clicks.wav"   # a click every 0.25 s: 240 a minute, bright and busy
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "aevalsrc='if(lt(mod(t,0.25),0.01),random(0)*2-1,0)':s=22050:d=30", str(clicks)], check=True)
+    a, b = sound.describe_track(calm), sound.describe_track(clicks)
+    assert "dark" in a["words"] and a["onsets_per_s"] < 1
+    assert b["onsets_per_s"] > 2 and b["brightness_hz"] > a["brightness_hz"]
+
+
+def test_music_suggestion_and_sound_preview(client, script_with_take, fake_claude, monkeypatch):
+    from clipper.studio import music_pick
+    sid = script_with_take
+    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "short", "section_key": "a"}).json()
+    run_job(board["job"]["id"])
+
+    empty = client.post(f"/api/v1/storyboards/{board['id']}/suggest-music").json()
+    assert empty["choice"] is None and "no music yet" in empty["reason"]
+
+    with tmp_music().open("rb") as f:
+        track = client.post("/api/v1/music", files={"file": ("calm.mp3", f, "audio/mpeg")}).json()
+    assert track["features"]["words"]                                  # measured on upload
+    seen = {}
+
+    def fake_ask(task, system, content, output_format, effort="high"):
+        seen.update(task=task, content=content)
+        return music_pick.Pick(choice=999, reason="Nothing fits.", level_db=-40,
+                               ranking=[music_pick.Fit(track_id=track["id"], fit=3, reason="Too bright"),
+                                        music_pick.Fit(track_id=999, fit=9, reason="Made up")])
+    monkeypatch.setattr(llm, "ask", fake_ask)
+    pick = client.post(f"/api/v1/storyboards/{board['id']}/suggest-music").json()
+    assert seen["task"] == "music" and f"id {track['id']}" in seen["content"] and "no clear beat" in seen["content"]
+    assert pick["choice"] is None and pick["level_db"] == -34            # unknown ids dropped, level clamped
+    assert [r["track_id"] for r in pick["ranking"]] == [track["id"]]
+
+    preview = client.get(f"/api/v1/storyboards/{board['id']}/sound-preview",
+                         params={"music_id": track["id"], "music_db": -18, "seconds": 5})
+    assert preview.status_code == 200 and preview.headers["content-type"] == "audio/mp4"
+    out = tmp_music().parent / "preview.m4a"
+    out.write_bytes(preview.content)
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
+                           capture_output=True, text=True, check=True)
+    assert float(probe.stdout) == pytest.approx(3.05, abs=0.2)           # clipped to the Short's length
+
+
+@pytest.mark.parametrize("bpm", [72, 100, 120, 150])
+def test_tempo_of_a_click_track(tmp_path, bpm):
+    path = tmp_path / "beat.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    f"aevalsrc='if(lt(mod(t,60/{bpm}),0.01),random(0)*2-1,0)':s=22050:d=40", str(path)], check=True)
+    assert sound.describe_track(path)["bpm"] == pytest.approx(bpm, abs=3)

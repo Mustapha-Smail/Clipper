@@ -200,3 +200,18 @@ def test_generated_ideas_wait_in_the_inbox(client, monkeypatch):
     assert mine["status"] == "new"                           # your own ideas skip the inbox
     kept = client.patch(f"/api/v1/ideas/{made[0]['id']}", json={"status": "new"}).json()
     assert kept["status"] == "new"
+
+
+
+def test_model_lists_put_known_models_first_and_survive_errors(monkeypatch):
+    llm._model_cache.clear()
+    monkeypatch.setattr(llm, "_live_ids", lambda p: ["claude-zeta-1", "claude-haiku-5-5"] if p == "anthropic"
+                        else (_ for _ in ()).throw(RuntimeError("No OpenAI key.\nmore")))
+    claude_models = llm.available_models("anthropic")
+    ids = [m["id"] for m in claude_models["models"]]
+    assert ids[:4] == list(llm.KNOWN["anthropic"]) and ids[-1] == "claude-zeta-1"
+    assert next(m for m in claude_models["models"] if m["id"] == "claude-haiku-5-5")["live"] is True
+    assert next(m for m in claude_models["models"] if m["id"] == "claude-opus-5-5")["live"] is False
+    openai_models = llm.available_models("openai")
+    assert openai_models["error"] == "No OpenAI key." and [m["id"] for m in openai_models["models"]] == \
+        list(llm.KNOWN["openai"])

@@ -480,6 +480,39 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
     return out.getvalue()
 
 
+def preview_mix(board, voice_path: str, music_path: str | None, music_db: float, effects: bool,
+                start: float, seconds: float) -> bytes:
+    """Voice, effects and music for [start, start + seconds) of a storyboard, as AAC audio."""
+    import tempfile
+
+    duration = board.end - board.start
+    start = min(start, max(0.0, duration - 5))
+    seconds = min(seconds, duration - start)
+    with tempfile.TemporaryDirectory() as tmp:
+        inputs = ["-ss", f"{board.start + start:.3f}", "-t", f"{seconds:.3f}", "-i", voice_path]
+        if effects:
+            composer_words = board.words
+
+            def word_time(i):
+                return composer_words[max(0, min(i, len(composer_words) - 1))]["s"] if composer_words else 0.0
+            events = [(at - start, kind) for at, kind in sound.effect_events(board.scenes, word_time, duration)
+                      if start <= at < start + seconds]
+            fx = Path(tmp) / "fx.wav"
+            sound.write_effects(events, seconds, fx, seed=board.id)
+            inputs += ["-i", str(fx)]
+        if music_path:
+            inputs += ["-stream_loop", "-1", "-i", music_path]
+        graph, mixed = sound.mix_graph(seconds, effects, bool(music_path), music_db)
+        # mix_graph numbers the voice as input 1 (input 0 is the video when rendering): add a silent input 0.
+        out = Path(tmp) / "preview.m4a"
+        proc = subprocess.run([require("ffmpeg"), "-v", "error", "-f", "lavfi", "-t", "0.1", "-i", "anullsrc",
+                               *inputs, "-filter_complex", graph, "-map", mixed, "-t", f"{seconds:.3f}",
+                               "-c:a", "aac", "-b:a", "128k", str(out)], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"Could not mix the preview: {proc.stderr[-400:]}")
+        return out.read_bytes()
+
+
 def video_path(board: dict) -> Path:
     return voice_mod.script_media_dir(board["script_id"]) / f"storyboard-{board['id']}" / f"{board['format']}.mp4"
 
@@ -505,7 +538,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     effects_wav = out.parent / "effects.wav"
     if board["effects"]:
         events = sound.effect_events(composer.scenes, composer.word_time, duration)
-        sound.write_effects(events, duration, effects_wav)
+        sound.write_effects(events, duration, effects_wav, seed=board["id"])
         audio_inputs += ["-i", str(effects_wav)]
         rep.info(f"{len(events)} sound effects")
     if board["music"]:

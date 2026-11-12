@@ -41,6 +41,25 @@
           <button class="primary" (click)="generate()">Read the script</button>
         </div>
       </div>
+      <details class="fold compare" [open]="true">
+        <summary class="small">Compare voices</summary>
+        <p class="small muted">
+          @if (engine() === 'kokoro') { Each voice reads the start of your script. Free; each sample is made once (a few seconds). }
+          @else { ElevenLabs' own preview clips: free, no credits used. }
+        </p>
+        <ul class="voices">
+          @for (v of voices(); track v.id) {
+            <li [class.current]="voice() === v.id">
+              <button class="sm play" (click)="play(v)" [disabled]="engine() === 'elevenlabs' && !v.preview"
+                      [attr.aria-label]="'Play ' + v.label">
+                {{ playing() === v.id ? (loading() ? '…' : '■') : '▶' }}</button>
+              <span class="grow small">{{ v.label }}</span>
+              @if (voice() !== v.id) { <button class="sm quiet" (click)="voice.set(v.id)">Use</button> }
+              @else { <span class="small muted">chosen</span> }
+            </li>
+          }
+        </ul>
+      </details>
       @if (engine() === 'kokoro' && !o.kokoro_downloaded) {
         <p class="small muted">The first Kokoro voice downloads its model once (205 MB) into the data folder.</p>
       }

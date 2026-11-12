@@ -83,6 +83,19 @@ def voice_options():
     }
 
 
+@router.post("/voices/sample")
+def voice_sample(body: s.VoiceSample):
+    """A few seconds of text in a Kokoro voice, to compare voices. Free, and cached.
+
+    ElevenLabs voices are compared with their own preview clips instead, which
+    cost no credits."""
+    try:
+        path = voice_mod.sample_kokoro(body.voice, body.speed, body.text)
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from err
+    return FileResponse(path, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
+
+
 @router.get("/scripts/{script_id}/takes", response_model=list[s.TakeOut])
 def list_takes(script: Script = Depends(get_script), db: Session = Depends(get_db)):
     running = _take_jobs(db)

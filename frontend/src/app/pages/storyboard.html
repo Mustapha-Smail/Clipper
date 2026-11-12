@@ -51,6 +51,35 @@
         <label class="check"><input type="checkbox" [ngModel]="b.effects" (ngModelChange)="setSound({ effects: $event })" />
           <span>Pops and whooshes<small>Quiet sounds when things appear.</small></span></label>
       </div>
+      <div class="row sound-tools">
+        <button class="sm" (click)="suggest()" [disabled]="suggesting()">{{ suggesting() ? 'Thinking…' : 'Suggest music' }}</button>
+        <button class="sm" (click)="hear(b.music_id, b.music_db)">Hear the mix (first 25 s)</button>
+        <span class="small muted">A preview of voice, music and effects together; nothing is rendered.</span>
+      </div>
+      @if (previewSrc()) {
+        <audio class="mix" controls autoplay [src]="previewSrc()"></audio>
+      }
+      @if (suggestion(); as sg) {
+        <div class="suggestion">
+          <p class="small"><strong>{{ sg.choice === null ? 'Suggested: no music.' : 'Suggested: ' + trackName(sg.choice) + ' at ' + sg.level_db + ' dB.' }}</strong>
+            {{ sg.reason }}</p>
+          <div class="row">
+            @if (sg.choice !== b.music_id || (sg.choice !== null && sg.level_db !== b.music_db)) {
+              <button class="sm primary" (click)="setSound({ music_id: sg.choice, music_db: sg.choice === null ? b.music_db : sg.level_db })">Use this</button>
+            }
+            @if (sg.choice !== null) { <button class="sm" (click)="hear(sg.choice, sg.level_db)">Hear it with the voice</button> }
+          </div>
+          @if (sg.ranking.length) {
+            <ul class="ranking">
+              @for (r of sg.ranking; track r.track_id) {
+                <li><span class="num fit">{{ r.fit }}/10</span>
+                  <span class="grow"><strong>{{ trackName(r.track_id) }}</strong> <span class="muted">{{ r.reason }}</span></span>
+                  <button class="sm quiet" (click)="hear(r.track_id, sg.level_db)">Hear</button></li>
+              }
+            </ul>
+          }
+        </div>
+      }
       <div class="row">
         <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
           {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
@@ -92,9 +121,30 @@
       <div class="empty">{{ busy() ? 'Claude is planning the scenes and drawing props. This takes a minute or two.' : 'No scenes.' }}</div>
     }
 
+    @if (groups().length > 1) {
+      <div class="row group-tools">
+        <span class="small muted">{{ scenes().length }} scenes in {{ groups().length }} {{ b.format === 'long' ? 'chapters' : 'parts' }}</span>
+        <button class="sm quiet" (click)="openAll(true)">Open all</button>
+        <button class="sm quiet" (click)="openAll(false)">Close all</button>
+      </div>
+    }
+    @for (g of groups(); track g.from) {
+      <section class="group">
+        <button class="group-head" (click)="toggleGroup(g.from)" [attr.aria-expanded]="isOpen(g.from)">
+          <span class="caret">{{ isOpen(g.from) ? '▾' : '▸' }}</span>
+          <strong>{{ g.label }}</strong>
+          <span class="small muted">{{ g.indices.length }} {{ g.indices.length === 1 ? 'scene' : 'scenes' }} ·
+            {{ clock(g.start) }}–{{ clock(g.end) }}</span>
+          @if (!isOpen(g.from)) {
+            <span class="strip">
+              @for (i of g.indices.slice(0, 8); track i) { <img [src]="still(i)" alt="" loading="lazy" [class.wide]="b.format === 'long'" /> }
+            </span>
+          }
+        </button>
+        @if (isOpen(g.from)) {
     <div class="scenes" [class.wide]="b.format === 'long'">
-      @for (scene of scenes(); track $index; let i = $index) {
-        @if (chapterOf(i); as heading) { <h3 class="chapter">{{ heading }}</h3> }
+      @for (i of g.indices; track i) {
+        @let scene = scenes()[i];
         <article class="card scene" [class.open]="openScene() === i">
           <img class="still" [src]="still(i)" [alt]="'Scene ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
           <div class="body">
@@ -204,6 +254,9 @@
         </article>
       }
     </div>
+        }
+      </section>
+    }
 
     <datalist id="props">
       @for (a of library(); track a.name) { <option [value]="a.name">{{ a.description }}</option> }

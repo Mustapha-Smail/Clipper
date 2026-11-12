@@ -347,6 +347,7 @@ export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minu
 export interface VoiceChoice {
   id: string;
   label: string;
+  preview: string | null;
 }
 
 export interface VoiceOptions {
@@ -447,8 +448,26 @@ export interface MusicTrack {
   license: string;
   source_url: string;
   attribution: string;
+  genres: string[];
+  features: { bpm: number | null; words: string[] } | null;
   created_at: string;
 }
+
+export interface MusicSuggestion {
+  choice: number | null;
+  reason: string;
+  level_db: number;
+  ranking: { track_id: number; fit: number; reason: string }[];
+}
+
+export interface AiModel {
+  id: string;
+  label: string;
+  price: [number, number] | null;
+  live: boolean;
+}
+
+export type AiModels = Record<'anthropic' | 'openai', { models: AiModel[]; error: string | null }>;
 
 export interface MusicFound {
   id: string;

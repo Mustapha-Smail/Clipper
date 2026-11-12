@@ -15,7 +15,7 @@ from .. import config, jobs
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, VoiceTake, utcnow
-from ..studio import animate, art, music_search, sound
+from ..studio import animate, art, music_pick, music_search, sound
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import voice as voice_mod
@@ -193,6 +193,51 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
     return board_out(board, _board_jobs(db).get(board.id), db)
 
 
+def _measure(db: Session, tracks: list[StudioMusic]) -> None:
+    """Measure tracks that were added before measuring existed."""
+    for track in tracks:
+        if track.features is None and Path(track.path).is_file():
+            track.features = sound.describe_track(Path(track.path))
+    db.flush()
+
+
+@router.post("/storyboards/{storyboard_id}/suggest-music", response_model=s.MusicSuggestion)
+def suggest_music(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Which library track suits this video, or none. One small call on the quick tier."""
+    tracks = db.scalars(select(StudioMusic).order_by(StudioMusic.name)).all()
+    if not tracks:
+        return {"choice": None, "level_db": -18, "ranking": [],
+                "reason": "The library has no music yet. Upload a track or find one under Library, Music."}
+    _measure(db, tracks)
+    narration = " ".join(w["w"] for w in board.words[:90])
+    chapters = [sec["heading"] for sec in board.script.sections] if board.format == "long" else []
+    try:
+        pick = music_pick.suggest(board.title, board.format, board.end - board.start, narration, chapters, tracks)
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    known = {t.id for t in tracks}
+    ranking = [r for r in pick.ranking if r.track_id in known]
+    choice = pick.choice if pick.choice in known else None
+    return {"choice": choice, "reason": pick.reason, "level_db": max(-34, min(-10, pick.level_db)),
+            "ranking": ranking}
+
+
+@router.get("/storyboards/{storyboard_id}/sound-preview")
+def sound_preview(music_id: int | None = None, music_db: float = Query(-18, ge=-40, le=-6), effects: bool = True,
+                  start: float = Query(0, ge=0), seconds: float = Query(25, ge=5, le=60),
+                  board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """The voice, effects and a music track mixed for a stretch of the video, without rendering any frames."""
+    take = board.take
+    if take is None or not take.path or not Path(take.path).is_file():
+        raise HTTPException(409, "The voice take of this storyboard is missing")
+    track = db.get(StudioMusic, music_id) if music_id else None
+    try:
+        audio = animate.preview_mix(board, take.path, track.path if track else None, music_db, effects, start, seconds)
+    except RuntimeError as err:
+        raise HTTPException(500, str(err)) from err
+    return Response(audio, media_type="audio/mp4", headers={"Cache-Control": "no-store"})
+
+
 @router.get("/storyboards/{storyboard_id}/subtitles.srt", response_class=Response)
 def subtitles(board: Storyboard = Depends(get_board)):
     """Subtitles for YouTube, from the script's own words with the take's timing."""
@@ -312,6 +357,7 @@ async def upload_music(file: UploadFile, db: Session = Depends(get_db)):
     try:
         sound.normalise_music(original, target)    # same loudness for every track
         track.duration = voice_mod.duration_of(target)
+        track.features = sound.describe_track(target)
     except Exception as err:  # noqa: BLE001 - anything ffmpeg cannot read is not music
         original.unlink(missing_ok=True)
         target.unlink(missing_ok=True)
@@ -344,7 +390,8 @@ def import_music(body: s.MusicImport, db: Session = Depends(get_db)):
     if existing is not None and item["landing_url"]:
         return existing
     track = StudioMusic(name=item["title"][:200], path="", creator=item["creator"], license=item["license"],
-                        source_url=item["landing_url"], attribution=music_search.credit(item))
+                        source_url=item["landing_url"], attribution=music_search.credit(item),
+                        genres=item["genres"][:6])
     db.add(track)
     db.flush()
     folder = config.studio_dir() / "music"
@@ -354,6 +401,7 @@ def import_music(body: s.MusicImport, db: Session = Depends(get_db)):
         music_search.download(item["audio_url"], original)
         sound.normalise_music(original, target)
         track.duration = voice_mod.duration_of(target)
+        track.features = sound.describe_track(target)
     except Exception as err:  # noqa: BLE001 - a bad download is the source's fault, not a crash
         target.unlink(missing_ok=True)
         db.delete(track)

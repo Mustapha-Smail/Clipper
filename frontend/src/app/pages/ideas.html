@@ -146,7 +146,10 @@
               @if (idea.script_id) {
                 <a class="btn sm primary" [routerLink]="['/scripts', idea.script_id]">Open the script</a>
               } @else if (idea.status === 'approved') {
-                <button class="sm primary" (click)="writeScript(idea)" [disabled]="starting() === idea.id">
+                <label class="length small">Length
+                  <input #mins type="number" min="1" max="30" [value]="idea.format === 'list' ? 10 : 6"
+                         aria-label="Target length in minutes" /> min</label>
+                <button class="sm primary" (click)="writeScript(idea, +mins.value)" [disabled]="starting() === idea.id">
                   {{ starting() === idea.id ? 'Starting…' : 'Write the script' }}</button>
               }
             </div>

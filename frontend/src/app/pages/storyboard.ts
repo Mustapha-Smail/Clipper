@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Asset, Chapters, MusicTrack, StoryElement, StoryScene, Storyboard } from '../core/models';
+import { Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard } from '../core/models';
 import { Toasts } from '../core/toast';
 import { JobCard } from '../shared/job-card';
 
@@ -117,6 +117,52 @@ export class StoryboardPage {
     return this.api.stillUrl(this.id, t, this.version(), this.board()?.format === 'long' ? 400 : 270);
   }
 
+  /**
+   * Scenes in collapsible groups so the page stays short: one per chapter for a
+   * long video, one per 15 seconds for a Short.
+   */
+  protected readonly groups = computed(() => {
+    const board = this.board();
+    const scenes = this.scenes();
+    if (!board || !scenes.length) return [];
+    const groups: { from: number; label: string; indices: number[]; start: number; end: number }[] = [];
+    scenes.forEach((_, i) => {
+      const start = this.start(i);
+      const chapter = this.chapterOf(i);
+      const newGroup = !groups.length
+        || (board.format === 'long' ? chapter !== null : start >= groups[groups.length - 1].start + 15);
+      if (newGroup) {
+        const label = board.format === 'long' ? (chapter || 'Opening') : `Part ${groups.length + 1}`;
+        groups.push({ from: i, label, indices: [], start, end: start });
+      }
+      const group = groups[groups.length - 1];
+      group.indices.push(i);
+      group.end = this.end(i);
+    });
+    return groups;
+  });
+  private readonly openGroups = signal<Set<number> | null>(null);   // null: only the first is open
+
+  protected isOpen(from: number): boolean {
+    const open = this.openGroups();
+    return open ? open.has(from) : from === 0;
+  }
+
+  protected toggleGroup(from: number): void {
+    const open = new Set(this.openGroups() ?? [0]);
+    if (open.has(from)) open.delete(from);
+    else open.add(from);
+    this.openGroups.set(open);
+  }
+
+  protected openAll(open: boolean): void {
+    this.openGroups.set(new Set(open ? this.groups().map((g) => g.from) : []));
+  }
+
+  protected clock(seconds: number): string {
+    return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  }
+
   /** The chapter a scene opens, when it is the first scene of a new section. */
   protected chapterOf(index: number): string | null {
     const board = this.board();
@@ -127,6 +173,36 @@ export class StoryboardPage {
   }
 
   // --- sound and publishing ---------------------------------------------------------------
+
+  protected readonly suggestion = signal<MusicSuggestion | null>(null);
+  protected readonly suggesting = signal(false);
+  protected readonly previewSrc = signal('');
+
+  /** Ask the quick-tier model which track fits, if any. Costs a fraction of a cent. */
+  protected suggest(): void {
+    this.suggesting.set(true);
+    this.api.suggestMusic(this.id).subscribe({
+      next: (s) => {
+        this.suggesting.set(false);
+        this.suggestion.set(s);
+        this.api.music().subscribe((list) => this.music.set(list));   // tracks get measured on the way
+      },
+      error: (err) => {
+        this.suggesting.set(false);
+        this.toasts.error(err);
+      },
+    });
+  }
+
+  /** Mix the first 25 seconds with a track (or none) and play it. */
+  protected hear(musicId: number | null, musicDb: number): void {
+    const board = this.board();
+    if (board) this.previewSrc.set(this.api.soundPreviewUrl(this.id, musicId, musicDb, board.effects));
+  }
+
+  protected trackName(id: number | null): string {
+    return this.music().find((m) => m.id === id)?.name ?? 'a track';
+  }
 
   protected setSound(patch: { music_id?: number | null; music_db?: number; effects?: boolean }): void {
     this.api.soundSettings(this.id, patch).subscribe({

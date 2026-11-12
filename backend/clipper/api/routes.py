@@ -210,6 +210,12 @@ def ai_usage(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db))
     }
 
 
+@system.get("/ai-models")
+def ai_models(refresh: bool = False):
+    """The models each provider offers this account, known ones first with their list prices."""
+    return {provider: llm.available_models(provider, refresh) for provider in ("anthropic", "openai")}
+
+
 # --- system ------------------------------------------------------------------------------
 
 @system.get("/status", response_model=s.SystemStatus)

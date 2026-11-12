@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
 import { JobsStore } from '../core/jobs-store';
-import { AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
+import { AiModel, AiModels, AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
 import { Toasts } from '../core/toast';
 
 @Component({
@@ -62,23 +62,26 @@ import { Toasts } from '../core/toast';
                     <option value="anthropic">Claude</option>
                     <option value="openai">OpenAI or compatible</option>
                   </select>
-                  <input type="text" [attr.list]="'models-' + $any(f)['ai_' + tier.key + '_provider']"
-                         [ngModel]="$any(f)['ai_' + tier.key + '_model']" (ngModelChange)="$any(f)['ai_' + tier.key + '_model'] = $event"
-                         [attr.aria-label]="tier.name + ' model'" />
+                  <div class="model">
+                    <select [ngModel]="custom().has(tier.key) || !listed(f, tier.key) ? '__other' : model(f, tier.key)"
+                            (ngModelChange)="pickModel(f, tier.key, $event)" [attr.aria-label]="tier.name + ' model'">
+                      @for (m of modelsFor(f, tier.key); track m.id) {
+                        <option [value]="m.id">{{ m.label }}{{ m.price ? ' · $' + m.price[0] + ' / $' + m.price[1] : '' }}</option>
+                      }
+                      <option value="__other">Other…</option>
+                    </select>
+                    @if (custom().has(tier.key) || !listed(f, tier.key)) {
+                      <input type="text" [ngModel]="model(f, tier.key)" (ngModelChange)="$any(f)['ai_' + tier.key + '_model'] = $event"
+                             placeholder="Model id, e.g. llama3.1:8b" [attr.aria-label]="tier.name + ' model id'" />
+                    }
+                  </div>
                 </div>
               }
             </div>
-            <datalist id="models-anthropic">
-              <option value="claude-opus-5-5">Opus 5.5 · $4 / $20 per million tokens</option>
-              <option value="claude-sonnet-5-5">Sonnet 5.5 · $2 / $10</option>
-              <option value="claude-haiku-5-5">Haiku 5.5 · $0.10 / $0.50</option>
-            </datalist>
-            <datalist id="models-openai">
-              <option value="gpt-6-astra">GPT-6 Astra · $10 / $50</option>
-              <option value="gpt-6.1-sol">GPT-6.1 Sol · $2 / $10</option>
-              <option value="gpt-6.1-terra">GPT-6.1 Terra · $1 / $5</option>
-              <option value="gpt-6-luna">GPT-6 Luna · $0.10 / $0.50</option>
-            </datalist>
+            <p class="small muted">Prices are per million tokens in / out.
+              <button class="sm quiet" (click)="loadModels(true)">Refresh the model lists</button>
+              @if (models()?.openai?.error; as e) { <span> · OpenAI: {{ e }}</span> }
+            </p>
             @if (store.status(); as st) {
               <p class="small muted">Claude key: {{ st.api_key ? 'found' : 'missing' }} · OpenAI key:
                 {{ st.openai_key ? 'found' : 'missing' }}{{ st.openai_base_url ? ' · compatible server: ' + st.openai_base_url : '' }}</p>
@@ -89,6 +92,8 @@ import { Toasts } from '../core/toast';
                 <select [ngModel]="usageDays()" (ngModelChange)="loadUsage(+$event)" aria-label="Period">
                   <option [ngValue]="7">7 days</option><option [ngValue]="30">30 days</option><option [ngValue]="90">90 days</option>
                 </select>
+                <button class="sm quiet" (click)="loadUsage(usageDays())" [disabled]="refreshing()">
+                  {{ refreshing() ? 'Refreshing…' : 'Refresh' }}</button>
               </h4>
               <p class="small">{{ u.calls }} calls{{ u.failed ? ', ' + u.failed + ' failed' : '' }} · about
                 <strong>{{ '$' + u.cost_usd.toFixed(2) }}</strong> <span class="muted">(estimated from list prices)</span></p>
@@ -345,9 +350,13 @@ import { Toasts } from '../core/toast';
       display: grid;
       gap: 10px;
     }
+    .model {
+      display: grid;
+      gap: 6px;
+    }
     .tier {
       display: grid;
-      grid-template-columns: minmax(0, 1.4fr) 200px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1.2fr) 190px minmax(0, 1.3fr);
       gap: 10px;
       align-items: center;
       small { display: block; font-size: 12px; }
@@ -401,9 +410,50 @@ export class SettingsPage {
     { key: 'research', name: 'Research', hint: 'Web search with sources' },
   ];
 
+  protected readonly refreshing = signal(false);
+  protected readonly models = signal<AiModels | null>(null);
+  /** Tiers where you chose "Other…" to type a model id. */
+  protected readonly custom = signal<Set<string>>(new Set());
+
   protected loadUsage(days: number): void {
     this.usageDays.set(days);
-    this.api.aiUsage(days).subscribe({ next: (u) => this.usage.set(u), error: () => undefined });
+    this.refreshing.set(true);
+    this.api.aiUsage(days).subscribe({
+      next: (u) => {
+        this.usage.set(u);
+        this.refreshing.set(false);
+      },
+      error: () => this.refreshing.set(false),
+    });
+  }
+
+  protected loadModels(refresh = false): void {
+    this.api.aiModels(refresh).subscribe({ next: (m) => this.models.set(m), error: () => undefined });
+  }
+
+  protected model(form: AppSettings, tier: string): string {
+    return (form as unknown as Record<string, string>)[`ai_${tier}_model`];
+  }
+
+  protected modelsFor(form: AppSettings, tier: string): AiModel[] {
+    const provider = (form as unknown as Record<string, 'anthropic' | 'openai'>)[`ai_${tier}_provider`];
+    return this.models()?.[provider]?.models ?? [];
+  }
+
+  protected listed(form: AppSettings, tier: string): boolean {
+    const list = this.modelsFor(form, tier);
+    return !list.length || list.some((m) => m.id === this.model(form, tier));
+  }
+
+  protected pickModel(form: AppSettings, tier: string, value: string): void {
+    const custom = new Set(this.custom());
+    if (value === '__other') {
+      custom.add(tier);
+    } else {
+      custom.delete(tier);
+      (form as unknown as Record<string, string>)[`ai_${tier}_model`] = value;
+    }
+    this.custom.set(custom);
   }
 
   protected kilo(n: number): string {
@@ -419,6 +469,9 @@ export class SettingsPage {
     const f = form as unknown as Record<string, string>;
     f[`ai_${tier}_provider`] = provider;
     f[`ai_${tier}_model`] = defaults[provider][tier];
+    const custom = new Set(this.custom());
+    custom.delete(tier);
+    this.custom.set(custom);
   }
   protected readonly platformChoices = ['tiktok', 'instagram', 'youtube', 'x', 'facebook'];
 
@@ -431,6 +484,7 @@ export class SettingsPage {
 
   constructor() {
     this.loadUsage(30);
+    this.loadModels();
     this.api.settings().subscribe({ next: (bundle) => this.apply(bundle), error: (err) => this.toasts.error(err) });
     this.api.voiceOptions().subscribe({ next: (v) => this.voices.set(v), error: () => undefined });
   }

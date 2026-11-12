@@ -1,9 +1,9 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Script, VoiceOptions, VoiceTake } from '../core/models';
+import { Script, VoiceChoice, VoiceOptions, VoiceTake } from '../core/models';
 import { Toasts } from '../core/toast';
 import { JobCard } from './job-card';
 import { Recorder } from './recorder';
@@ -17,7 +17,7 @@ type Mode = 'none' | 'record' | 'ai';
   templateUrl: './voice-panel.html',
   styleUrl: './voice-panel.scss',
 })
-export class VoicePanel {
+export class VoicePanel implements OnDestroy {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly store = inject(JobsStore);
@@ -40,6 +40,64 @@ export class VoicePanel {
     return this.engine() === 'kokoro' ? options.kokoro : options.elevenlabs;
   });
   protected readonly working = computed(() => this.busy() || this.takes().some((t) => t.job));
+
+  /** The voice whose sample is playing (or loading), for the compare list. */
+  protected readonly playing = signal<string | null>(null);
+  protected readonly loading = signal(false);
+  private readonly player = new Audio();
+  private readonly samples = new Map<string, string>();   // voice|speed -> object URL
+
+  /** The start of the script, cut at a sentence end: what each Kokoro sample reads. */
+  private sampleText(): string {
+    const text = this.script().sections.map((s) => s.text).join(' ').trim();
+    const cut = text.slice(0, 220);
+    const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '));
+    return end > 60 ? cut.slice(0, end + 1) : cut;
+  }
+
+  protected play(v: VoiceChoice): void {
+    if (this.playing() === v.id) {
+      this.player.pause();
+      this.playing.set(null);
+      return;
+    }
+    this.player.pause();
+    this.playing.set(v.id);
+    const start = (src: string) => {
+      this.loading.set(false);
+      this.player.src = src;
+      this.player.onended = () => this.playing.set(null);
+      this.player.play().catch(() => this.playing.set(null));
+    };
+    if (this.engine() === 'elevenlabs') {
+      if (v.preview) start(v.preview);
+      return;
+    }
+    const key = `${v.id}|${this.speed()}`;
+    const cached = this.samples.get(key);
+    if (cached) {
+      start(cached);
+      return;
+    }
+    this.loading.set(true);
+    this.api.voiceSample(v.id, this.speed(), this.sampleText()).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        this.samples.set(key, url);
+        if (this.playing() === v.id) start(url);
+      },
+      error: (err) => {
+        this.loading.set(false);
+        this.playing.set(null);
+        this.toasts.error(err);
+      },
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.player.pause();
+    for (const url of this.samples.values()) URL.revokeObjectURL(url);
+  }
 
   constructor() {
     this.api.voiceOptions().subscribe({

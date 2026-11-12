@@ -214,6 +214,9 @@ class StudioMusic(Base):
     license: Mapped[str] = mapped_column(String(16), default="")       # cc0 | pdm | by
     source_url: Mapped[str] = mapped_column(Text, default="")
     attribution: Mapped[str] = mapped_column(Text, default="")         # the credit line for the description
+    genres: Mapped[list] = mapped_column(JSON, default=list)
+    # Measured from the audio: tempo, how busy and how bright it is (see sound.describe_track).
+    features: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

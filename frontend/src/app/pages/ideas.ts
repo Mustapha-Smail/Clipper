@@ -195,9 +195,13 @@ export class IdeasPage {
   }
 
   /** Research and write the script for an approved idea, then open it. */
-  protected writeScript(idea: Idea): void {
+  protected writeScript(idea: Idea, minutes: number): void {
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30) {
+      this.toasts.error('Choose a length between 1 and 30 minutes');
+      return;
+    }
     this.starting.set(idea.id);
-    this.api.startScript(idea.id).subscribe({
+    this.api.startScript(idea.id, minutes).subscribe({
       next: (script) => {
         this.starting.set(null);
         this.store.refresh();

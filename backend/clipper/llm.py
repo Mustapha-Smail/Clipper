@@ -17,7 +17,7 @@ import time
 
 from pydantic import BaseModel
 
-from . import claude, openai_compat
+from . import claude, config, openai_compat
 from .db import session_scope
 from .db.models import AiUsage
 
@@ -36,6 +36,7 @@ TASKS = {
     "brief_check": ("quick", "Checking clips against briefs"),
     "verdicts": ("quick", "Reading fact-check results"),
     "props": ("quick", "Drawing props"),
+    "music": ("quick", "Suggesting music"),
     "research": ("research", "Researching scripts"),
     "verify": ("research", "Looking up claims"),
 }
@@ -50,6 +51,47 @@ PRICES = {
 SEARCH_PRICE = 0.01
 
 PROVIDERS = {"anthropic": claude, "openai": openai_compat}
+
+KNOWN = {   # shown first in Settings, with a short description
+    "anthropic": {"claude-opus-5-5": "Opus 5.5 · best writing", "claude-sonnet-5-5": "Sonnet 5.5 · balanced",
+                  "claude-haiku-5-5": "Haiku 5.5 · fast and cheapest",
+                  "claude-fable-5-2": "Fable 5.2 · most capable, priciest"},
+    "openai": {"gpt-6-astra": "GPT-6 Astra · flagship", "gpt-6.1-sol": "GPT-6.1 Sol · balanced",
+               "gpt-6.1-terra": "GPT-6.1 Terra · cheaper", "gpt-6-luna": "GPT-6 Luna · fast and cheapest"},
+}
+_model_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _live_ids(provider: str) -> list[str]:
+    """Model ids the account can use, from the provider's models endpoint."""
+    if provider == "anthropic":
+        import anthropic
+        return [m.id for m in anthropic.Anthropic().models.list(limit=100)]
+    client = openai_compat._client()
+    ids = [m.id for m in client.models.list()]
+    if not config.openai_base_url():   # OpenAI lists embeddings, audio and image models too
+        ids = [i for i in ids if i.startswith(("gpt-", "o")) and not any(
+            x in i for x in ("audio", "realtime", "tts", "transcribe", "image", "embedding", "search"))]
+    return ids
+
+
+def available_models(provider: str, refresh: bool = False) -> dict:
+    """Models to offer for a provider: known ones first with prices, then the rest of the account's."""
+    cached = _model_cache.get(provider)
+    if cached and not refresh and time.monotonic() - cached[0] < 3600:
+        models, error = cached[1], None
+    else:
+        error = None
+        try:
+            live = _live_ids(provider)
+        except Exception as err:  # noqa: BLE001 - no key, offline, or a server without /models
+            live, error = [], str(err).split("\n")[0][:200]
+        known = KNOWN.get(provider, {})
+        models = [{"id": k, "label": v, "price": PRICES.get(k), "live": k in live} for k, v in known.items()]
+        models += [{"id": i, "label": i, "price": PRICES.get(i), "live": True} for i in sorted(live) if i not in known]
+        if not error:
+            _model_cache[provider] = (time.monotonic(), models)
+    return {"models": models, "error": error}
 
 
 def route(task: str) -> tuple[str, str, str]:

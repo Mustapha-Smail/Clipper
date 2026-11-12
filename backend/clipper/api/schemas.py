@@ -456,6 +456,13 @@ class SectionRewriteOut(BaseModel):
 class VoiceChoice(BaseModel):
     id: str
     label: str
+    preview: str | None = None
+
+
+class VoiceSample(BaseModel):
+    voice: str = Field(min_length=2, max_length=64)
+    speed: float = Field(1.0, ge=0.7, le=1.3)
+    text: str = Field("", max_length=600)
 
 
 class VoiceOptions(BaseModel):
@@ -575,7 +582,22 @@ class MusicOut(Model):
     license: str
     source_url: str
     attribution: str
+    genres: list[str]
+    features: dict | None
     created_at: UtcDatetime
+
+
+class MusicFit(BaseModel):
+    track_id: int
+    fit: int
+    reason: str
+
+
+class MusicSuggestion(BaseModel):
+    choice: int | None
+    reason: str
+    level_db: int
+    ranking: list[MusicFit]
 
 
 class MusicFound(BaseModel):

@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport,
+  UsageReport, MusicSuggestion, AiModels,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -232,6 +232,20 @@ export class Api {
   }
   importMusic(openverseId: string): Observable<MusicTrack> {
     return this.http.post<MusicTrack>(`${BASE}/music/import`, { openverse_id: openverseId });
+  }
+  /** A few seconds of `text` in a Kokoro voice, as a playable object URL. */
+  voiceSample(voice: string, speed: number, text: string): Observable<Blob> {
+    return this.http.post(`${BASE}/voices/sample`, { voice, speed, text }, { responseType: 'blob' });
+  }
+  suggestMusic(storyboardId: number): Observable<MusicSuggestion> {
+    return this.http.post<MusicSuggestion>(`${BASE}/storyboards/${storyboardId}/suggest-music`, {});
+  }
+  soundPreviewUrl(storyboardId: number, musicId: number | null, musicDb: number, effects: boolean, start = 0): string {
+    const music = musicId === null ? '' : `&music_id=${musicId}`;
+    return `${BASE}/storyboards/${storyboardId}/sound-preview?music_db=${musicDb}&effects=${effects}&start=${start}${music}&t=${Date.now()}`;
+  }
+  aiModels(refresh = false): Observable<AiModels> {
+    return this.http.get<AiModels>(`${BASE}/system/ai-models`, { params: { refresh } });
   }
   allStoryboards(): Observable<StoryboardListItem[]> {
     return this.http.get<StoryboardListItem[]>(`${BASE}/storyboards`);

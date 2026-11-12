@@ -160,5 +160,20 @@ def test_elevenlabs_sections_are_joined_with_pauses(app_env, tmp_path, monkeypat
 def test_voice_options_without_elevenlabs(client, monkeypatch):
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     options = client.get("/api/v1/voices").json()
-    assert {"id": "am_michael", "label": "Michael · American man, calm"} in options["kokoro"]
+    assert {"id": "am_michael", "label": "Michael · American man, calm", "preview": None} in options["kokoro"]
     assert not options["elevenlabs_available"] and options["defaults"]["engine"] == "kokoro"
+
+
+def test_voice_samples_are_made_once(client, monkeypatch):
+    calls = []
+
+    def fake_kokoro(sections, name, speed, out, rep):
+        calls.append(sections[0]["text"])
+        voice._write_wav(out, tone(0.5), 24000)
+    monkeypatch.setattr(voice, "speak_kokoro", fake_kokoro)
+    body = {"voice": "bm_george", "speed": 1.0, "text": "There is no white LED.   Well, almost none."}
+    first = client.post("/api/v1/voices/sample", json=body)
+    second = client.post("/api/v1/voices/sample", json=body)
+    assert first.status_code == 200 and first.content[:4] == b"RIFF" and second.content == first.content
+    assert calls == ["There is no white LED. Well, almost none."]          # cached, spaces tidied
+    assert client.post("/api/v1/voices/sample", json={**body, "voice": "nobody"}).status_code == 400

@@ -141,6 +141,10 @@ Below the script, the Voice panel makes takes of the script as it is saved:
   205 MB, downloads once into `data/cache/kokoro`), or ElevenLabs with
   `ELEVENLABS_API_KEY` in `.env` (your account's voices appear in the list).
 
+To compare AI voices before making a take, open "Compare voices": each Kokoro
+voice reads the start of your script (free, cached after the first play); each
+ElevenLabs voice plays ElevenLabs' own preview clip (no credits used).
+
 Every take becomes a 48 kHz mono WAV normalised to about -16 LUFS, then
 Whisper times it and the words are matched to the script: each section's time
 range, passages not spoken as written, and speech that is not in the script
@@ -193,8 +197,18 @@ drawn by code in `studio/art.py`; props are rendered with resvg.
   upload. On a storyboard, pick a track and a level (default -18 dB below the
   voice); it loops, fades in and out, and drops about 7 dB more while the voice
   speaks.
-- **Sound effects:** soft pops and whooshes, synthesised in code, on element
-  entrances. On by default; switch off per storyboard.
+- **Sound effects:** synthesised in code and matched to what appears: bloops and
+  plops for characters and props, plucks and clicks for words, a small bell for
+  numbers, a boing for things that bounce or grow, a zip for arrows, whooshes for
+  slides. Pitch and length vary, the same sound never plays twice in a row, and
+  each storyboard has its own sequence. On by default; switch off per storyboard.
+- **Suggest music:** one small call on the quick tier ranks your library against
+  the video's tone, from what the app measured in each track (tempo, density,
+  brightness, dynamics; no audio is sent) and its genres. It may well answer "no
+  music". "Hear the mix" plays 25 seconds of voice, effects and a track together
+  without rendering anything.
+- **Scenes** are grouped by chapter (long videos) or by 15 seconds (Shorts);
+  groups fold away.
 - **For YouTube:** download the subtitles (.srt, the script's exact words with
   the take's timing) and copy the chapter list for the description. The app
   warns when YouTube's chapter rules (3 or more, 10 s each, from 0:00) are not
@@ -211,7 +225,9 @@ models):
 | Quick tasks | idea checks, campaign terms, brief checks, reading fact-check results, drawing props | Claude Haiku 5.5 |
 | Research | script research and claim look-ups, with web search and citations | Claude Sonnet 5.5 |
 
-Each tier can use Claude or OpenAI (`OPENAI_API_KEY`), or any OpenAI-compatible
+Models are picked from a list: the known current ones first with their prices,
+then every model your key can use ("Other…" accepts any model id, for example
+on a local Ollama). Each tier can use Claude or OpenAI (`OPENAI_API_KEY`), or any OpenAI-compatible
 server (`OPENAI_BASE_URL`: OpenRouter, a local Ollama...). Compatible servers
 have no web search, so Research needs Claude or OpenAI itself.
 

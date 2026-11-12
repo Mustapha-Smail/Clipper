@@ -18,12 +18,12 @@ import { CAST, EXPRESSIONS, POSES } from './storyboard';
           <p class="muted">What your animated videos are made of: props drawn once in the house style and reused, the
             cast, and background music. Claude draws new props when a storyboard needs them; redraw any you do not like.</p>
         </div>
-        <input type="search" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event)" aria-label="Find a prop" />
+        <input type="search" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(0)" aria-label="Find a prop" />
       </div>
 
       @if (assets(); as list) {
         <div class="grid">
-          @for (a of shown(); track a.name) {
+          @for (a of pageItems(); track a.name) {
             <article class="card prop">
               <img [src]="image(a)" [alt]="a.name" loading="lazy" />
               <div class="name">{{ a.name }}</div>
@@ -49,6 +49,13 @@ import { CAST, EXPRESSIONS, POSES } from './storyboard';
             <div class="empty">{{ list.length ? 'No prop matches.' : 'No props yet. They appear when you make your first storyboard.' }}</div>
           }
         </div>
+        @if (pages() > 1) {
+          <div class="pager">
+            <button class="sm" (click)="page.set(page() - 1)" [disabled]="page() === 0">Previous</button>
+            <span class="small muted num">Page {{ page() + 1 }} of {{ pages() }} · {{ shown().length }} props</span>
+            <button class="sm" (click)="page.set(page() + 1)" [disabled]="page() >= pages() - 1">Next</button>
+          </div>
+        }
       } @else {
         <div class="skeleton" style="height:200px"></div>
       }
@@ -132,6 +139,7 @@ import { CAST, EXPRESSIONS, POSES } from './storyboard';
   `,
   styles: `
     .page-head input { max-width: 220px; }
+    .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 14px 0 6px; }
     .find { margin-bottom: 12px; display: grid; gap: 10px; }
     .find select { width: auto; }
     .results { margin-top: 10px; }
@@ -226,6 +234,13 @@ export class PropsPage {
       },
     });
   }
+  protected readonly page = signal(0);
+  private readonly perPage = 24;
+  protected readonly pages = computed(() => Math.max(1, Math.ceil(this.shown().length / this.perPage)));
+  protected readonly pageItems = computed(() => {
+    const page = Math.min(this.page(), this.pages() - 1);
+    return this.shown().slice(page * this.perPage, (page + 1) * this.perPage);
+  });
   protected readonly shown = computed(() => {
     const q = this.query().trim().toLowerCase();
     return (this.assets() ?? []).filter((a) => !q || a.name.includes(q) || a.description.toLowerCase().includes(q));

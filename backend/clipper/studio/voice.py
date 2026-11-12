@@ -13,10 +13,12 @@ spoken, which the storyboard and renderer will follow.
 """
 
 import difflib
+import hashlib
 import json
 import logging
 import re
 import shutil
+import threading
 import urllib.error
 import urllib.request
 import wave
@@ -229,8 +231,33 @@ def elevenlabs_voices() -> list[dict]:
     voices = []
     for v in data.get("voices", []):
         labels = ", ".join(str(x) for x in (v.get("labels") or {}).values() if x)
-        voices.append({"id": v["voice_id"], "label": v.get("name", v["voice_id"]) + (f" · {labels}" if labels else "")})
+        voices.append({"id": v["voice_id"], "label": v.get("name", v["voice_id"]) + (f" · {labels}" if labels else ""),
+                       "preview": v.get("preview_url")})   # ElevenLabs' own sample: free to play
     return voices
+
+
+# --- short samples, to compare voices before making a whole take ---------------------------
+
+_sample_lock = threading.Lock()
+
+
+def sample_kokoro(voice: str, speed: float, text: str) -> Path:
+    """A few seconds of `text` in a Kokoro voice, cached so each sample is made once."""
+    if voice not in KOKORO_VOICES:
+        raise ValueError(f"Unknown Kokoro voice: {voice}")
+    text = " ".join(text.split())[:300] or "Your fridge has never made cold. It just moves heat around."
+    key = hashlib.sha256(f"{voice}|{speed:.2f}|{text}".encode()).hexdigest()[:20]
+    folder = config.data_dir() / "cache" / "voice-samples"
+    out = folder / f"{key}.wav"
+    if out.is_file():
+        return out
+    folder.mkdir(parents=True, exist_ok=True)
+    with _sample_lock:   # one sample at a time keeps memory flat
+        if not out.is_file():
+            partial = out.with_suffix(".partial.wav")
+            speak_kokoro([{"text": text}], voice, speed, partial, Reporter())   # the base reporter is silent
+            partial.replace(out)
+    return out
 
 
 def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: float, out: Path,
