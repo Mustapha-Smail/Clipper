@@ -146,15 +146,77 @@ def rub(rng: np.random.Generator) -> np.ndarray:
     return (smooth * shape * np.sin(np.pi * x / x[-1]) * 4.0).astype(np.float32)
 
 
+def step(rng: np.random.Generator) -> np.ndarray:
+    """A soft footstep: a short low knock with a little scuff."""
+    n = int(RATE * rng.uniform(0.06, 0.09))
+    t = np.arange(n) / RATE
+    knock = np.sin(2 * np.pi * rng.uniform(70, 110) * t) * np.exp(-t * 60)
+    scuff = np.convolve(rng.standard_normal(n), np.ones(6) / 6, mode="same") * np.exp(-t * 90) * 0.4
+    return ((knock + scuff) * 0.9).astype(np.float32)
+
+
+def run_step(rng: np.random.Generator) -> np.ndarray:
+    """A quicker, lighter footfall."""
+    return step(rng)[: int(RATE * 0.05)] * 0.8
+
+
+def thud(rng: np.random.Generator) -> np.ndarray:
+    """Something heavy landing."""
+    n = int(RATE * 0.22)
+    t = np.arange(n) / RATE
+    body = np.sin(2 * np.pi * np.cumsum(np.full(n, rng.uniform(55, 75)) * (1 + 0.6 * np.exp(-t * 30))) / RATE)
+    dust = np.convolve(rng.standard_normal(n), np.ones(20) / 20, mode="same") * 0.5
+    return ((body + dust) * np.exp(-t * 18)).astype(np.float32)
+
+
+def swish(rng: np.random.Generator) -> np.ndarray:
+    """A fast swing through the air: a short, bright whoosh."""
+    n = int(RATE * rng.uniform(0.12, 0.18))
+    noise = np.diff(rng.standard_normal(n + 1)).astype(np.float32)
+    x = np.linspace(0, 1, n)
+    return (noise * np.sin(np.pi * x) ** 2 * 0.6).astype(np.float32)
+
+
+def slide(rng: np.random.Generator) -> np.ndarray:
+    """Something sliding across the paper."""
+    n = int(RATE * rng.uniform(0.3, 0.45))
+    noise = rng.standard_normal(n).astype(np.float32)
+    smooth = np.convolve(noise, np.hanning(40) / np.hanning(40).sum(), mode="same")
+    x = np.linspace(0, 1, n)
+    return (smooth * np.sin(np.pi * x) * 3.0).astype(np.float32)
+
+
+def creak(rng: np.random.Generator) -> np.ndarray:
+    """Effort against something heavy: a slow, grainy creak."""
+    n = int(RATE * rng.uniform(0.35, 0.5))
+    t = np.arange(n) / RATE
+    freq = rng.uniform(90, 130) * (1 + 0.15 * np.sin(2 * np.pi * 3 * t))
+    saw = 2 * ((np.cumsum(freq) / RATE) % 1) - 1
+    grain = (rng.random(n) < 0.02).astype(np.float32)
+    shape = np.sin(np.pi * t / t[-1])
+    return ((saw * 0.25 + np.convolve(grain, np.ones(30) / 3, mode="same")) * shape * 0.6).astype(np.float32)
+
+
+def lift(rng: np.random.Generator) -> np.ndarray:
+    """Picking something up: a small rising pluck."""
+    n = int(RATE * 0.12)
+    return _sweep(rng.uniform(300, 360), rng.uniform(520, 640), n, 20) * _env(n, 20) * 0.6
+
+
 FAMILIES = {"bloop": (bloop, 1.0), "plop": (plop, 0.9), "pluck": (pluck, 0.8), "click": (click, 0.9),
             "ding": (ding, 0.55), "boing": (boing, 0.8), "zip": (zip_up, 0.7), "whoosh": (whoosh, 1.0),
-            "scribble": (scribble, 0.55), "rub": (rub, 0.6)}
+            "scribble": (scribble, 0.55), "rub": (rub, 0.6), "step": (step, 0.5), "run_step": (run_step, 0.45),
+            "thud": (thud, 0.9), "swish": (swish, 0.7), "slide": (slide, 0.5), "creak": (creak, 0.5),
+            "lift": (lift, 0.7)}
 CHOICES = {   # what appears -> the families that suit it
     "character": ["bloop", "plop"], "prop": ["bloop", "plop", "pluck"], "text": ["pluck", "click", "bloop"],
     "number": ["ding"], "arrow": ["zip"], "slide": ["whoosh"], "bounce": ["boing"], "grow": ["boing", "bloop"],
     # the ink style: a pen draws, the camera glides, an eraser rubs out
     "scribble": ["scribble"], "pan": ["whoosh"], "cross": ["scribble", "click"], "tick": ["ding", "pluck"],
     "shake": ["click"], "erase": ["rub"],
+    # bodies and things on the move
+    "step": ["step"], "run_step": ["run_step"], "thud": ["thud"], "swish": ["swish", "whoosh"],
+    "glide": ["slide"], "creak": ["creak"], "lift": ["lift"],
 }
 
 

@@ -489,10 +489,11 @@ def composer_for(board: dict, props: dict[str, str | None], settings: Settings, 
     return Composer(board, props, settings, mouths)
 
 
-def effect_events(style: str, scenes: list[dict], word_time, duration: float) -> list[tuple[float, str]]:
-    if style == "ink":
-        return beats.effect_events(scenes, word_time, duration)
-    return sound.effect_events(scenes, word_time, duration)
+def effect_events(composer, duration: float) -> list[tuple[float, str]]:
+    """The sound effects of a storyboard, from the composer that films it."""
+    if hasattr(composer, "sound_events"):
+        return composer.sound_events()
+    return sound.effect_events(composer.scenes, composer.word_time, duration)
 
 
 _still_cache: dict = {}
@@ -530,11 +531,9 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
     with tempfile.TemporaryDirectory() as tmp:
         inputs = ["-ss", f"{board.start + start:.3f}", "-t", f"{seconds:.3f}", "-i", voice_path]
         if effects:
-            composer_words = board.words
-
-            def word_time(i):
-                return composer_words[max(0, min(i, len(composer_words) - 1))]["s"] if composer_words else 0.0
-            events = [(at - start, kind) for at, kind in effect_events(board.style, board.scenes, word_time, duration)
+            data, props, _ = load(board.id)
+            composer = composer_for(data, props, Settings(), None)
+            events = [(at - start, kind) for at, kind in effect_events(composer, duration)
                       if start <= at < start + seconds]
             fx = Path(tmp) / "fx.wav"
             sound.write_effects(events, seconds, fx, seed=board.id)
@@ -577,7 +576,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{duration:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
     if board["effects"]:
-        events = effect_events(board["style"], composer.scenes, composer.word_time, duration)
+        events = effect_events(composer, duration)
         sound.write_effects(events, duration, effects_wav, seed=board["id"])
         audio_inputs += ["-i", str(effects_wav)]
         rep.info(f"{len(events)} sound effects")

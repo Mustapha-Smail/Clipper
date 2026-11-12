@@ -12,6 +12,7 @@ them into line art and a wash, so the ink style needs no new drawings.
 """
 
 import io
+import json
 import math
 import re
 import threading
@@ -237,7 +238,12 @@ POSE_ANGLES = {
     "wave": (0, 4, (-30, -14), (120, 160), (-9, -4), (9, 4)),
     "surprised": (-8, -6, (-70, -132), (70, 132), (-12, -6), (12, 6)),
     "sad": (8, 18, (-10, -4), (10, 4), (-6, -3), (6, 3)),
-    "jump": (0, -6, (-125, -148), (125, 148), (-48, 22), (40, -30)),
+    "crossed": (-3, 4, (-26, 68), (26, -68), (-9, -4), (9, 4)),         # arms folded: an X across the chest
+    "hips": (0, -4, (-60, 25), (60, -25), (-12, -6), (12, 6)),           # hands on hips
+    "present": (-4, -6, (-30, -14), (62, 88), (-9, -4), (9, 4)),          # "ta-da", palm out
+    "scared": (-12, 10, (110, 160), (120, 168), (-34, 20), (30, -24)),    # crouched, arms up in front
+    "carry": (-5, 0, (64, 104), (72, 100), (-9, -4), (9, 4)),             # holding something at the chest
+    "drop": (0, 6, (-30, -14), (30, 14), (-9, -4), (9, 4)),               # lets go
 }
 REACH = {"point": ("front",), "hold": ("back", "front"), "push": ("back", "front"), "pull": ("back", "front")}
 
@@ -306,11 +312,85 @@ def reach(pose: Pose, side: str, target: tuple[float, float]) -> Pose:
                 angles if side == "front_arm" else pose.front_arm, pose.back_leg, pose.front_leg)
 
 
+# --- moves from motion capture -----------------------------------------------------------------
+
+MOVES_FILE = config.ASSETS / "moves.json"
+GAITS = ("walk", "run", "march", "zombie")
+
+
+@lru_cache(maxsize=1)
+def moves() -> dict:
+    """Recorded moves (CMU motion capture, see tools/mocap_import.py): name -> clip."""
+    data = json.loads(MOVES_FILE.read_text())
+    out = {}
+    for name, clip in data["moves"].items():
+        frames = np.asarray(clip["frames"], dtype=np.float32)
+        out[name] = {"frames": frames, "loop": clip["loop"], "what": clip["what"], "view": clip["view"],
+                     "seconds": len(frames) / data["fps"], "stride": float(frames[-1, 10] - frames[0, 10])}
+    return out
+
+
+MOVE_FPS = 24
+
+
+def _frame_pose(f: np.ndarray) -> Pose:
+    return Pose(float(f[0]), float(f[1]), (float(f[2]), float(f[3])), (float(f[4]), float(f[5])),
+                (float(f[6]), float(f[7])), (float(f[8]), float(f[9])))
+
+
+def move_frame(name: str, seconds: float) -> tuple[Pose, float, float]:
+    """A recorded move `seconds` in: the pose, how far the body has travelled, and how high it is off the ground."""
+    clip = moves()[name]
+    frames = clip["frames"]
+    k = min(seconds * MOVE_FPS, len(frames) - 1.001)
+    i = int(k)
+    f = frames[i] + (frames[min(i + 1, len(frames) - 1)] - frames[i]) * (k - i)
+    return _frame_pose(f), float(f[10] - frames[0, 10]), float(f[11])
+
+
+def gait_frame(name: str, distance: float) -> tuple[Pose, float]:
+    """A walk (or run, march, shuffle) after `distance` drawing units: the pose and the height off the ground."""
+    clip = moves()[name]
+    frames = clip["frames"]
+    phase = (distance / max(clip["stride"], 1.0)) % 1.0
+    k = phase * (len(frames) - 1)
+    i = int(k)
+    f = frames[i] + (frames[min(i + 1, len(frames) - 1)] - frames[i]) * (k - i)
+    return _frame_pose(f), float(f[11])
+
+
+@lru_cache(maxsize=32)
+def move_cues(name: str) -> tuple[tuple[float, str], ...]:
+    """When a recorded move makes a sound, from the recording itself: take-offs, landings, the swing of a kick."""
+    clip = moves()[name]
+    frames = clip["frames"]
+    air = frames[:, 11]
+    cues = []
+    for i in range(1, len(frames)):
+        if air[i - 1] <= 3 < air[i] and name in ("jump", "cartwheel"):
+            cues.append((i / MOVE_FPS, "swish"))
+        if air[i - 1] > 3 >= air[i]:
+            cues.append((i / MOVE_FPS, "thud" if name in ("jump", "cartwheel", "stumble") else "step"))
+    if name in ("kick", "throw"):
+        limbs = frames[:, [8, 6]] if name == "kick" else frames[:, [4, 2]]
+        speed = np.abs(np.diff(limbs, axis=0)).max(axis=1)
+        cues.append((float(np.argmax(speed)) / MOVE_FPS, "swish"))
+    return tuple(sorted(cues))
+
+
 def walk_pose(base: Pose, phase: float) -> Pose:
-    """Legs and arms swinging, for a figure on the move. `phase` counts steps."""
+    """Legs and arms swinging, for a figure on the move. `phase` counts steps. (Without recorded moves.)"""
     s = math.sin(phase * math.pi)
     return Pose(base.lean + 4, base.tilt, (-14 - 16 * s, -10 - 10 * s), (14 + 16 * s, 8 + 14 * s),
                 (-26 * s, -26 * s - 8 * abs(s)), (26 * s, 26 * s - 8 * abs(s)))
+
+
+def lowest(pose: Pose) -> float:
+    """How far below the hip the lowest point of the figure is (feet, hands or head): it rests on the ground."""
+    j = joints(pose)
+    points = [j["back_leg"][-1][1], j["front_leg"][-1][1], j["back_arm"][-1][1], j["front_arm"][-1][1],
+              j["head"][1] + HEAD_R]
+    return max(points) + 4
 
 
 def figure_svg(variant: str, pose: Pose, expression: str = "neutral", mouth: int = 0, blink: bool = False,

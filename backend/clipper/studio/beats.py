@@ -26,9 +26,13 @@ SLOTS = ("left", "center", "right", "top", "bottom", "top_left", "top_right", "b
 SIZES = {"small": "small", "medium": "medium", "large": "large", "s": "small", "m": "medium", "l": "large"}
 COLORS = ("warm", "bad", "good", "gold", "green", "ink")
 EXPRESSIONS = art.EXPRESSIONS
-POSES = ("stand", "point", "hold", "push", "pull", "shrug", "think", "facepalm", "cheer", "wave", "surprised",
-         "sad", "jump")
-TARGETED = {"point", "hold", "push", "pull"}          # poses that reach for something
+STILL_POSES = ("stand", "point", "hold", "push", "pull", "carry", "drop", "shrug", "think", "facepalm", "cheer", "wave",
+               "surprised", "sad", "crossed", "hips", "present", "scared")
+# recorded moves (motion capture): played once, then back to the pose before
+ACTIONS = ("jump", "kick", "throw", "pickup", "stumble", "laugh", "dance", "cartwheel", "jacks", "signal")
+POSES = STILL_POSES + ACTIONS
+GAITS = ("walk", "run", "march", "zombie")             # how a `move` gets there
+TARGETED = {"point", "hold", "push", "pull", "carry"}  # poses that reach for something
 CAMERAS = ("wide", "push", "drift", "close")
 MARKS = ("circle", "underline", "cross", "tick")
 MOTIONS = ("shake", "bounce", "pulse", "spin", "grow", "shrink")
@@ -134,8 +138,12 @@ def parse_line(raw: str) -> Line | None:
             line.size = SIZES[low]
         elif low in POSES and verb in ("actor", "do") and not line.pose:
             line.pose = low
+        elif low in GAITS and verb == "move" and not line.pose:
+            line.pose = low
         elif low in EXPRESSIONS and verb in ("actor", "do", "face") and not line.expression:
             line.expression = low
+        elif (low in POSES or low in EXPRESSIONS) and verb in ("actor", "do"):
+            continue                       # a second pose or face in one line: the first one wins
         elif low in COLORS and not line.color:
             line.color = low
         elif low in ("big",):
@@ -366,32 +374,6 @@ def to_text(shots: list[dict]) -> str:
         out.append(" ".join([str(sh["start_word"]), "shot", _quote(sh["note"]), *options]).strip())
         out += sh["lines"]
     return "\n".join(out)
-
-
-# --- sound ----------------------------------------------------------------------------------
-
-def effect_events(shots: list[dict], word_time, duration: float) -> list[tuple[float, str]]:
-    """(time, kind) for the sounds of an ink storyboard: pen on paper, camera moves, bounces."""
-    events = []
-    for i, sh in enumerate(shots):
-        start = word_time(sh["start_word"]) if i else 0.0
-        if i:
-            events.append((max(0.0, start - 0.05), "pan"))
-        for line in parsed(sh):
-            at = max(start, word_time(line.word))
-            kind = {"draw": "scribble", "write": "scribble", "actor": "scribble", "arrow": "scribble",
-                    "circle": "scribble", "underline": "scribble", "cross": "cross", "tick": "tick",
-                    "bounce": "bounce", "grow": "grow", "shake": "shake", "erase": "erase"}.get(line.verb)
-            if line.verb == "do" and line.pose == "jump":
-                kind = "bounce"
-            if kind and at < duration:
-                events.append((at, kind))
-    events.sort()
-    kept: list[tuple[float, str]] = []
-    for at, kind in events:
-        if not kept or at - kept[-1][0] >= 0.15:
-            kept.append((at, kind))
-    return kept
 
 
 # --- the slideshow score ----------------------------------------------------------------------

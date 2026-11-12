@@ -9,7 +9,7 @@ import { Toasts } from '../core/toast';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
-export const CAST = ['narrator', 'person', 'scientist', 'worker', 'royal', 'fancy', 'kid', 'chef'];
+export const CAST = ['narrator', 'person', 'scientist', 'worker', 'royal', 'fancy', 'kid', 'chef', 'woman', 'elder'];
 export const POSES = ['stand', 'point_left', 'point_right', 'shrug', 'arms_up', 'think', 'wave', 'facepalm'];
 export const EXPRESSIONS = ['neutral', 'happy', 'surprised', 'worried', 'smug', 'deadpan', 'angry', 'sad'];
 export const BACKGROUNDS = ['paper', 'grid', 'floor', 'sky', 'yellow', 'blue'];
@@ -20,15 +20,19 @@ const INK_CHEAT_SHEET = `N shot "what the viewer sees"   (use Split to start a s
 N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
 N draw PROP [PLACE] [small|large] ["label"] [as ID]
 N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
-N do ACTOR POSE [TARGET] [FACE]      N face ACTOR FACE      N move ACTOR|PROP PLACE|TARGET
+N do ACTOR POSE|ACTION [TARGET] [FACE]      N face ACTOR FACE
+N move ACTOR|PROP PLACE|TARGET [walk|run|march|zombie]
 N arrow FROM TO [COLOUR]             N circle|underline|cross|tick TARGET [COLOUR]
 N shake|bounce|pulse|spin|grow|shrink TARGET
 N erase TARGET|all                   N look TARGET|all   (the camera moves in, or back out)
 
 WHO      ${CAST.join(' ')}
 PLACE    ${SLOTS.join(' ')}
-POSE     stand point hold push pull shrug think facepalm cheer wave surprised sad jump
-         (point, hold, push and pull take a TARGET; the actor walks up to it)
+POSE     stand point hold push pull carry drop shrug think facepalm cheer wave surprised sad
+         crossed hips present scared   (point, hold, push, pull, carry take a TARGET;
+         the actor walks up to it; carry takes it along until drop)
+ACTION   jump kick throw pickup stumble laugh dance cartwheel jacks signal
+         (recorded movements, played once; kick and throw send a TARGET flying)
 FACE     ${EXPRESSIONS.join(' ')}
 COLOUR   warm bad good gold green
 TARGET   an actor's name, a prop's name, an ID given with "as", or a PLACE`;

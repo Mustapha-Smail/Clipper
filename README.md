@@ -208,8 +208,24 @@ plan, with every deduction listed: stretches over 4 seconds with nothing new,
 shots where nothing acts, idle characters, too much writing, repeated patterns,
 a slow average pace. It advises; you decide.
 
+**Acting.** Actors hold poses (point, hold, push, pull, carry, drop, shrug,
+think, facepalm, cheer, wave, surprised, sad, crossed arms, hands on hips,
+"ta-da", scared) and play recorded movements once: jump, kick, throw, pick up,
+stumble, laugh, dance, cartwheel, jumping jacks, signal. Those movements, and
+walking, running, marching and a zombie shuffle, come from the CMU Graphics Lab
+Motion Capture Database (free for commercial use), turned into the figure's
+angles by `backend/tools/mocap_import.py` and bundled as
+`clipper/assets/moves.json`. Walks are matched to the ground covered, so feet
+do not slide; the lowest point of the body rests on the ground (hands, in a
+cartwheel). An actor carrying a prop takes it along until they drop it, and it
+falls; a kicked or thrown prop flies off. Footsteps, landings, swishes,
+creaks and slides are synthesised to match. The cast: narrator, person,
+scientist, worker, royal, fancy, kid, chef, woman, elder.
+
 Props come from the same library as the flat style: each is turned into ink
-lines and a wash by code, so no new drawing is needed. The pen scribbles when
+lines and a wash by code, so no new drawing is needed. New props are drawn
+with a style guide that makes them work both as flat stickers and as ink line
+drawings. The pen scribbles when
 something draws itself on, the camera whooshes between shots, an eraser rubs
 things out.
 

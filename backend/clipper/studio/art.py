@@ -33,6 +33,8 @@ CHARACTERS = {
     "fancy": "Top hat, for anyone from the 1800s",
     "kid": "Smaller, with a cap",
     "chef": "Chef's hat",
+    "woman": "Long hair",
+    "elder": "Bald with a beard, for anyone old or wise",
 }
 BACKGROUNDS = ("paper", "grid", "floor", "sky", "yellow", "blue")
 
@@ -177,6 +179,13 @@ def _costume(variant: str) -> str:
     if variant == "chef":
         return (f'<path d="M100 58 Q76 18 112 10 Q128 -12 150 6 Q172 -12 188 10 Q224 18 200 58 Z" '
                 f'fill="#ffffff" {ink}/>')
+    if variant == "woman":
+        return (f'<path d="M82 116 Q70 40 150 34 Q230 40 218 116 L226 196 Q200 178 196 132 Q190 74 150 70 '
+                f'Q110 74 104 132 Q100 178 74 196 Z" fill="{PALETTE["brown"]}" {ink}/>')
+    if variant == "elder":
+        return (f'<path d="M102 152 Q112 214 150 226 Q188 214 198 152 Q174 170 150 168 Q126 170 102 152 Z" '
+                f'fill="#ffffff" {ink}/>'
+                f'<path d="M96 70 Q102 58 112 62 M188 62 Q198 58 204 70" {ink}/>')
     return ""
 
 

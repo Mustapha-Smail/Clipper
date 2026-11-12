@@ -91,10 +91,10 @@ def test_the_score_explains_every_point():
     assert report["score"] == 100 + sum(x["points"] for x in report["lines"]) and report["verdict"] == "slideshow risk"
 
 
-def test_sound_follows_the_pen_and_the_camera():
-    events = beats.effect_events(beats.parse_plan(PLAN, 12), lambda i: i * 0.5, 6.0)
-    kinds = [k for _, k in events]
-    assert kinds[0] == "scribble" and "pan" in kinds and "cross" in kinds and "erase" in kinds
+def test_sound_follows_the_pen_the_camera_and_the_feet():
+    composer = stage.InkComposer(board(), {"fridge": SVG, "snowflake": SVG}, Settings(), None)
+    kinds = [k for _, k in composer.sound_events()]
+    assert kinds[0] == "scribble" and {"pan", "cross", "erase", "step", "creak", "swish"} <= set(kinds)
 
 
 def test_props_turn_into_ink_lines_that_draw_themselves():
@@ -243,3 +243,54 @@ def test_the_camera_waits_for_something_to_show():
     assert composer.arrivals == [0.0, 4.5]
     assert composer.camera(3.0)[0] < composer.origins[1][0]            # still on the fridge after the shot starts
     assert composer.camera(5.5)[0] > composer.origins[1][0]
+
+
+# --- phase 2: moves, carrying, ground ---------------------------------------------------------
+
+def test_recorded_moves_are_bundled_and_make_sounds():
+    moves = ink.moves()
+    assert set(beats.ACTIONS) | set(beats.GAITS) <= set(moves)
+    for name in beats.GAITS:
+        assert moves[name]["loop"] and moves[name]["stride"] > 50       # one stride covers ground
+    pose, travelled, air = ink.move_frame("jump", 1.0)
+    assert isinstance(pose, ink.Pose) and max(f[11] for f in moves["jump"]["frames"]) > 30
+    assert {kind for _, kind in ink.move_cues("jump")} == {"swish", "thud"}
+    assert any(kind == "swish" for _, kind in ink.move_cues("kick"))
+
+
+def test_a_figure_rests_its_lowest_point_on_the_ground():
+    standing, crouched = ink.lowest(ink.Pose.named("stand")), ink.lowest(ink.Pose.named("scared"))
+    assert standing == pytest.approx(ink.FEET_Y, abs=4) and crouched < standing - 10
+
+
+def test_gaits_and_actions_in_the_language():
+    assert beats.parse_line("12 move narrator right run").render() == "12 move narrator run right"
+    assert beats.parse_line("3 do woman cartwheel happy").pose == "cartwheel"
+    shots, dropped = beats.clean([beats.shot(0, lines=["0 actor elder left crossed", "1 do elder dance"])], 10)
+    assert not dropped and shots[0]["lines"][1] == "1 do elder dance"
+
+
+def test_carried_things_go_where_the_actor_goes_and_fall_when_dropped():
+    plan = ["0 actor narrator left", "0 draw fridge right", "1 do narrator carry fridge",
+            "4 move narrator center run", "8 do narrator drop", "10 do narrator kick fridge"]
+    shots, dropped = beats.clean([beats.shot(0, lines=plan)], 12)
+    assert not dropped
+    composer = stage.InkComposer({**board(), "scenes": shots}, {"fridge": SVG}, Settings(), None)
+    things = {x.id: x for x in composer.things}
+    narrator, fridge = things["narrator"], things["fridge"]
+    assert fridge.held and fridge.held[0][1] == pytest.approx(4.0, abs=0.6)    # let go on the drop
+    carried = composer.centre(fridge, 3.0)
+    hands = composer._hands(narrator, 3.0)
+    assert abs(carried[1] - hands[1]) < fridge.box[3] * 0.2                     # held at the hands
+    assert any(g == "run" for _, _, g in narrator.gaits)
+    fallen = composer.centre(fridge, 4.0 + stage.FALL_TIME + 0.2)
+    assert fallen[1] > carried[1]                                                # on the floor now
+    assert narrator.acts and narrator.acts[-1][1] == "kick"
+    kinds = {k for _, k in composer.sound_events()}
+    assert {"lift", "thud", "run_step", "swish"} <= kinds
+    composer.bgr(3.0)
+
+
+def test_a_second_pose_in_a_line_is_ignored():
+    line = beats.parse_line("4 do narrator crossed hips smug")
+    assert (line.pose, line.expression, line.target) == ("crossed", "smug", "")

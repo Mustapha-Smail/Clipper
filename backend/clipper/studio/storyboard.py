@@ -26,7 +26,7 @@ from .. import llm
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, VoiceTake, utcnow
 from ..jobs import Reporter
-from . import art, beats
+from . import art, beats, ink
 from . import voice as voice_mod
 
 log = logging.getLogger("clipper.studio")
@@ -270,17 +270,22 @@ happens. A shot line opens each shot; beat lines follow it:
   N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
   N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [as ID]
   N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
-  N do ACTOR POSE [TARGET] [FACE]
+  N do ACTOR POSE|ACTION [TARGET] [FACE]
   N face ACTOR FACE
-  N move ACTOR|PROP PLACE|TARGET   (to a thing: walks up to it, or lands on it)
+  N move ACTOR|PROP PLACE|TARGET [GAIT]   (to a thing: walks up to it, or lands on it)
   N arrow FROM TO [COLOUR]
   N circle|underline|cross|tick TARGET [COLOUR]
   N shake|bounce|pulse|spin|grow|shrink TARGET
   N erase TARGET|all
   N look TARGET|all          (the camera moves in on something, or back out)
 PLACE: left center right top bottom top_left top_right bottom_left bottom_right
-POSE: stand point hold push pull shrug think facepalm cheer wave surprised sad jump. \
-point, hold, push and pull take a TARGET, and the actor walks up to it by itself.
+POSE (held until the next one): stand point hold push pull carry drop shrug think facepalm cheer wave \
+surprised sad crossed hips present scared. point, hold, push, pull and carry take a TARGET, and \
+the actor walks up to it by itself; carry picks a prop up, and it goes wherever the actor \
+moves until drop (or any other pose) lets it fall.
+ACTION (a recorded movement, played once, about 1 to 3 seconds): {actions}. kick and throw \
+take a TARGET, which flies off.
+GAIT (how a move gets there): walk (default) run march zombie
 FACE: {faces}
 COLOUR: warm (flow, emphasis), bad (problems, myths), good (answers, truth), gold, green
 TARGET and FROM/TO: an actor's name, a prop's name, an ID given with `as`, or a PLACE.
@@ -296,8 +301,11 @@ new beat. Something happens within the first 2 seconds.
 - Bring an actor on with an actor line before anything else mentions them.
 - At most 5 things on stage at once: erase what is finished before adding more.
 - The narrator (glasses) is the host who handles things and reacts; other cast members \
-play people in the story ({cast}). Prefer hands-on poses (hold, push, pull) and \
-motions over pointing: point at most once per shot.
+play people in the story ({cast}). Prefer hands-on poses (hold, push, pull, carry), \
+actions and motions over pointing: point at most once per shot. An action is a strong \
+beat: use one where the narration has energy (a jump for a surprise, a stumble for a \
+mistake, a dance for a win), not in every shot: about one every 20 to 40 seconds, and \
+two or three in a Short. Have actors walk or run between places with move.
 - Write at most one word or number per shot, and only when it must be remembered.
 - Camera: wide is the default; push slowly moves in, for a key moment; drift for calm \
 stretches; close frames small things tightly. Use look for a reveal.
@@ -311,8 +319,10 @@ A short example, for a different video:
 0 shot "The narrator drops toast; it lands butter side down"
 0 actor narrator left deadpan talk
 2 draw toast center
-3 do narrator hold toast
-6 bounce toast
+3 do narrator carry toast
+5 move narrator center
+6 do narrator drop
+7 do narrator stumble
 7 write "butter side down" top bad as myth
 9 do narrator facepalm
 12 shot "A table is exactly the wrong height" push
@@ -322,7 +332,7 @@ A short example, for a different video:
 18 do narrator point kitchen_table surprised
 """
 
-BEAT_SECONDS = 2.2      # one beat line every 2.2 s or so: lively without crowding
+BEAT_SECONDS = {"long": 2.2, "short": 1.6}    # a beat line this often: lively without crowding
 
 INK_FORMAT_RULES = {
     "short": "The frame is vertical (9:16) and captions cover the bottom third: keep things in the top, center "
@@ -337,7 +347,9 @@ INK_FORMAT_RULES = {
 def ink_system(fmt: str, props: str) -> str:
     """The planner's instructions with the cast and the prop library: the part every chapter shares."""
     cast = ", ".join(name for name in art.CHARACTERS if name != "narrator")
-    return (INK_PLAN.format(faces=" ".join(art.EXPRESSIONS), cast=cast, format_rules=INK_FORMAT_RULES[fmt])
+    actions = ", ".join(f"{name} ({clip['what']})" for name, clip in ink.moves().items() if name in beats.ACTIONS)
+    return (INK_PLAN.format(faces=" ".join(art.EXPRESSIONS), cast=cast, actions=actions,
+                            format_rules=INK_FORMAT_RULES[fmt])
             + f"\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>")
 
 
@@ -356,8 +368,10 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         chapter_line = f"<chapter>{chapter}</chapter>\n\n" if chapter else ""
         seconds = part[-1]["e"] - part[0]["s"]
         prompt = (f"<video_title>{title}</video_title>\n\n{chapter_line}"
-                  f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / BEAT_SECONDS))} beat "
-                  f"lines in all</length>\n\n<narration>\n{numbered_words(part)}\n</narration>")
+                  f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / BEAT_SECONDS[fmt]))} beat "
+                  f"lines in all, including about {max(1, round(seconds / 25))} ACTION lines and "
+                  f"{max(1, round(seconds / 30))} move lines for actors</length>\n\n"
+                  f"<narration>\n{numbered_words(part)}\n</narration>")
         # Medium effort: at high, most of the answer was the model thinking (about 85% of the tokens)
         # for a plan of the same quality.
         return offset, len(part), llm.ask("storyboard", system, prompt, InkPlan, effort="medium", cache=True)
@@ -418,7 +432,12 @@ A few white highlight strokes are welcome.
 - Allowed elements: path, rect, circle, ellipse, line, polyline, polygon, g. No text, \
 no gradients, filters, masks, images, styles, scripts or links.
 - Recognisable at a glance at small size; a little character (a slight tilt, a \
-cartoon proportion) is good, faces on objects only if asked."""
+cartoon proportion) is good, faces on objects only if asked.
+- It must also read as a line drawing: the channel's ink style shows props as black \
+lines with a pale colour wash. So every part that matters is its own outlined shape \
+(a screen, a button, a label area), never only a change of fill colour, and the outline \
+of the whole object is clear. One or two short accent strokes (shine, glow, motion) are \
+welcome; no ground, no shadow, no scenery."""
 
 
 def draw_prop(name: str, description: str, instruction: str = "") -> str:

@@ -31,8 +31,10 @@ DRAW_TIME = {"actor": 0.7, "prop": 0.8, "arrow": 0.45, "circle": 0.55, "underlin
              "tick": 0.3}
 ERASE_TIME = 0.3
 POSE_TIME = 0.45
-JUMP_TIME = 0.7
 MOVE_SPEED = 0.5             # of the frame width per second, walking
+GAIT_SPEED = {"walk": 1.0, "run": 2.1, "march": 0.9, "zombie": 0.45}     # times MOVE_SPEED
+LIFT_TIME = 0.25             # picking something up
+FALL_TIME = 0.4              # something dropped falls to the ground
 PAN_TIME = 0.9
 PAGE_TIME = 1.2
 LOOK_TIME = 0.6
@@ -77,6 +79,10 @@ class Thing:
     moves: list[tuple[float, float, Feet, Feet]] = field(default_factory=list)       # (t, duration, from, to)
     faces: list[tuple[float, str]] = field(default_factory=list)
     facing: list[tuple[float, str]] = field(default_factory=list)
+    gaits: list[tuple[float, float, str]] = field(default_factory=list)   # (start, end, walk|run|march|zombie)
+    acts: list[tuple[float, str]] = field(default_factory=list)           # recorded moves: (start, name)
+    # props: held by an actor from start to end (None: still held)
+    held: list[list] = field(default_factory=list)
     # writing, arrows and marks
     strokes: list = field(default_factory=list)
     lines: list[str] = field(default_factory=list)
@@ -292,7 +298,7 @@ class InkComposer:
                     if line.expression:
                         target.faces.append((t, line.expression))
                 elif line.verb == "move":
-                    target.requests.append((t, "move", line.slot, line.target, i))
+                    target.requests.append((t, f"move:{line.pose or 'walk'}", line.slot, line.target, i))
             self._layout(i, [x for x in created if x.kind in ("actor", "prop", "text")], carried)
             for x in carried + created:
                 if x.kind == "actor":
@@ -354,6 +360,8 @@ class InkComposer:
                 else:
                     here, there = self.centre(x, begin), (cx + ox, cy + oy)
                 x.moves.append((begin, duration, here, there))
+                if x.kind == "actor":
+                    x.gaits.append((begin, begin + duration, "walk"))
                 x.shot = shot
                 x.spans.append((shot, begin))
             else:
@@ -362,7 +370,8 @@ class InkComposer:
                 if x.kind == "actor":
                     x.home = (cx + ox, cy + oy + h / 2)
                     x.facing.append((x.born, self._face_centre(shot, x.home[0])))
-                    first = x.line.pose if x.line.pose and x.line.pose not in ("hold", "push", "pull") else "stand"
+                    first = x.line.pose if x.line.pose in ink.POSE_ANGLES and x.line.pose not in beats.TARGETED \
+                        else "stand"
                     pose = ink.Pose.named(first)
                     x.poses.append((x.born, pose, pose, first))
 
@@ -373,12 +382,13 @@ class InkComposer:
         return self.props.get(thing.line.who) or art.placeholder_svg(thing.line.who)
 
     def _resolve_actor(self, actor: Thing, live: dict[str, Thing], shot: int) -> None:
-        """Turn the actor's requests in this shot into walks and poses."""
+        """Turn the actor's requests in this shot into walks, poses and recorded moves."""
         for t, kind, value, target_name, at_shot in sorted(actor.requests, key=lambda r: r[0]):
             if at_shot != shot:
                 continue
             t = max(t, self._busy_until(actor))
-            if kind == "move":
+            if kind.startswith("move"):
+                gait = kind.partition(":")[2] or "walk"
                 here = self.position(actor, t)
                 goal = live.get(target_name) if target_name else None
                 if goal is not None and not value:      # walk up to it and stop beside it
@@ -388,17 +398,17 @@ class InkComposer:
                 else:
                     cx, cy = self._slot(shot, value)
                     there = (cx, cy + actor.box[3] / 2)
-                self._walk(actor, t, here, there)
+                self._walk(actor, t, here, there, gait)
                 continue
             target = live.get(target_name) if target_name else None
             begin = t
-            if target is not None and value in ("hold", "push", "pull"):
+            if target is not None and value in ("hold", "push", "pull", "carry", "kick"):
                 here = self.position(actor, t)
                 side = 1 if target.box[0] >= here[0] else -1
                 arm = 1.7 * ink.ARM * self._unit(actor)
                 body = self.body_box(target, t)
                 edge = body[0] if side > 0 else body[2]
-                stand = edge - side * arm * 0.8
+                stand = edge - side * arm * (0.8 if value != "kick" else 0.9)
                 if abs(stand - here[0]) > arm * 0.25:
                     begin = t + self._walk(actor, t, here, (stand, here[1]))
             if target is not None:
@@ -406,14 +416,47 @@ class InkComposer:
                 actor.facing.append((begin, side))
             if value == "keep":
                 continue
+            if value == "drop" or value not in ("carry",):
+                self._let_go(actor, begin)
+            if value in beats.ACTIONS:
+                self._act(actor, begin, value, target)
+                continue
             goal = ink.Pose.named(value)
             if target is not None and value in ink.REACH:
                 goal = self._reach(actor, goal, value, target, begin)
             before = self.pose(actor, begin)
             actor.poses.append((begin, before, goal, value))
-            if value == "jump":       # a jump lands back in the pose before it
-                actor.poses.append((begin + JUMP_TIME, goal, before, "land"))
+            if value == "carry" and target is not None and target.kind == "prop":
+                target.held.append([begin + POSE_TIME * 0.5, None, actor])
         actor.facing.sort(key=lambda f: f[0])
+
+    def _act(self, actor: Thing, begin: float, name: str, target: "Thing | None") -> None:
+        """A recorded move: played once, then the actor is back in the pose before, where the move left them."""
+        clip = ink.moves()[name]
+        actor.acts.append((begin, name))
+        here = self.position(actor, begin)
+        sign = 1 if self._facing(actor, begin) == "right" else -1
+        travel = clip["stride"] * self._unit(actor) * sign
+        actor.moves.append((begin + clip["seconds"], 0.0, here, (here[0] + travel, here[1])))
+        if target is not None and target.kind != "actor" and name in ("kick", "throw"):
+            # what is kicked or thrown flies off the way the actor faces
+            hit = begin + clip["seconds"] * 0.45
+            start = self.centre(target, hit)
+            target.moves.append((hit, 0.55, start, (start[0] + sign * self.W * 0.3, start[1] - self.H * 0.04)))
+
+    def _let_go(self, actor: Thing, t: float) -> None:
+        """Whatever the actor is carrying falls to the ground at t."""
+        for thing in self.things:
+            for hold in thing.held:
+                if hold[2] is actor and hold[1] is None and hold[0] < t:
+                    hold[1] = t
+
+    def _facing(self, actor: Thing, t: float) -> str:
+        facing = "right"
+        for at, side in sorted(actor.facing, key=lambda f: f[0]):
+            if at <= t:
+                facing = side
+        return facing
 
     def _resolve_slides(self, thing: Thing, shot: int, live: dict[str, Thing]) -> None:
         """A prop or a word moved to another place glides there; moved to something, it lands on top of it."""
@@ -432,7 +475,29 @@ class InkComposer:
             here = there
 
     def centre(self, thing: Thing, t: float) -> tuple[float, float]:
-        """Where a prop or a word is at time t (they can slide)."""
+        """Where a prop or a word is at time t: it can slide, be carried, and fall when dropped."""
+        x, y = self._resting(thing, t)
+        for start, end, actor in thing.held:
+            if t < start:
+                break
+            moment = min(t, end) if end is not None else t
+            hands = self._hands(actor, moment)
+            sign = 1 if self._facing(actor, moment) == "right" else -1
+            held = (hands[0] + sign * thing.box[2] * 0.18, hands[1] - thing.box[3] * 0.05)   # in front, at the chest
+            if t < start + LIFT_TIME:                   # picked up: rises into the hands
+                k = ink.ease((t - start) / LIFT_TIME)
+                before = self._resting(thing, start)
+                return before[0] + (held[0] - before[0]) * k, before[1] + (held[1] - before[1]) * k
+            if end is None or t < end:
+                return held
+            ground = self.position(actor, end)[1] - thing.box[3] / 2
+            if t < end + FALL_TIME:                     # dropped: falls, faster and faster
+                k = ((t - end) / FALL_TIME) ** 2
+                return held[0], held[1] + (ground - held[1]) * k
+            x, y = held[0], ground
+        return x, y
+
+    def _resting(self, thing: Thing, t: float) -> tuple[float, float]:
         x, y = thing.box[0], thing.box[1]
         for start, duration, a, b in thing.moves:
             if t >= start + duration:
@@ -442,12 +507,25 @@ class InkComposer:
                 return a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k
         return x, y
 
-    def _busy_until(self, actor: Thing) -> float:
-        return max((t + d for t, d, _a, _b in actor.moves), default=0.0)
+    def _hands(self, actor: Thing, t: float) -> tuple[float, float]:
+        """The middle of the actor's two hands, on the page."""
+        pose, facing, k, hip = self.figure(actor, t)
+        j = ink.joints(pose)
+        sign = 1 if facing == "right" else -1
+        mx = (j["back_arm"][-1][0] + j["front_arm"][-1][0]) / 2
+        my = (j["back_arm"][-1][1] + j["front_arm"][-1][1]) / 2
+        return hip[0] + sign * mx * k, hip[1] + my * k
 
-    def _walk(self, actor: Thing, t: float, here: Feet, there: Feet) -> float:
-        duration = max(0.5, math.hypot(there[0] - here[0], there[1] - here[1]) / (self.W * MOVE_SPEED))
+    def _busy_until(self, actor: Thing) -> float:
+        moving = max((t + d for t, d, _a, _b in actor.moves), default=0.0)
+        acting = max((t + ink.moves()[name]["seconds"] for t, name in actor.acts), default=0.0)
+        return max(moving, acting)
+
+    def _walk(self, actor: Thing, t: float, here: Feet, there: Feet, gait: str = "walk") -> float:
+        speed = self.W * MOVE_SPEED * GAIT_SPEED.get(gait, 1.0)
+        duration = max(0.5, math.hypot(there[0] - here[0], there[1] - here[1]) / speed)
         actor.moves.append((t, duration, here, there))
+        actor.gaits.append((t, t + duration, gait))
         if abs(there[0] - here[0]) > 4:
             actor.facing.append((t, "right" if there[0] > here[0] else "left"))
         return duration
@@ -510,13 +588,56 @@ class InkComposer:
                 break
         return x, y
 
-    def walking(self, actor: Thing, t: float) -> float | None:
-        """Steps taken so far, while the actor is walking."""
+    def walking(self, actor: Thing, t: float) -> tuple[float, str] | None:
+        """While the actor is walking: how far it has gone (in figure units) and how (walk, run...)."""
         for start, duration, a, b in actor.moves:
-            if start <= t < start + duration:
+            if duration and start <= t < start + duration:
                 distance = math.hypot(b[0] - a[0], b[1] - a[1]) * ink.ease((t - start) / duration)
-                return distance / (ink.LEG * self._unit(actor) * 0.9)
+                gait = next((g for s, e, g in actor.gaits if s <= t < e), "walk")
+                return distance / self._unit(actor), gait
         return None
+
+    def acting(self, actor: Thing, t: float) -> tuple[float, str] | None:
+        for start, name in actor.acts:
+            if start <= t < start + ink.moves()[name]["seconds"]:
+                return start, name
+        return None
+
+    def holding(self, actor: Thing, t: float) -> bool:
+        return any(h[2] is actor and h[0] <= t and (h[1] is None or t < h[1])
+                   for x in self.things for h in x.held)
+
+    def figure(self, actor: Thing, t: float) -> tuple[ink.Pose, str, float, tuple[float, float]]:
+        """The actor at time t: pose, facing, pixels per figure unit, and where its hip is on the page.
+
+        Walks and runs come from recorded strides matched to the distance
+        covered; recorded moves blend in and out of the pose; the lowest point
+        of the body (feet, or hands in a cartwheel) rests on the ground unless
+        the move is in the air.
+        """
+        pose = self.pose(actor, t)
+        air = dx = 0.0
+        walk = self.walking(actor, t)
+        if walk is not None:
+            stride, air = ink.gait_frame(walk[1], walk[0])
+            if self.holding(actor, t):        # carrying: legs walk, arms keep holding
+                stride = ink.Pose(stride.lean * 0.5, stride.tilt, pose.back_arm, pose.front_arm,
+                                  stride.back_leg, stride.front_leg)
+            pose = stride
+        else:
+            act = self.acting(actor, t)
+            if act is not None:
+                start, name = act
+                length = ink.moves()[name]["seconds"]
+                recorded, dx, air = ink.move_frame(name, t - start)
+                weight = max(0.0, min(1.0, (t - start) / 0.15, (start + length - t) / 0.2))
+                pose = pose.blend(recorded, weight)
+                air *= weight
+        facing = self._facing(actor, t)
+        k = self._unit(actor)
+        fx, fy = self.position(actor, t)
+        sign = 1 if facing == "right" else -1
+        return pose, facing, k, (fx + dx * k * sign, fy - (ink.lowest(pose) + air) * k)
 
     def pose(self, actor: Thing, t: float) -> ink.Pose:
         current = ink.Pose.named("stand")
@@ -771,15 +892,7 @@ class InkComposer:
                 ink.strokes_svg(thing.strokes, p), (x1 - x0) * zq, (y1 - y0) * zq, (x0, y0, x1 - x0, y1 - y0))))
             return image, (x0, y0)
         # an actor
-        k = self._unit(thing) * zq
-        pose = self.pose(thing, t)
-        step = self.walking(thing, t)
-        if step is not None:
-            pose = ink.walk_pose(pose, step)
-        facing = "right"
-        for at, side in thing.facing:
-            if at <= t:
-                facing = side
+        pose, facing, k, hip = self.figure(thing, t)
         expression = "neutral"
         for at, face in thing.faces:
             if at <= t:
@@ -790,17 +903,8 @@ class InkComposer:
         blink = ((t + thing.order * 1.3) % 3.9) < 0.12
         key = ("a", thing.id, pose.key(), expression, mouth, blink, facing, pq, zq, thing.line.who)
         image = self._cached(key, lambda: ink.render(ink.figure_svg(
-            thing.line.who, pose, expression, mouth, blink, facing, p, k)))
-        fx, fy = self.position(thing, t)
-        lift = 0.0
-        for start, _a, _b, name in thing.poses:
-            if name == "jump" and start <= t < start + JUMP_TIME:
-                q = (t - start) / JUMP_TIME
-                lift = 4 * q * (1 - q) * thing.box[3] * 0.3
-        if step is not None:
-            lift += abs(math.sin(step * math.pi)) * 6 * self.H / 1080
-        ax, ay = ink.figure_anchor(k)
-        return image, (fx - ax / zq, fy - lift - ay / zq)
+            thing.line.who, pose, expression, mouth, blink, facing, p, k * zq)))
+        return image, (hip[0] + ink.BOX[0] * k, hip[1] + ink.BOX[1] * k)
 
     def _resized(self, image: Image.Image, size: tuple[int, int]) -> Image.Image:
         key = (id(image), size)
@@ -891,6 +995,53 @@ class InkComposer:
 
     def frame(self, t: float) -> Image.Image:
         return Image.fromarray(self.frame_rgb(t), "RGB").convert("RGBA")
+
+    # --- sound ---------------------------------------------------------------------------
+
+    def sound_events(self) -> list[tuple[float, str]]:
+        """(time, kind) for every sound the picture makes: the pen, the camera, steps, landings, slides."""
+        events: list[tuple[float, str]] = []
+        for i in range(1, len(self.shots)):
+            events.append((self.pan_start(i)[0], "pan"))
+        draws = {"actor": "scribble", "prop": "scribble", "text": "scribble", "arrow": "scribble",
+                 "circle": "scribble", "underline": "scribble", "cross": "cross", "tick": "tick"}
+        for x in self.things:
+            verb = x.line.verb if x.kind in ("arrow", "mark") else x.kind
+            events.append((x.born, draws.get(verb, "scribble")))
+            if x.gone is not None:
+                events.append((x.gone, "erase"))
+            for t, motion in x.motions:
+                events.append((t, {"spin": "swish"}.get(motion, motion)))
+            for start, end, _actor in x.held:
+                events.append((start, "lift"))
+                if end is not None:
+                    events.append((end + FALL_TIME, "thud"))
+            if x.kind != "actor":
+                for start, duration, a, b in x.moves:
+                    if duration and math.hypot(b[0] - a[0], b[1] - a[1]) > 40:
+                        events.append((start, "glide"))
+                continue
+            for start, _a, _b, name in x.poses:
+                if name in ("push", "pull"):
+                    events.append((start + 0.1, "creak"))
+            for start, name in x.acts:
+                events += [(start + at, kind) for at, kind in ink.move_cues(name)]
+            for start, end, gait in x.gaits:          # a step for every footfall of the recorded stride
+                half = ink.moves()[gait]["stride"] / 2
+                last = 0
+                t = start
+                while t < end:
+                    walk = self.walking(x, t)
+                    if walk is not None and int(walk[0] / max(half, 1)) > last:
+                        last = int(walk[0] / max(half, 1))
+                        events.append((t, "run_step" if gait == "run" else "step"))
+                    t += 1 / 48
+        kept: list[tuple[float, str]] = []
+        for t, kind in sorted((t, kind) for t, kind in events if 0 <= t < self.duration):
+            if kept and kept[-1][1] == kind and t - kept[-1][0] < 0.15:
+                continue                          # things drawn together share one scratch of the pen
+            kept.append((t, kind))
+        return kept
 
     def bgr(self, t: float) -> np.ndarray:
         import cv2

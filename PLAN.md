@@ -91,8 +91,8 @@ Goal: videos that do not look like AI slop, stay within YouTube's rules on inaut
 | Phase | What gets built | Status |
 |---|---|---|
 | 1. Ink foundation | Beat language, action-per-idea planning, one continuous page with a framing camera, draw-on strokes, boil, 12 fps drawing, ink props from the existing library, liveliness score, shot editor with stills. Measured: planning a 7-minute video $0.07 on Sonnet (was $0.25; about $0.90 on Opus), render 4 min in Docker | Done 2026-11-12 |
-| 2. Characters that act | More poses, motion-capture moves (walk cycles, jumps) from the free CMU library, sounds tied to actions, a style guide for new props, open-licence icon sets before drawing | Next |
-| 3. Archive documentary | Public-domain photos, engravings and maps (Wikimedia Commons, Library of Congress, Smithsonian Open Access, NASA) with camera moves and ink notes on top; a credits list | |
+| 2. Characters that act | Motion-capture walks, runs, marches and 10 actions (CMU, free for commercial use), 6 new poses, carry and drop, kicks and throws that send props flying, ground contact, footsteps and action sounds, two new cast members, a prop style guide that works in both looks. Icon sets were skipped: props already cost about $0.001 each, and stock icons would make the look more generic | Done 2026-11-12 |
+| 3. Archive documentary (next) | Public-domain photos, engravings and maps (Wikimedia Commons, Library of Congress, Smithsonian Open Access, NASA) with camera moves and ink notes on top; a credits list | |
 | 4. More looks and compliance helpers | Paper cut-out and blueprint packs; authorship log; warning when a new video is too similar to the last ones; made-for-kids advice | |
 
 Cost levers still open: Shorts cut from the long video's plan instead of planned again, fewer research searches, fact checks on the claims without a source only, Batch API for non-urgent steps.
