@@ -1,4 +1,5 @@
 import { Component, effect, inject, input, signal, untracked } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
@@ -9,7 +10,7 @@ import { Toasts } from '../core/toast';
 /** Animated videos made from a script: Shorts, one per section for now. */
 @Component({
   selector: 'app-storyboards-panel',
-  imports: [RouterLink, AgoPipe],
+  imports: [FormsModule, RouterLink, AgoPipe],
   template: `
     <section class="card videos">
       <div>
@@ -22,6 +23,12 @@ import { Toasts } from '../core/toast';
       @if (!hasTake()) {
         <div class="notice small"><span>Mark a voice take with "Use for the video" first.</span></div>
       } @else {
+        <label class="field look"><span>Look</span>
+          <select [ngModel]="style()" (ngModelChange)="style.set($event)">
+            <option value="ink">Ink sketch: one hand-drawn page, actors act on things</option>
+            <option value="flat">Flat colour: the first style, scene by scene</option>
+          </select>
+        </label>
         <div class="row">
           <button class="primary" (click)="makeLong()" [disabled]="busy() || starting() === 'long'">
             {{ starting() === 'long' ? 'Starting…' : 'Make the long video (16:9)' }}</button>
@@ -44,8 +51,8 @@ import { Toasts } from '../core/toast';
         <a class="board" [routerLink]="['/storyboards', b.id]">
           <span class="grow">
             <strong>{{ b.title }}</strong>
-            <span class="small muted"> · {{ b.format === 'short' ? 'Short' : 'Long video' }} · {{ b.duration.toFixed(0) }} s ·
-              {{ b.scene_count }} scenes · {{ b.created_at | ago }}</span>
+            <span class="small muted"> · {{ b.format === 'short' ? 'Short' : 'Long video' }} · {{ b.style === 'ink' ? 'ink' : 'flat' }} ·
+              {{ b.duration.toFixed(0) }} s · {{ b.scene_count }} {{ b.style === 'ink' ? 'shots' : 'scenes' }} · {{ b.created_at | ago }}</span>
           </span>
           @if (b.job) {
             <span class="pill running">{{ b.job.message }}</span>
@@ -78,6 +85,7 @@ import { Toasts } from '../core/toast';
         border-bottom: 1px solid var(--line);
       }
     }
+    .look { max-width: 460px; }
     .pill.tiny {
       font-size: 10.5px;
       padding: 0 6px;
@@ -107,6 +115,7 @@ export class StoryboardsPanel {
   protected readonly boards = signal<StoryboardSummary[]>([]);
   protected readonly starting = signal<string | null>(null);
   protected readonly hasTake = signal(true);
+  protected readonly style = signal<'ink' | 'flat'>('ink');
 
   constructor() {
     let known = '';
@@ -131,7 +140,7 @@ export class StoryboardsPanel {
 
   protected makeLong(): void {
     this.starting.set('long');
-    this.api.createStoryboard(this.script().id, null, 'long').subscribe({
+    this.api.createStoryboard(this.script().id, null, 'long', this.style()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();
@@ -155,7 +164,7 @@ export class StoryboardsPanel {
         this.store.refresh();
         return;
       }
-      this.api.createStoryboard(this.script().id, key).subscribe({
+      this.api.createStoryboard(this.script().id, key, 'short', this.style()).subscribe({
         next: () => {
           queued++;
           next();
@@ -168,7 +177,7 @@ export class StoryboardsPanel {
 
   protected make(sectionKey: string): void {
     this.starting.set(sectionKey);
-    this.api.createStoryboard(this.script().id, sectionKey).subscribe({
+    this.api.createStoryboard(this.script().id, sectionKey, 'short', this.style()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();

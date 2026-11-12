@@ -120,11 +120,41 @@ def whoosh(rng: np.random.Generator) -> np.ndarray:
     return (smooth * envelope * 3.0).astype(np.float32) * 0.7
 
 
+def scribble(rng: np.random.Generator) -> np.ndarray:
+    """A pen on paper: bright scratchy noise in a few strokes, for things drawing themselves on."""
+    n = int(RATE * rng.uniform(0.35, 0.6))
+    noise = rng.standard_normal(n).astype(np.float32)
+    bright = np.diff(noise, prepend=0)                      # paper scratch lives in the highs
+    kernel = np.hanning(int(rng.integers(6, 14))).astype(np.float32)
+    bright = np.convolve(bright, kernel / kernel.sum(), mode="same")
+    x = np.arange(n) / RATE
+    strokes = rng.uniform(6, 11)                            # strokes per second
+    shape = np.abs(np.sin(np.pi * strokes * x + rng.uniform(0, np.pi))) ** 0.6
+    grit = 0.75 + 0.25 * rng.standard_normal(n // 200 + 2).repeat(200)[:n]
+    fade = np.minimum(1, x / 0.02) * np.minimum(1, (x[-1] - x) / 0.08)
+    return (bright * shape * grit * fade * 1.6).astype(np.float32)
+
+
+def rub(rng: np.random.Generator) -> np.ndarray:
+    """A softer, lower scrub: an eraser."""
+    n = int(RATE * rng.uniform(0.22, 0.32))
+    noise = rng.standard_normal(n).astype(np.float32)
+    kernel = np.hanning(int(rng.integers(30, 60))).astype(np.float32)
+    smooth = np.convolve(noise, kernel / kernel.sum(), mode="same")
+    x = np.arange(n) / RATE
+    shape = 0.6 + 0.4 * np.sin(2 * np.pi * rng.uniform(12, 16) * x)
+    return (smooth * shape * np.sin(np.pi * x / x[-1]) * 4.0).astype(np.float32)
+
+
 FAMILIES = {"bloop": (bloop, 1.0), "plop": (plop, 0.9), "pluck": (pluck, 0.8), "click": (click, 0.9),
-            "ding": (ding, 0.55), "boing": (boing, 0.8), "zip": (zip_up, 0.7), "whoosh": (whoosh, 1.0)}
+            "ding": (ding, 0.55), "boing": (boing, 0.8), "zip": (zip_up, 0.7), "whoosh": (whoosh, 1.0),
+            "scribble": (scribble, 0.55), "rub": (rub, 0.6)}
 CHOICES = {   # what appears -> the families that suit it
     "character": ["bloop", "plop"], "prop": ["bloop", "plop", "pluck"], "text": ["pluck", "click", "bloop"],
     "number": ["ding"], "arrow": ["zip"], "slide": ["whoosh"], "bounce": ["boing"], "grow": ["boing", "bloop"],
+    # the ink style: a pen draws, the camera glides, an eraser rubs out
+    "scribble": ["scribble"], "pan": ["whoosh"], "cross": ["scribble", "click"], "tick": ["ding", "pluck"],
+    "shake": ["click"], "erase": ["rub"],
 }
 
 

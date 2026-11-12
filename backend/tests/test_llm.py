@@ -17,11 +17,11 @@ def test_tasks_follow_their_tier_and_calls_are_logged_with_cost(app_env, monkeyp
     settings_mod.save(settings_mod.Settings(ai_quick_provider="openai", ai_quick_model="gpt-6-luna"))
     calls = []
 
-    def fake_openai(model, system, content, output_format, effort):
+    def fake_openai(model, system, content, output_format, effort, cache=False):
         calls.append(("openai", model))
         return Answer(word="hi"), {"input": 1000, "output": 200, "cache_read": 0}
 
-    def fake_claude(model, system, content, output_format, effort):
+    def fake_claude(model, system, content, output_format, effort, cache=False):
         calls.append(("anthropic", model))
         raise RuntimeError("Your Anthropic credit balance is too low.")
 

@@ -56,6 +56,7 @@ def _usage(response) -> dict:
     tools = getattr(usage, "server_tool_use", None)
     return {"input": getattr(usage, "input_tokens", 0) or 0, "output": getattr(usage, "output_tokens", 0) or 0,
             "cache_read": getattr(usage, "cache_read_input_tokens", 0) or 0,
+            "cache_write": getattr(usage, "cache_creation_input_tokens", 0) or 0,
             "searches": getattr(tools, "web_search_requests", 0) or 0 if tools else 0}
 
 
@@ -64,11 +65,13 @@ def _add(total: dict, more: dict) -> dict:
 
 
 def ask_model(model: str, system: str, content, output_format: type[BaseModel],
-              effort: str = "high") -> tuple[BaseModel, dict]:
+              effort: str = "high", cache: bool = False) -> tuple[BaseModel, dict]:
     """One request; the validated structured answer and its token usage.
 
     `content` is the user message: a string, or a list of content blocks
-    (text and base64 images, in Anthropic's shape).
+    (text and base64 images, in Anthropic's shape). With `cache`, the system
+    prompt is cached for a few minutes, so calls that share it (the chapters
+    of one storyboard) read it at a fraction of the price.
     """
     import anthropic
 
@@ -79,7 +82,7 @@ def ask_model(model: str, system: str, content, output_format: type[BaseModel],
             max_tokens=16000,
             output_config={"effort": effort},
             **_fallback(model),
-            system=system,
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}] if cache else system,
             messages=[{"role": "user", "content": content}],
             output_format=output_format,
         )

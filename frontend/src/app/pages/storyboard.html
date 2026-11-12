@@ -4,8 +4,9 @@
     <div class="page-head">
       <div>
         <h1>{{ b.title }}</h1>
-        <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} · {{ b.duration.toFixed(1) }} s ·
-          {{ scenes().length }} scenes · made {{ b.created_at | ago }}</p>
+        <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
+          {{ ink() ? 'ink sketch' : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
+          {{ scenes().length }} {{ ink() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
       </div>
       @if (b.has_video) {
         <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
@@ -49,7 +50,9 @@
           <small>Lowered further while the voice speaks.</small>
         </label>
         <label class="check"><input type="checkbox" [ngModel]="b.effects" (ngModelChange)="setSound({ effects: $event })" />
-          <span>Pops and whooshes<small>Quiet sounds when things appear.</small></span></label>
+          <span>{{ ink() ? 'Pen and camera sounds' : 'Pops and whooshes' }}<small>{{ ink()
+            ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
+            : 'Quiet sounds when things appear.' }}</small></span></label>
       </div>
       <div class="row sound-tools">
         <button class="sm" (click)="suggest()" [disabled]="suggesting()">
@@ -102,11 +105,33 @@
       <div class="row">
         <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
           {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
-        <button class="quiet" (click)="replan()" [disabled]="busy()">Plan the scenes again</button>
+        <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ ink() ? 'the shots' : 'the scenes' }} again</button>
         <span class="grow"></span>
         <button class="quiet danger" (click)="remove()" [disabled]="busy()">Delete</button>
       </div>
     </section>
+
+    @if (b.score; as sc) {
+      <section class="card score">
+        <div class="row spread">
+          <div class="row">
+            <h3>Liveliness <span class="num">{{ sc.score }}</span><span class="muted small">/100</span></h3>
+            <span class="pill" [class.approved]="sc.score >= 80" [class.failed]="sc.score < 60">{{ sc.verdict }}</span>
+          </div>
+          <span class="small muted">{{ sc.shots }} shots · something new every {{ sc.pace }} s on average</span>
+        </div>
+        @if (sc.lines.length) {
+          <ul class="deductions">
+            @for (l of sc.lines; track l.label) {
+              <li><span class="num points">{{ l.points }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
+            }
+          </ul>
+        } @else {
+          <p class="small muted">No deductions: every few seconds something is drawn, moves or gets marked.</p>
+        }
+        <p class="small muted">Plain arithmetic on the saved plan, every point shown. It advises; you decide.</p>
+      </section>
+    }
 
     <section class="card publish">
       <h3>For YouTube</h3>
@@ -164,6 +189,50 @@
     <div class="scenes" [class.wide]="b.format === 'long'">
       @for (i of g.indices; track i) {
         @let scene = scenes()[i];
+        @if (ink()) {
+        <article class="card scene ink" [class.open]="openScene() === i">
+          <img class="still" [src]="still(i)" [alt]="'Shot ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
+          <div class="body">
+            <div class="row spread">
+              <strong>Shot {{ i + 1 }}@if (scene.page) { <span class="pill tiny">new page</span> }</strong>
+              <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
+            </div>
+            <p class="small said">@for (w of spoken(i); track w.n) {<span class="w"><sup>{{ w.n }}</sup>{{ w.w }}</span> }</p>
+            <p class="small muted">{{ scene.note }}@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }</p>
+            @if (openScene() !== i) {
+              <pre class="beats">{{ (scene.lines ?? []).join('\n') }}</pre>
+            }
+            <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
+          </div>
+
+          @if (openScene() === i) {
+            <div class="editor">
+              <div class="scene-fields ink-fields">
+                <label class="field"><span>Camera</span>
+                  <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
+                    @for (o of inkCameras; track o.value) { <option [value]="o.value">{{ o.label }}</option> }</select></label>
+                <label class="field wide"><span>What the viewer sees</span>
+                  <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
+              </div>
+              <label class="field"><span>Beats: one per line, the word number first (the small numbers above the words)</span>
+                <textarea class="beats" spellcheck="false" [rows]="Math.max(4, (scene.lines ?? []).length + 1)"
+                          [ngModel]="(scene.lines ?? []).join('\n')" (ngModelChange)="setLines(i, $event)"></textarea></label>
+              <details class="fold small">
+                <summary class="muted">How to write beats</summary>
+                <pre class="cheat">{{ cheatSheet }}</pre>
+              </details>
+              <div class="row">
+                <span class="grow"></span>
+                <label class="field split"><span>New shot from</span>
+                  <select #splitInk>
+                    @for (w of spoken(i).slice(1); track w.n) { <option [value]="w.n">“{{ w.w }}”</option> }</select></label>
+                <button class="sm" (click)="splitAt(i, +splitInk.value)" [disabled]="spoken(i).length < 2">Split</button>
+                <button class="sm quiet danger" (click)="removeScene(i)">Remove shot</button>
+              </div>
+            </div>
+          }
+        </article>
+        } @else {
         <article class="card scene" [class.open]="openScene() === i">
           <img class="still" [src]="still(i)" [alt]="'Scene ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
           <div class="body">
@@ -271,6 +340,7 @@
             </div>
           }
         </article>
+        }
       }
     </div>
         }

@@ -402,12 +402,27 @@ export interface StoryElement {
   motion: string;
 }
 
+/**
+ * A scene of a flat storyboard, or a shot of an ink one. Ink shots have `lines`
+ * (the beat language: "12 do narrator push fridge") and no elements or background.
+ */
 export interface StoryScene {
   start_word: number;
   note: string;
   background: string;
   camera: string;
   elements: StoryElement[];
+  lines?: string[];
+  page?: boolean;
+}
+
+export interface LivelinessScore {
+  score: number;
+  verdict: string;
+  lines: { label: string; points: number; detail: string }[];
+  pace: number;
+  shots: number;
+  changes: number;
 }
 
 export interface StoryboardSummary {
@@ -415,6 +430,7 @@ export interface StoryboardSummary {
   script_id: number;
   take_id: number | null;
   format: 'short' | 'long';
+  style: 'ink' | 'flat';
   section_key: string | null;
   title: string;
   review: 'pending' | 'approved' | 'rejected';
@@ -434,6 +450,7 @@ export interface Storyboard extends StoryboardSummary {
   scenes: StoryScene[];
   missing_props: string[];
   music_credit: string;
+  score: LivelinessScore | null;
 }
 
 export interface Asset {

@@ -542,6 +542,7 @@ class AiTakeCreate(BaseModel):
 
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
+    style: Literal["ink", "flat"] = Field("ink", description="ink: beats on one page; flat: the first style, slides")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
 
@@ -551,6 +552,7 @@ class StoryboardSummary(Model):
     script_id: int
     take_id: int | None
     format: Literal["short", "long"]
+    style: Literal["ink", "flat"]
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -575,6 +577,7 @@ class StoryboardOut(StoryboardSummary):
     scenes: list[dict]
     missing_props: list[str]
     music_credit: str = ""
+    score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
 
 
 class StoryboardScenes(BaseModel):

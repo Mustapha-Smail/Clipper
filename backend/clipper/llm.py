@@ -43,7 +43,8 @@ TASKS = {
 }
 
 # Dollars per million tokens (input, output), for the estimate only. Cached input
-# is counted at a tenth of the input price; each web search at one cent.
+# is counted at a tenth of the input price, writing to the cache at 1.25 times
+# it; each web search at one cent.
 PRICES = {
     "claude-fable-5-2": (8.0, 40.0), "claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0),
     "claude-haiku-5-5": (0.10, 0.50),
@@ -109,7 +110,7 @@ def estimate(model: str, usage: dict) -> float | None:
     if price is None:
         return None
     tokens = (usage.get("input", 0) * price[0] + usage.get("cache_read", 0) * price[0] * 0.1
-              + usage.get("output", 0) * price[1]) / 1e6
+              + usage.get("cache_write", 0) * price[0] * 1.25 + usage.get("output", 0) * price[1]) / 1e6
     return round(tokens + usage.get("searches", 0) * SEARCH_PRICE, 5)
 
 
@@ -118,7 +119,8 @@ def _record(task: str, tier: str, provider: str, model: str, usage: dict, starte
     try:
         with session_scope() as db:
             db.add(AiUsage(task=task, tier=tier, provider=provider, model=model,
-                           input_tokens=usage.get("input", 0), output_tokens=usage.get("output", 0),
+                           input_tokens=usage.get("input", 0) + usage.get("cache_write", 0),
+                           output_tokens=usage.get("output", 0),
                            cache_read_tokens=usage.get("cache_read", 0), searches=usage.get("searches", 0),
                            cost_usd=estimate(model, usage) if not error else None, ok=error is None,
                            error=(error or "")[:500], duration_s=round(time.monotonic() - started, 2)))
@@ -126,12 +128,17 @@ def _record(task: str, tier: str, provider: str, model: str, usage: dict, starte
         log.warning("could not record AI usage", exc_info=True)
 
 
-def ask(task: str, system: str, content, output_format: type[BaseModel], effort: str = "high") -> BaseModel:
-    """A structured answer for `task`, from whichever model its tier uses."""
+def ask(task: str, system: str, content, output_format: type[BaseModel], effort: str = "high",
+        cache: bool = False) -> BaseModel:
+    """A structured answer for `task`, from whichever model its tier uses.
+
+    `cache`: the system prompt is shared by several calls in a row; let the
+    provider cache it.
+    """
     tier, provider, model = route(task)
     started = time.monotonic()
     try:
-        parsed, usage = PROVIDERS[provider].ask_model(model, system, content, output_format, effort)
+        parsed, usage = PROVIDERS[provider].ask_model(model, system, content, output_format, effort, cache=cache)
     except Exception as err:
         _record(task, tier, provider, model, {}, started, str(err) or err.__class__.__name__)
         raise

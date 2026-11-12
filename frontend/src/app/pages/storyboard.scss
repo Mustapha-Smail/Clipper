@@ -257,6 +257,92 @@
   }
 }
 
+.scene.ink .pill.tiny {
+  font-size: 10.5px;
+  padding: 0 6px;
+  margin-left: 6px;
+}
+
+.scene.ink .w {
+  display: inline-block;
+  margin-right: 4px;
+  font-style: normal;
+
+  sup {
+    font-size: 9px;
+    color: var(--muted);
+    margin-right: 1px;
+  }
+}
+
+pre.beats,
+textarea.beats,
+pre.cheat {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+pre.beats {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+
+textarea.beats {
+  width: 100%;
+  resize: vertical;
+}
+
+pre.cheat {
+  margin: 6px 0 0;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  white-space: pre-wrap;
+}
+
+.ink-fields {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.score {
+  display: grid;
+  gap: 8px;
+
+  h3 {
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.deductions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+
+  li {
+    display: grid;
+    grid-template-columns: 44px 170px minmax(0, 1fr);
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .points {
+    color: var(--bad);
+    text-align: right;
+  }
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -348,7 +434,8 @@
   .preview,
   .preview.wide,
   .scene.open,
-  .scene-fields {
+  .scene-fields,
+  .deductions li {
     grid-template-columns: 1fr;
   }
 }

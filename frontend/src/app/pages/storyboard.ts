@@ -16,6 +16,23 @@ export const BACKGROUNDS = ['paper', 'grid', 'floor', 'sky', 'yellow', 'blue'];
 export const CAMERAS = ['still', 'zoom_in', 'zoom_out', 'pan_left', 'pan_right'];
 export const MOTIONS = ['none', 'bounce', 'shake', 'pulse', 'float', 'spin', 'grow'];
 
+const INK_CHEAT_SHEET = `N shot "what the viewer sees"   (use Split to start a shot)
+N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
+N draw PROP [PLACE] [small|large] ["label"] [as ID]
+N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
+N do ACTOR POSE [TARGET] [FACE]      N face ACTOR FACE      N move ACTOR|PROP PLACE|TARGET
+N arrow FROM TO [COLOUR]             N circle|underline|cross|tick TARGET [COLOUR]
+N shake|bounce|pulse|spin|grow|shrink TARGET
+N erase TARGET|all                   N look TARGET|all   (the camera moves in, or back out)
+
+WHO      ${CAST.join(' ')}
+PLACE    ${SLOTS.join(' ')}
+POSE     stand point hold push pull shrug think facepalm cheer wave surprised sad jump
+         (point, hold, push and pull take a TARGET; the actor walks up to it)
+FACE     ${EXPRESSIONS.join(' ')}
+COLOUR   warm bad good gold green
+TARGET   an actor's name, a prop's name, an ID given with "as", or a PLACE`;
+
 function blank(kind: StoryElement['kind']): StoryElement {
   return {
     kind, name: kind === 'character' ? 'narrator' : kind === 'prop' ? '' : '', slot: 'center',
@@ -39,6 +56,12 @@ export class StoryboardPage {
   private readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id'));
 
   protected readonly options = { SLOTS, CAST, POSES, EXPRESSIONS, BACKGROUNDS, CAMERAS, MOTIONS };
+  protected readonly Math = Math;
+  protected readonly inkCameras = [
+    { value: 'wide', label: 'Wide, follows the action' }, { value: 'push', label: 'Push: slowly moves in' },
+    { value: 'drift', label: 'Drift: a calm slide' }, { value: 'close', label: 'Close: frames small things tightly' },
+  ];
+  protected readonly cheatSheet = INK_CHEAT_SHEET;
   protected readonly board = signal<Storyboard | null>(null);
   protected readonly scenes = signal<StoryScene[]>([]);
   protected readonly library = signal<Asset[]>([]);
@@ -55,6 +78,7 @@ export class StoryboardPage {
     this.store.jobs().find((j) => j.storyboard_id === this.id && (j.state === 'queued' || j.state === 'running'))
     ?? this.board()?.job ?? null);
   protected readonly busy = computed(() => this.job() !== null);
+  protected readonly ink = computed(() => this.board()?.style === 'ink');
   protected readonly dirty = computed(() => {
     const board = this.board();
     return !!board && JSON.stringify(this.scenes()) !== JSON.stringify(board.scenes);
@@ -113,7 +137,10 @@ export class StoryboardPage {
   }
 
   protected still(index: number): string {
-    const t = Math.min(this.end(index) - 0.05, this.start(index) + Math.max(0.6, (this.end(index) - this.start(index)) * 0.7));
+    // An ink shot builds up as it goes: show it near its end, with everything drawn.
+    // (before the camera starts gliding to the next shot, about 0.3 s before it begins)
+    const t = this.ink() ? Math.max(this.start(index), this.end(index) - 0.45)
+      : Math.min(this.end(index) - 0.05, this.start(index) + Math.max(0.6, (this.end(index) - this.start(index)) * 0.7));
     return this.api.stillUrl(this.id, t, this.version(), this.board()?.format === 'long' ? 400 : 270);
   }
 
@@ -289,17 +316,35 @@ export class StoryboardPage {
     this.change(scene, { elements: this.scenes()[scene].elements.filter((_, k) => k !== element) });
   }
 
+  /** The beats of an ink shot, as typed: blank lines are kept while editing and dropped on save. */
+  protected setLines(scene: number, text: string): void {
+    this.change(scene, { lines: text.split('\n') });
+  }
+
   protected removeScene(index: number): void {
+    const what = this.ink() ? 'shot' : 'scene';
     if (index === 0) {
-      this.toasts.error('The first scene cannot be removed; edit it instead');
+      this.toasts.error(`The first ${what} cannot be removed; edit it instead`);
       return;
     }
-    if (!confirm('Remove this scene? The previous scene stays on screen for its words.')) return;
+    const after = this.ink() ? 'Its beats go too.' : 'The previous scene stays on screen for its words.';
+    if (!confirm(`Remove this ${what}? ${after}`)) return;
     this.scenes.update((list) => list.filter((_, i) => i !== index));
   }
 
   protected splitAt(index: number, word: number): void {
     const scene = this.scenes()[index];
+    if (this.ink()) {
+      // beats from that word on move to the new shot
+      const lines = scene.lines ?? [];
+      const keep = lines.filter((l) => parseInt(l, 10) < word || isNaN(parseInt(l, 10)));
+      const moved = lines.filter((l) => parseInt(l, 10) >= word);
+      const shot: StoryScene = { ...structuredClone(scene), start_word: word, note: 'New shot', camera: 'wide', page: false,
+                                 lines: moved };
+      this.scenes.update((list) => [...list.slice(0, index), { ...scene, lines: keep }, shot, ...list.slice(index + 1)]);
+      this.openScene.set(index + 1);
+      return;
+    }
     const copy: StoryScene = { ...structuredClone(scene), start_word: word, note: 'New scene', elements: [] };
     this.scenes.update((list) => [...list.slice(0, index + 1), copy, ...list.slice(index + 1)]);
     this.openScene.set(index + 1);
@@ -312,7 +357,8 @@ export class StoryboardPage {
 
   protected save(after?: () => void): void {
     this.saving.set(true);
-    this.api.saveScenes(this.id, this.scenes()).subscribe({
+    const scenes = this.scenes().map((s) => (s.lines ? { ...s, lines: s.lines.map((l) => l.trim()).filter(Boolean) } : s));
+    this.api.saveScenes(this.id, scenes).subscribe({
       next: (board) => {
         this.saving.set(false);
         this.board.set(board);

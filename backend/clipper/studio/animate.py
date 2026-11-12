@@ -10,6 +10,7 @@ thousands of times.
 
 import math
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from ..ffutil import require
 from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import art, sound
+from . import art, beats, sound
 from . import voice as voice_mod
 
 FPS = 24
@@ -240,49 +241,8 @@ class Composer:
             sprite = self.base_sprite(e, dark)
             w, h = (sprite.width, sprite.height) if sprite else (0, 0)
             items.append([cx * lay.width, cy * lay.height, 1.0, w, h])
-        left, right = lay.width * MARGIN, lay.width * (1 - MARGIN)
-        top, bottom = lay.height * lay.stage_top, lay.height * lay.stage_bottom
-
-        def clamp(item) -> bool:
-            """Keep inside the stage; shrink when it cannot fit. True if it had to move."""
-            x, y, s, w, h = item
-            s = min(s, (right - left) / max(w, 1), (bottom - top) / max(h, 1))
-            hw, hh = w * s / 2, h * s / 2
-            nx, ny = min(max(x, left + hw), right - hw), min(max(y, top + hh), bottom - hh)
-            moved = abs(nx - x) > 0.5 or abs(ny - y) > 0.5
-            item[0], item[1], item[2] = nx, ny, s
-            return moved
-
-        for item in items:
-            clamp(item)
-        for _ in range(24):
-            settled = True
-            for i in range(len(items)):
-                for j in range(i + 1, len(items)):
-                    a, b = items[i], items[j]
-                    if not a[3] or not b[3]:
-                        continue
-                    ox = (a[3] * a[2] + b[3] * b[2]) / 2 - abs(a[0] - b[0])
-                    oy = (a[4] * a[2] + b[4] * b[2]) / 2 - abs(a[1] - b[1])
-                    if ox <= 6 or oy <= 6:
-                        continue
-                    settled = False
-                    if ox < oy:   # side by side: push apart horizontally
-                        sign = 1 if a[0] <= b[0] else -1
-                        a[0] -= sign * (ox / 2 + 8)
-                        b[0] += sign * (ox / 2 + 8)
-                    else:
-                        sign = 1 if a[1] <= b[1] else -1
-                        a[1] -= sign * (oy / 2 + 8)
-                        b[1] += sign * (oy / 2 + 8)
-                    stuck = clamp(a) | clamp(b)
-                    if stuck:   # the frame edge got in the way: make the bigger one smaller
-                        big = a if a[3] * a[4] * a[2] >= b[3] * b[4] * b[2] else b
-                        big[2] = max(0.55, big[2] * 0.92)
-                        clamp(big)
-            if settled:
-                break
-        result = [(x, y, s) for x, y, s, _, _ in items]
+        result = separate(items, lay.width * MARGIN, lay.width * (1 - MARGIN), lay.height * lay.stage_top,
+                          lay.height * lay.stage_bottom)
         self._sprites[key] = result
         return result
 
@@ -440,6 +400,58 @@ class Composer:
         return frame
 
 
+def separate(items: list[list[float]], left: float, right: float, top: float, bottom: float,
+             gap: float = 6, pairs: set[tuple[int, int]] | None = None) -> list[tuple[float, float, float]]:
+    """Lay out boxes [x, y, scale, w, h] (centres) inside the stage without overlaps.
+
+    Boxes start where they were asked to be and are kept inside the stage;
+    overlapping pairs are pushed apart along the axis where they overlap least,
+    and the bigger one shrinks a little when the stage edge stops them.
+    Only the `pairs` (i < j) given are kept apart, when given: things that are
+    never on screen together may overlap. Returns (x, y, scale) for each box.
+    """
+    def clamp(item) -> bool:
+        """Keep inside the stage; shrink when it cannot fit. True if it had to move."""
+        x, y, s, w, h = item
+        s = min(s, (right - left) / max(w, 1), (bottom - top) / max(h, 1))
+        hw, hh = w * s / 2, h * s / 2
+        nx, ny = min(max(x, left + hw), right - hw), min(max(y, top + hh), bottom - hh)
+        moved = abs(nx - x) > 0.5 or abs(ny - y) > 0.5
+        item[0], item[1], item[2] = nx, ny, s
+        return moved
+
+    for item in items:
+        clamp(item)
+    for _ in range(24):
+        settled = True
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                a, b = items[i], items[j]
+                if not a[3] or not b[3] or (pairs is not None and (i, j) not in pairs):
+                    continue
+                ox = (a[3] * a[2] + b[3] * b[2]) / 2 - abs(a[0] - b[0])
+                oy = (a[4] * a[2] + b[4] * b[2]) / 2 - abs(a[1] - b[1])
+                if ox <= gap or oy <= gap:
+                    continue
+                settled = False
+                if ox < oy:   # side by side: push apart horizontally
+                    sign = 1 if a[0] <= b[0] else -1
+                    a[0] -= sign * (ox / 2 + 8)
+                    b[0] += sign * (ox / 2 + 8)
+                else:
+                    sign = 1 if a[1] <= b[1] else -1
+                    a[1] -= sign * (oy / 2 + 8)
+                    b[1] += sign * (oy / 2 + 8)
+                stuck = clamp(a) | clamp(b)
+                if stuck:   # the frame edge got in the way: make the bigger one smaller
+                    big = a if a[3] * a[4] * a[2] >= b[3] * b[4] * b[2] else b
+                    big[2] = max(0.55, big[2] * 0.92)
+                    clamp(big)
+        if settled:
+            break
+    return [(x, y, s) for x, y, s, _, _ in items]
+
+
 def _composite_clipped(canvas: Image.Image, sprite: Image.Image, left: int, top: int) -> None:
     """alpha_composite for a sprite that hangs off the edge of the frame."""
     box = (max(0, -left), max(0, -top),
@@ -456,15 +468,35 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
         board = db.get(Storyboard, storyboard_id)
         if board is None:
             raise RuntimeError(f"Storyboard {storyboard_id} no longer exists")
-        data = {"id": board.id, "script_id": board.script_id, "format": board.format, "title": board.title,
+        data = {"id": board.id, "script_id": board.script_id, "format": board.format, "style": board.style,
+                "title": board.title,
                 "start": board.start, "end": board.end, "words": list(board.words), "scenes": list(board.scenes),
                 "headings": {s["key"]: s["heading"] for s in board.script.sections},
                 "effects": board.effects, "music_db": board.music_db,
                 "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
-        names = {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
+        names = beats.prop_names(board.scenes) if board.style == "ink" else \
+            {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
         wav = Path(board.take.path) if board.take_id and board.take and board.take.path else None
     return data, props, wav
+
+
+def composer_for(board: dict, props: dict[str, str | None], settings: Settings, mouths: np.ndarray | None):
+    """The renderer for the storyboard's style."""
+    if board.get("style") == "ink":
+        from .stage import InkComposer
+        return InkComposer(board, props, settings, mouths)
+    return Composer(board, props, settings, mouths)
+
+
+def effect_events(style: str, scenes: list[dict], word_time, duration: float) -> list[tuple[float, str]]:
+    if style == "ink":
+        return beats.effect_events(scenes, word_time, duration)
+    return sound.effect_events(scenes, word_time, duration)
+
+
+_still_cache: dict = {}
+_still_lock = threading.Lock()
 
 
 def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) -> bytes:
@@ -472,8 +504,15 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
     import io
 
     board, props, _ = load(storyboard_id)
-    composer = Composer(board, props, settings, None)
-    image = composer.frame(max(0.0, min(t, composer.duration - 0.01))).convert("RGB")
+    # A page of stills asks for many frames of one board: keep its composer while the board is unchanged.
+    key = (storyboard_id, repr(board["scenes"]), tuple(sorted((k, hash(v)) for k, v in props.items())))
+    with _still_lock:
+        composer = _still_cache.get(key)
+        if composer is None:
+            composer = composer_for(board, props, settings, None)
+            _still_cache.clear()
+            _still_cache[key] = composer
+        image = composer.frame(max(0.0, min(t, composer.duration - 0.01))).convert("RGB")
     image = image.resize((width, round(image.height * width / image.width)), Image.LANCZOS)
     out = io.BytesIO()
     image.save(out, format="PNG", optimize=True)
@@ -495,7 +534,7 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
 
             def word_time(i):
                 return composer_words[max(0, min(i, len(composer_words) - 1))]["s"] if composer_words else 0.0
-            events = [(at - start, kind) for at, kind in sound.effect_events(board.scenes, word_time, duration)
+            events = [(at - start, kind) for at, kind in effect_events(board.style, board.scenes, word_time, duration)
                       if start <= at < start + seconds]
             fx = Path(tmp) / "fx.wav"
             sound.write_effects(events, seconds, fx, seed=board.id)
@@ -529,7 +568,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         rep.warn(f"Not drawn yet, shown as placeholders: {', '.join(missing)}")
     duration = board["end"] - board["start"]
     lay = LAYOUTS[board["format"]]
-    composer = Composer(board, props, settings, mouth_levels(wav, board["start"], duration))
+    composer = composer_for(board, props, settings, mouth_levels(wav, board["start"], duration))
     total = math.ceil(duration * FPS)
     out = video_path(board)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -538,7 +577,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{duration:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
     if board["effects"]:
-        events = sound.effect_events(composer.scenes, composer.word_time, duration)
+        events = effect_events(board["style"], composer.scenes, composer.word_time, duration)
         sound.write_effects(events, duration, effects_wav, seed=board["id"])
         audio_inputs += ["-i", str(effects_wav)]
         rep.info(f"{len(events)} sound effects")

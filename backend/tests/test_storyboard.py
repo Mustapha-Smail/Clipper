@@ -142,7 +142,8 @@ def run_job(job_id: int) -> None:
 def test_short_from_section_to_video(client, script_with_take, fake_claude):
     sid = script_with_take
     assert client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "short"}).status_code == 400
-    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "short", "section_key": "a"}).json()
+    board = client.post(f"/api/v1/scripts/{sid}/storyboards",
+                        json={"format": "short", "section_key": "a", "style": "flat"}).json()
     assert board["title"] == "Fridge · Cold open" and len(board["words"]) == 6
     assert board["words"][0]["s"] == pytest.approx(0.15) and board["duration"] == pytest.approx(3.05, abs=0.01)
     assert board["job"]["stages"] == ["plan", "draw"] and board["job"]["storyboard_id"] == board["id"]
@@ -236,7 +237,7 @@ def test_long_video_is_planned_per_chapter(client, script_with_take, fake_claude
 
     assert client.post(f"/api/v1/scripts/{sid}/storyboards",
                        json={"format": "long", "section_key": "a"}).status_code == 400
-    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "long"}).json()
+    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "long", "style": "flat"}).json()
     assert len(board["words"]) == 10 and board["words"][-1]["section"] == "b"
     run_job(board["job"]["id"])
     assert sorted(calls) == [("Cold open", 6), ("Trick", 4)]
@@ -299,7 +300,8 @@ def test_tracks_are_measured_without_ai(tmp_path):
 def test_music_suggestion_and_sound_preview(client, script_with_take, fake_claude, monkeypatch):
     from clipper.studio import music_pick, music_search
     sid = script_with_take
-    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "short", "section_key": "a"}).json()
+    board = client.post(f"/api/v1/scripts/{sid}/storyboards",
+                        json={"format": "short", "section_key": "a", "style": "flat"}).json()
     run_job(board["job"]["id"])
 
     monkeypatch.setattr(music_search, "candidates", lambda searches, skip, length="", limit=12: [])

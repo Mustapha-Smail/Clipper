@@ -86,7 +86,8 @@ def _responses_usage(response) -> dict:
 
 
 def ask_model(model: str, system: str, content, output_format: type[BaseModel],
-              effort: str = "high") -> tuple[BaseModel, dict]:
+              effort: str = "high", cache: bool = False) -> tuple[BaseModel, dict]:
+    """`cache` is accepted for symmetry: OpenAI caches long prompts by itself."""
     client = _client()
     if not config.openai_base_url():
         with _api_errors():

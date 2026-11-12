@@ -238,6 +238,7 @@ class Storyboard(Base):
     take_id: Mapped[int | None] = mapped_column(
         ForeignKey("voice_takes.id", ondelete="SET NULL", name="fk_storyboards_take_id"))
     format: Mapped[str] = mapped_column(String(8), default="short")      # short|long
+    style: Mapped[str] = mapped_column(String(8), default="ink")         # ink (beats on one page) | flat (slides)
     section_key: Mapped[str | None] = mapped_column(String(16))          # NULL = the whole script
     title: Mapped[str] = mapped_column(Text, default="")
     start: Mapped[float] = mapped_column(Float, default=0.0)            # seconds into the take's audio

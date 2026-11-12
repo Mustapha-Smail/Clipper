@@ -25,6 +25,7 @@ dependencies = [
     "kokoro-onnx>=0.6.1",
     "resvg-py>=0.5.0",
     "openai>=3.49.0",
+    "svgelements>=1.9.6",
 ]
 
 [dependency-groups]

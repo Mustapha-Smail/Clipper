@@ -84,7 +84,20 @@ A second activity in the same app: original animated videos (simple drawn charac
 | S6. Shorts (done in S4) | One Short per section in 9:16 with captions; "Make Shorts for the marked sections" | Shorts appear in Review |
 | S7. Publishing | Title, description, chapters, thumbnail drafts; private upload through the YouTube API | You press Publish in YouTube |
 
-Decided: visuals are drawn by code; voice can be your own or AI (your own is the safer choice for monetisation).
+### Studio 2: a real video-making machine (started 2026-11-12)
+
+Goal: videos that do not look like AI slop, stay within YouTube's rules on inauthentic content (July 2026: generic, template-based or repetitive videos, distressing videos, and AI personas on sensitive topics cannot be monetised), and cost about $0.50 or less per long video plus its Shorts.
+
+| Phase | What gets built | Status |
+|---|---|---|
+| 1. Ink foundation | Beat language, action-per-idea planning, one continuous page with a framing camera, draw-on strokes, boil, 12 fps drawing, ink props from the existing library, liveliness score, shot editor with stills. Measured: planning a 7-minute video $0.07 on Sonnet (was $0.25; about $0.90 on Opus), render 4 min in Docker | Done 2026-11-12 |
+| 2. Characters that act | More poses, motion-capture moves (walk cycles, jumps) from the free CMU library, sounds tied to actions, a style guide for new props, open-licence icon sets before drawing | Next |
+| 3. Archive documentary | Public-domain photos, engravings and maps (Wikimedia Commons, Library of Congress, Smithsonian Open Access, NASA) with camera moves and ink notes on top; a credits list | |
+| 4. More looks and compliance helpers | Paper cut-out and blueprint packs; authorship log; warning when a new video is too similar to the last ones; made-for-kids advice | |
+
+Cost levers still open: Shorts cut from the long video's plan instead of planned again, fewer research searches, fact checks on the claims without a source only, Batch API for non-urgent steps.
+
+Decided: visuals are drawn by code; voice can be your own or AI (your own is the safer choice for monetisation). The ink sketch look is the default from 2026-11-12; the flat look stays available.
 
 Your steps for the Studio:
 - [x] Create a YouTube Data API v3 key (Google Cloud console, new project, enable the API, Credentials, API key) and put it in `.env` as `YOUTUBE_API_KEY`

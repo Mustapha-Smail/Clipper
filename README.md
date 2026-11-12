@@ -174,7 +174,53 @@ natively, where Whisper uses the GPU).
 ## Studio videos (animated Shorts)
 
 Once a take is marked "Use for the video", the Videos panel on the script page
-makes a Short from any section:
+makes a Short from any section, or the long video. Pick the look first:
+
+- **Ink sketch** (the default): the whole video is one hand-drawn page that the
+  camera travels across. Stick-figure actors act on things (point at them,
+  hold, push or pull them, walking up to them by themselves), props draw
+  themselves on in ink with a watercolour wash, words are handwritten, and
+  circles, crosses, ticks and arrows are drawn over what matters. Lines wobble
+  like hand-drawn animation and drawings move 12 times a second; the camera
+  keeps the action framed and glides from shot to shot.
+- **Flat colour** (the first style): scene by scene, stickers in fixed slots.
+
+### The ink style
+
+Claude plans an ink storyboard in a short beat language, one line per thing
+that happens, each starting with the narration word it happens on:
+
+```
+0 shot "The narrator meets a fridge" push
+0 actor narrator left deadpan talk
+1 draw fridge right large "fridge"
+2 do narrator push fridge worried
+3 write "0 cold" top big bad as zero
+4 cross zero
+```
+
+The planner is told to turn each idea into an action done to an object, not a
+picture of the word being said. The storyboard page shows each shot with a
+still, its words numbered, and its beats; edit the beats as text (a cheat sheet
+is under "How to write beats"). Lines the app cannot use are refused with the
+reason. A **liveliness score** (out of 100) is plain arithmetic on the saved
+plan, with every deduction listed: stretches over 4 seconds with nothing new,
+shots where nothing acts, idle characters, too much writing, repeated patterns,
+a slow average pace. It advises; you decide.
+
+Props come from the same library as the flat style: each is turned into ink
+lines and a wash by code, so no new drawing is needed. The pen scribbles when
+something draws itself on, the camera whooshes between shots, an eraser rubs
+things out.
+
+Planning is cheap: a beat is one short line instead of a block of JSON, the
+planner works at medium effort with a beat budget (one beat every 2.2 seconds
+or so), and the instructions shared by a long video's chapters are cached
+between calls. Measured on the 7-minute LED video: $0.07 to plan on Sonnet 5.5
+(the flat style: $0.25 on Sonnet, about $0.90 on Opus); a one-minute Short
+costs about $0.04.
+
+### The flat style
 
 1. **Plan:** Claude reads the section's words with their times and cuts them
    into scenes (usually one per sentence). Each scene has a background, a camera
@@ -202,8 +248,8 @@ drawn by code in `studio/art.py`; props are rendered with resvg.
   with burned-in captions. The long video is horizontal 16:9 (1920x1080) and
   tells the whole script, without burned-in captions (upload the .srt instead).
 - **Long storyboards** are planned one chapter (script section) at a time, in
-  parallel, then joined; each chapter opens on its own scene and a "Chapter N"
-  banner slides in at the top left.
+  parallel, then joined; each chapter opens on its own scene (in ink, a new row
+  of the page) and a "Chapter N" banner appears at the top left.
 - **Music:** under Library, Music, either upload a track (for example from the
   YouTube Audio Library, which has no API: download it in YouTube Studio) or
   use "Find free music online", which searches Openverse (Jamendo, Freesound,

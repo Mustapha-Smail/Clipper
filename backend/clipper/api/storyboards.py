@@ -15,7 +15,7 @@ from .. import config, jobs
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, VoiceTake, utcnow
-from ..studio import animate, art, music_pick, music_search, sound
+from ..studio import animate, art, beats, music_pick, music_search, sound
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import voice as voice_mod
@@ -39,7 +39,7 @@ def _board_jobs(db: Session) -> dict[int, Job]:
 
 
 def _prop_names(board: Storyboard) -> set[str]:
-    return {e["name"] for sc in board.scenes for e in sc["elements"] if e["kind"] == "prop"}
+    return storyboard_mod.prop_names(board.style, board.scenes)
 
 
 def _computed(board: Storyboard, job: Job | None) -> dict:
@@ -59,9 +59,14 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     drawn = set(db.scalars(select(StudioAsset.name).where(StudioAsset.name.in_(names), StudioAsset.svg.is_not(None))))
     music = board.music
     credit = (music.attribution or f"Music: {music.name}") if music and music.license else ""
+    score = None
+    if board.style == "ink" and board.scenes and board.words:
+        words = board.words
+        score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"],
+                            board.end - board.start)
     return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job),
                            words=board.words, scenes=board.scenes, missing_props=sorted(names - drawn),
-                           music_credit=credit)
+                           music_credit=credit, score=score)
 
 
 def _idle(db: Session, board: Storyboard) -> None:
@@ -99,8 +104,8 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
         raise HTTPException(409, "The script changed since this take was made. Time it against the current "
                                  "script, or make a new take, so the video matches the words.")
     title = f"{script.title} · {section['heading']}" if section else script.title
-    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, section_key=body.section_key,
-                       title=title, start=start, end=end, words=words, scenes=[])
+    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, style=body.style,
+                       section_key=body.section_key, title=title, start=start, end=end, words=words, scenes=[])
     db.add(board)
     db.flush()
     job = _enqueue(db, board, "storyboard")
@@ -132,12 +137,19 @@ def read_storyboard(board: Storyboard = Depends(get_board), db: Session = Depend
 def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Replace the scenes with your edited version. New prop names join the library, to be drawn."""
     _idle(db, board)
-    try:
-        scenes = [storyboard_mod.Scene.model_validate(scene).model_dump() for scene in body.scenes]
-    except ValidationError as err:
-        first = err.errors()[0]
-        raise HTTPException(400, f"{'.'.join(str(x) for x in first['loc'])}: {first['msg']}") from err
-    board.scenes = storyboard_mod.clean(scenes, len(board.words))
+    if board.style == "ink":
+        shots, dropped = beats.clean(body.scenes, len(board.words))
+        if dropped:
+            raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
+                                     + "; ".join(dropped[:3]))
+        board.scenes = shots
+    else:
+        try:
+            scenes = [storyboard_mod.Scene.model_validate(scene).model_dump() for scene in body.scenes]
+        except ValidationError as err:
+            first = err.errors()[0]
+            raise HTTPException(400, f"{'.'.join(str(x) for x in first['loc'])}: {first['msg']}") from err
+        board.scenes = storyboard_mod.clean(scenes, len(board.words))
     for name in _prop_names(board):
         if db.get(StudioAsset, name) is None:
             db.add(StudioAsset(name=name, description=name.replace("_", " ")))
@@ -296,8 +308,8 @@ def delete_storyboard(board: Storyboard = Depends(get_board), db: Session = Depe
 
 def _usage(db: Session) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for scenes in db.scalars(select(Storyboard.scenes)):
-        for name in {e["name"] for sc in scenes for e in sc["elements"] if e["kind"] == "prop"}:
+    for style, scenes in db.execute(select(Storyboard.style, Storyboard.scenes)):
+        for name in storyboard_mod.prop_names(style, scenes):
             counts[name] = counts.get(name, 0) + 1
     return counts
 

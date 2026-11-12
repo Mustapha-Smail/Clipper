@@ -195,8 +195,9 @@ export class Api {
   }
 
   // Studio storyboards and props
-  createStoryboard(scriptId: number, sectionKey: string | null, format: 'short' | 'long' = 'short'): Observable<Storyboard> {
-    return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`, { format, section_key: sectionKey });
+  createStoryboard(scriptId: number, sectionKey: string | null, format: 'short' | 'long' = 'short',
+                   style: 'ink' | 'flat' = 'ink'): Observable<Storyboard> {
+    return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`, { format, section_key: sectionKey, style });
   }
   storyboards(scriptId: number): Observable<StoryboardSummary[]> {
     return this.http.get<StoryboardSummary[]>(`${BASE}/scripts/${scriptId}/storyboards`);
