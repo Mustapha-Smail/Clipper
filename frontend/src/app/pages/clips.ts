@@ -80,7 +80,7 @@ type Filter = 'all' | ClipStatus;
   styles: `
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
       gap: 12px;
     }
     .wide {

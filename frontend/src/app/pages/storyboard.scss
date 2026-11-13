@@ -121,7 +121,7 @@
 
 .publish-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 20px;
 
   > * {
@@ -205,11 +205,11 @@
 
 .scenes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
   gap: 12px;
 
   &.wide {
-    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
 
     .scene {
       grid-template-columns: 200px minmax(0, 1fr);

@@ -55,7 +55,7 @@ import { Toasts } from '../core/toast';
     }
   `,
   styles: `
-    .places { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 28px; }
+    .places { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; margin-bottom: 28px; }
     .place { display: grid; gap: 6px; align-content: start; }
     .thumbs { display: flex; gap: 6px; align-items: flex-end; }
     .thumbs img { border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--sunken); }

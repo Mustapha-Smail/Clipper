@@ -127,6 +127,11 @@ p {
   flex-wrap: wrap;
   margin-bottom: 24px;
 
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   p {
     margin-top: 6px;
   }
@@ -150,7 +155,14 @@ p {
 
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);    // rows never push the page wider than the screen
   gap: 12px;
+}
+
+audio,
+video,
+img {
+  max-width: 100%;
 }
 
 .card {
@@ -187,6 +199,7 @@ p {
 
 input[type='text'],
 input[type='number'],
+input[type='search'],
 select,
 textarea {
   width: 100%;
@@ -354,6 +367,9 @@ details.fold {
   display: inline-flex;
   gap: 2px;
   padding: 3px;
+  max-width: 100%;
+  overflow-x: auto;           // on a phone, tabs that do not fit scroll sideways inside the bar
+  scrollbar-width: none;
   background: var(--sunken);
   border-radius: 10px;
 
@@ -363,6 +379,8 @@ details.fold {
     color: var(--muted);
     padding: 6px 12px;
     font-weight: 600;
+    flex: none;
+    white-space: nowrap;
 
     &.on {
       background: var(--surface);
@@ -592,6 +610,40 @@ details.fold {
 @media (max-width: 720px) {
   .page {
     padding: 20px 16px 72px;
+  }
+
+  h1 {
+    font-size: 26px;
+  }
+
+  // tab bars wrap onto a second line rather than hiding tabs off to the side
+  .tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .title-input {
+    font-size: 22px;
+  }
+
+  // wide tables scroll sideways inside their card instead of widening the page
+  .card table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  // buttons and fields big enough for a thumb
+  button,
+  .btn,
+  select,
+  input:not([type=checkbox]):not([type=radio]):not([type=range]) {
+    min-height: 40px;
+  }
+
+  button.sm,
+  .btn.sm {
+    min-height: 34px;
   }
 
   .option-grid {

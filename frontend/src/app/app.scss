@@ -163,6 +163,10 @@ nav {
   white-space: nowrap;
 }
 
+.main {
+  min-width: 0;
+}
+
 .problems {
   display: grid;
   gap: 8px;
@@ -213,7 +217,7 @@ nav {
 @media (max-width: 860px) {
   .shell,
   .shell.collapsed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);   // never wider than the screen, whatever a row inside wants
     grid-template-rows: auto 1fr;      // the bar keeps its height; the page takes the rest
   }
 

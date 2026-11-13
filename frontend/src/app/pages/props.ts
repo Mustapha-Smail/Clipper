@@ -154,11 +154,12 @@ import { PlacesLibrary } from '../shared/places-library';
       gap: 12px;
       align-items: center;
       padding: 10px 14px;
-      audio { height: 34px; }
+      flex-wrap: wrap;
+      audio { height: 34px; flex: 1 1 220px; min-width: 0; }
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(190px, 40%), 1fr));
       gap: 12px;
     }
     .prop {

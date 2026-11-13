@@ -73,6 +73,11 @@ import { Toasts } from '../core/toast';
       white-space: nowrap;
       min-width: 80px;
     }
+    @media (max-width: 600px) {
+      .item { flex-wrap: wrap; padding: 12px 14px; }
+      .item .grow { flex-basis: 100%; }
+      .counts { text-align: left; min-width: 0; display: flex; gap: 8px; margin-left: auto; }
+    }
   `,
 })
 export class ScriptsPage {

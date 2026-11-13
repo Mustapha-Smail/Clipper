@@ -109,7 +109,7 @@ import { PublishCheck } from '../core/models';
     }
     .done .tick { background: var(--good-soft); color: var(--good); }
     .todo .tick { background: var(--warn-soft); color: var(--warn); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; }
     .part { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
     .part p { margin: 0; }
     .lines, .points, .events { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }

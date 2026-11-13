@@ -52,13 +52,14 @@ interface Step {
     }
     summary {
       display: inline-flex;
-      gap: 8px;
+      flex-wrap: wrap;
+      gap: 2px 8px;
       align-items: baseline;
       cursor: pointer;
       list-style: none;
       &::-webkit-details-marker { display: none; }
     }
-    .more { text-decoration: underline dotted; }
+    .more { text-decoration: underline dotted; white-space: nowrap; }
     table {
       width: 100%;
       max-width: 520px;

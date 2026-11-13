@@ -4,8 +4,9 @@
   @if (script(); as s) {
     <div class="page-head">
       <div class="grow">
-        <input class="title-input" type="text" [value]="s.title" (change)="rename($any($event.target).value)"
-               aria-label="Video title" [disabled]="busy()" />
+        <textarea class="title-input" rows="1" [value]="s.title" (change)="rename($any($event.target).value)"
+                  (keydown.enter)="$event.preventDefault(); $any($event.target).blur()"
+                  aria-label="Video title" [disabled]="busy()"></textarea>
         <p class="muted small">
           {{ s.video === 'short' ? 'Short only, about ' + s.target_seconds + ' s' : s.format === 'list' ? 'List video' : 'Single topic' }}
           · {{ s.theme }} · updated {{ s.updated_at | ago }}
