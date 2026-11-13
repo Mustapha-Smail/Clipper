@@ -16,7 +16,7 @@ from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
-from ..studio import animate, art, beats, cartoon, compliance, music_pick, music_search, publish, retention, sound
+from ..studio import animate, art, beats, cartoon, compliance, film, music_pick, music_search, publish, retention, sound
 from ..studio import export as export_mod
 from ..studio import places as places_mod
 from ..studio import script as script_mod
@@ -71,7 +71,7 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     drawn = set(db.scalars(select(StudioAsset.name).where(StudioAsset.name.in_(names), StudioAsset.svg.is_not(None))))
     music = board.music
     credit = (music.attribution or f"Music: {music.name}") if music and music.license else ""
-    queries = beats.photo_queries(board.scenes) if board.style == "ink" else []
+    queries = film.photo_searches(board.style, board.scenes)
     found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
         if queries else {}
     used = [found[q] for q in queries if q in found]
@@ -87,6 +87,15 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            music_credit=credit, score=score, photos=used,
                            photo_searches_missing=[q for q in queries if q not in found], credits=credits,
                            youtube=board.youtube)
+
+
+LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon"), "film": ("wall", "studio"), "flat": ("ink",)}
+
+
+def _look_for(style: str, look: str | None) -> str:
+    """The look a storyboard of this style gets: the one asked for when the style has it, else its default."""
+    allowed = LOOKS.get(style, ("ink",))
+    return look if look in allowed else allowed[0]
 
 
 def _idle(db: Session, board: Storyboard) -> None:
@@ -124,13 +133,14 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
         raise HTTPException(409, "The script changed since this take was made. Time it against the current "
                                  "script, or make a new take, so the video matches the words.")
     title = f"{script.title} · {section['heading']}" if section else script.title
-    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, style=body.style,
-                       look=body.look if body.style == "ink" else "ink",
+    look = _look_for(body.style, body.look)
+    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, style=body.style, look=look,
                        section_key=body.section_key, title=title, start=start, end=end, words=words, scenes=[])
     db.add(board)
     db.flush()
     compliance.record(db, script.id, "start", "you", f"Started a {'Short' if body.format == 'short' else 'long video'}"
-                      + (f" in the {board.look} look" if body.style == "ink" else ""), storyboard_id=board.id)
+                      + (f" in the {board.look} look" if body.style in ("ink", "film") else ""),
+                      storyboard_id=board.id)
     job = _enqueue(db, board, "storyboard")
     log.info("storyboard queued", extra={"storyboard_id": board.id, "format": body.format})
     return board_out(board, job, db)
@@ -175,6 +185,16 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
         for name in beats.place_names(shots):
             if name not in cartoon.PLACES and db.get(StudioPlace, name) is None:
                 db.add(StudioPlace(name=name, description=name.replace("_", " ")))
+    elif board.style == "film":
+        shots, dropped = film.clean(body.scenes, len(board.words))
+        if dropped:
+            raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
+                                     + "; ".join(dropped[:3]))
+        changed = compliance.lines_changed(board.scenes or [], shots)
+        if changed:
+            compliance.record(db, board.script_id, "beats_edit", "you",
+                              f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})", changed, board.id)
+        board.scenes = shots
     else:
         try:
             scenes = [storyboard_mod.Scene.model_validate(scene).model_dump() for scene in body.scenes]
@@ -232,8 +252,8 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
             board.review_at = utcnow()      # an unapproved render gets a full grace period from here
         board.review = body.review
     if body.look is not None and body.look != board.look:
-        if board.style != "ink":
-            raise HTTPException(400, "Only ink storyboards have looks")
+        if body.look not in LOOKS.get(board.style, ()) or board.style == "flat":
+            raise HTTPException(400, f"The {board.style} style has no {body.look} look")
         _idle(db, board)
         compliance.record(db, board.script_id, "look", "you", f"Chose the {body.look} look", storyboard_id=board.id)
         board.look = body.look

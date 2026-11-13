@@ -203,11 +203,76 @@ def lift(rng: np.random.Generator) -> np.ndarray:
     return _sweep(rng.uniform(300, 360), rng.uniform(520, 640), n, 20) * _env(n, 20) * 0.6
 
 
+def stamp(rng: np.random.Generator) -> np.ndarray:
+    """A rubber stamp slammed on paper: a hard low knock with a papery slap."""
+    n = int(RATE * 0.3)
+    t = np.arange(n) / RATE
+    knock = np.sin(2 * np.pi * np.cumsum(rng.uniform(70, 90) * (1 + 1.2 * np.exp(-t * 40))) / RATE) * np.exp(-t * 16)
+    slap = np.diff(rng.standard_normal(n + 1)).astype(np.float32) * np.exp(-t * 55) * 0.8
+    return ((knock + slap) * 0.33).astype(np.float32)
+
+
+def pin(rng: np.random.Generator) -> np.ndarray:
+    """A print pinned to cork: a soft paper flap, then the pin's tap."""
+    n = int(RATE * 0.16)
+    t = np.arange(n) / RATE
+    flap = np.convolve(rng.standard_normal(n), np.hanning(30) / 15, mode="same") * np.exp(-t * 30) * 0.5
+    tap = np.zeros(n, np.float32)
+    k = int(RATE * rng.uniform(0.05, 0.07))
+    hit = click(rng)[:n - k] * 1.4
+    tap[k:k + len(hit)] = hit
+    return (flap + tap).astype(np.float32)
+
+
+def ticks(rng: np.random.Generator) -> np.ndarray:
+    """A counter rolling: fast ticks that slow down."""
+    n = int(RATE * 0.95)
+    out = np.zeros(n, np.float32)
+    at = 0.0
+    gap = 0.035
+    while at < 0.85:
+        i = int(at * RATE)
+        tick = click(rng)
+        out[i:i + len(tick)] += tick[:max(0, n - i)] * 0.8
+        at += gap
+        gap *= 1.12
+    return out
+
+
+def impact(rng: np.random.Generator) -> np.ndarray:
+    """A deep hit for big type landing."""
+    n = int(RATE * 0.7)
+    t = np.arange(n) / RATE
+    body = np.sin(2 * np.pi * np.cumsum(48 * (1 + 0.8 * np.exp(-t * 18))) / RATE) * np.exp(-t * 5)
+    air = np.convolve(rng.standard_normal(n), np.ones(40) / 40, mode="same") * np.exp(-t * 9) * 0.6
+    return ((body + air) * 0.9).astype(np.float32)
+
+
+def typing(rng: np.random.Generator) -> np.ndarray:
+    """A few typewriter keys."""
+    n = int(RATE * 0.45)
+    out = np.zeros(n, np.float32)
+    for k in range(int(rng.integers(4, 7))):
+        i = int(RATE * (k * 0.07 + rng.uniform(0, 0.02)))
+        hit = click(rng) * 1.3
+        out[i:i + len(hit)] += hit[:max(0, n - i)]
+    return out
+
+
+def marker(rng: np.random.Generator) -> np.ndarray:
+    """A felt marker swiped across paper: one smooth squeak of noise."""
+    n = int(RATE * rng.uniform(0.25, 0.35))
+    noise = np.convolve(rng.standard_normal(n), np.hanning(10) / 5, mode="same")
+    x = np.linspace(0, 1, n)
+    return (noise * np.sin(np.pi * x) ** 0.7 * 0.9).astype(np.float32)
+
+
 FAMILIES = {"bloop": (bloop, 1.0), "plop": (plop, 0.9), "pluck": (pluck, 0.8), "click": (click, 0.9),
             "ding": (ding, 0.55), "boing": (boing, 0.8), "zip": (zip_up, 0.7), "whoosh": (whoosh, 1.0),
             "scribble": (scribble, 0.55), "rub": (rub, 0.6), "step": (step, 0.5), "run_step": (run_step, 0.45),
             "thud": (thud, 0.9), "swish": (swish, 0.7), "slide": (slide, 0.5), "creak": (creak, 0.5),
-            "lift": (lift, 0.7)}
+            "lift": (lift, 0.7), "stamp": (stamp, 1.0), "pin": (pin, 0.8), "ticks": (ticks, 0.6),
+            "impact": (impact, 0.9), "typing": (typing, 0.7), "marker": (marker, 0.7)}
 CHOICES = {   # what appears -> the families that suit it
     "character": ["bloop", "plop"], "prop": ["bloop", "plop", "pluck"], "text": ["pluck", "click", "bloop"],
     "number": ["ding"], "arrow": ["zip"], "slide": ["whoosh"], "bounce": ["boing"], "grow": ["boing", "bloop"],
@@ -217,6 +282,9 @@ CHOICES = {   # what appears -> the families that suit it
     # bodies and things on the move
     "step": ["step"], "run_step": ["run_step"], "thud": ["thud"], "swish": ["swish", "whoosh"],
     "glide": ["slide"], "creak": ["creak"], "lift": ["lift"],
+    # the film style: an evidence wall
+    "pin": ["pin"], "stamp": ["stamp"], "ticks": ["ticks"], "impact": ["impact"], "type": ["typing"],
+    "marker": ["marker"], "label": ["swish"], "string": ["slide"],
 }
 
 
@@ -275,12 +343,14 @@ def write_effects(events: list[tuple[float, str]], duration: float, out: Path, s
         w.writeframes(pcm.tobytes())
 
 
-def mix_graph(duration: float, effects: bool, music: bool, music_db: float) -> tuple[str, str]:
+def mix_graph(duration: float, effects: bool, music: bool, music_db: float, tail: float = 0.0) -> tuple[str, str]:
     """An ffmpeg filter graph for voice (input 1), effects (2) and music (next input).
 
-    Returns the graph and the label of the mixed output.
+    `duration` is the whole video; `tail` seconds of it come after the voice (silence the music
+    and effects play over). Returns the graph and the label of the mixed output.
     """
-    parts = [f"[1:a]aresample={RATE},aformat=channel_layouts=mono,asplit=2[voice][key]"]
+    pad = f",apad=pad_dur={tail:.3f}" if tail > 0 else ""
+    parts = [f"[1:a]aresample={RATE},aformat=channel_layouts=mono{pad},asplit=2[voice][key]"]
     mix = ["[voice]"]
     music_input = 3 if effects else 2
     if effects:

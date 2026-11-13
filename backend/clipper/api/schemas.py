@@ -570,8 +570,10 @@ class AiTakeCreate(BaseModel):
 
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
-    style: Literal["ink", "flat"] = Field("ink", description="ink: beats on one page; flat: the first style, slides")
-    look: Literal["ink", "paper", "blueprint", "cartoon"] = Field("ink", description="Ink style: how it is drawn")
+    style: Literal["ink", "flat", "film"] = Field(
+        "ink", description="ink: beats on one page; film: a documentary on an evidence wall; flat: the first style")
+    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] = Field(
+        "ink", description="How it is drawn. Ink style: ink, paper, blueprint or cartoon; film style: wall or studio")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
 
@@ -581,8 +583,8 @@ class StoryboardSummary(Model):
     script_id: int
     take_id: int | None
     format: Literal["short", "long"]
-    style: Literal["ink", "flat"]
-    look: Literal["ink", "paper", "blueprint", "cartoon"] = "ink"
+    style: Literal["ink", "flat", "film"]
+    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] = "ink"
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -669,7 +671,7 @@ class StoryboardScenes(BaseModel):
 
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
-    look: Literal["ink", "paper", "blueprint", "cartoon"] | None = Field(
+    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] | None = Field(
         None, description="Ink style: render again to see it")
     music_id: int | None = None
     music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")

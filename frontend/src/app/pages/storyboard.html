@@ -5,8 +5,8 @@
       <div>
         <h1>{{ b.title }}</h1>
         <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
-          {{ ink() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
-          {{ scenes().length }} {{ ink() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
+          {{ beats() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
+          {{ scenes().length }} {{ beats() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
         <app-cost-report [of]="{ storyboard: b.id }" label="AI cost of this video, idea to render" />
       </div>
       @if (b.has_video) {
@@ -57,11 +57,11 @@
               <p class="small muted">Not rendered yet. Edit the shots in Scenes and the sound in Sound, then render.</p>
             }
           }
-          @if (ink()) {
+          @if (beats()) {
             <div class="sound look-row">
               <label class="field"><span>Look</span>
                 <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
-                  @for (l of looks; track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
+                  @for (l of looks(); track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
                 </select>
                 <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
               </label>
@@ -74,7 +74,7 @@
           <div class="row">
             <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
               {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
-            <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ ink() ? 'the shots' : 'the scenes' }} again</button>
+            <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ beats() ? 'the shots' : 'the scenes' }} again</button>
             <span class="grow"></span>
             <button class="quiet danger" (click)="remove()" [disabled]="busy()">Delete</button>
           </div>
@@ -131,7 +131,7 @@
         <div class="scenes" [class.wide]="b.format === 'long'">
           @for (i of g.indices; track i) {
             @let scene = scenes()[i];
-            @if (ink()) {
+            @if (beats()) {
             <article class="card scene ink" [class.open]="openScene() === i">
               <img class="still" [src]="still(i)" [alt]="'Shot ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
               <div class="body">
@@ -140,7 +140,7 @@
                   <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
                 </div>
                 <p class="small said">@for (w of spoken(i); track w.n) {<span class="w"><sup>{{ w.n }}</sup>{{ w.w }}</span> }</p>
-                <p class="small muted">{{ scene.note }}@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }@if (scene.place) { · in {{ label(scene.place) }} }</p>
+                <p class="small muted">{{ scene.note }}@if (film()) {@if (scene.cut) { · hard cut } } @else {@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }@if (scene.place) { · in {{ label(scene.place) }} }}</p>
                 @if (openScene() !== i) {
                   <pre class="beats">{{ (scene.lines ?? []).join('\n') }}</pre>
                 }
@@ -149,6 +149,14 @@
 
               @if (openScene() === i) {
                 <div class="editor">
+                  @if (film()) {
+                  <div class="scene-fields ink-fields">
+                    <label class="field wide"><span>What this part of the wall shows</span>
+                      <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
+                    <label class="check"><input type="checkbox" [ngModel]="!!scene.cut" (ngModelChange)="change(i, { cut: $event })" />
+                      <span>Hard cut<small>Jump here instead of following a red string from the shot before.</small></span></label>
+                  </div>
+                  } @else {
                   <div class="scene-fields ink-fields">
                     <label class="field"><span>Camera</span>
                       <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
@@ -159,12 +167,13 @@
                       <input type="text" list="places" [ngModel]="scene.place ?? ''" (ngModelChange)="change(i, { place: $event })"
                              [placeholder]="placeOf(i) ? 'same: ' + label(placeOf(i)) : 'chosen when drawn'" /></label>
                   </div>
+                  }
                   <label class="field"><span>Beats: one per line, the word number first (the small numbers above the words)</span>
                     <textarea class="beats" spellcheck="false" [rows]="Math.max(4, (scene.lines ?? []).length + 1)"
                               [ngModel]="(scene.lines ?? []).join('\n')" (ngModelChange)="setLines(i, $event)"></textarea></label>
                   <details class="fold small">
                     <summary class="muted">How to write beats</summary>
-                    <pre class="cheat">{{ cheatSheet }}</pre>
+                    <pre class="cheat">{{ cheatSheet() }}</pre>
                   </details>
                   <div class="row">
                     <span class="grow"></span>
@@ -336,8 +345,9 @@
               <small>Lowered further while the voice speaks.</small>
             </label>
             <label class="check"><input type="checkbox" [ngModel]="b.effects" (ngModelChange)="setSound({ effects: $event })" />
-              <span>{{ ink() ? 'Pen and camera sounds' : 'Pops and whooshes' }}<small>{{ ink()
-                ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
+              <span>{{ film() ? 'Wall sounds' : beats() ? 'Pen and camera sounds' : 'Pops and whooshes' }}<small>{{ film()
+                ? 'Pins, stamps, counter ticks, a marker, string and a whoosh between clusters.'
+                : beats() ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
                 : 'Quiet sounds when things appear.' }}</small></span></label>
           </div>
           <div class="row sound-tools">

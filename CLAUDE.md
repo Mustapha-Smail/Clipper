@@ -115,6 +115,14 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   rest are `studio_places` rows drawn by Claude (`llm` task `places`) in the
   fixed views `WIDE_VIEW`/`TALL_VIEW`, floor at `FLOOR`, only when a cartoon
   render needs them (`places.prepare` in the draw step).
+- Film style (`studio/film.py`, `studio/wall.py`): a documentary on an evidence
+  wall, after the cinematic-film skill (MIT). Beat lines like the ink style
+  (`film.clean` makes any plan or edit safe and lists what it drops), never code
+  or coordinates from the model: code lays out clusters, plans the camera (one
+  hero per line) and the spotlight. Looks `wall` and `studio` change drawing
+  only. `doc` pages are recreations marked on the page and quote only real
+  words. The video runs `FilmComposer.tail` seconds past the voice (the closing
+  pull-back); `animate.render` pads the audio for it.
 - `studio/compliance.py` advises before publishing and never approves. User
   steps are logged with `compliance.record` from the routes, finished jobs with
   `compliance.record_job` in the worker (`studio_events`). The similarity and

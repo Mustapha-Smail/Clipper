@@ -5,7 +5,7 @@ import { Api } from '../core/api';
 import { AgoPipe, MegabytesPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
-  ArchivePhoto, Asset, Chapters, INK_LOOKS, InkLook, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
+  ALL_LOOKS, ArchivePhoto, Asset, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
   SuggestedTrack, YoutubeText, Place, ExportInfo,
 } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -48,6 +48,23 @@ COLOUR   warm bad good gold green
 TARGET   an actor's name, a prop's name, an ID given with "as", or a PLACE
 SETTING  where a shot happens, in the cartoon look: the Setting field above (study, church, town,
          hills, night, idea, or any snake_case name: Claude draws new ones). Empty = same as before.`;
+
+const FILM_CHEAT_SHEET = `N shot "what this part of the wall shows" [cut]   (use Split to start a shot)
+N photo "search words" [label "NAME BAR"] [as ID]    a real picture from Wikimedia Commons, pinned
+N flag COUNTRY [label "TEXT"]       N map COUNTRY COUNTRY... [as ID]    (COUNTRY: fr, us, it...)
+N pin COUNTRY "LABEL" [on MAP]      N route COUNTRY COUNTRY [on MAP]
+N big "1 TO 4 WORDS" [bar] [as ID]                    big type (bar: on a yellow block)
+N count "NUMBER" "CAPTION" [as ID]                    a number rolling up: "$50,000", "35", "12%"
+N card "TITLE" "line" "line"... [as ID]               an index card, typed (up to 4 lines)
+N doc "SOURCE" "DATE LINE" "the exact words" [as ID]  a typeset page, marked RECREATION:
+                                                      quote only words the document really says
+N stamp "WORD" on ID                N highlight ID ["phrase"]
+N circle|underline|cross ID         N string ID ID    (red string: this leads to that)
+N look ID                           N wide            (the camera pulls back to the cluster)
+
+The number is the narration word (the small numbers above the words). Each line is the hero
+of its moment: the camera goes to it by itself, and a red string leads from shot to shot.
+IDs are snake_case, given with "as"; refer only to things already made.`;
 
 function blank(kind: StoryElement['kind']): StoryElement {
   return {
@@ -95,8 +112,8 @@ export class StoryboardPage {
     { value: 'wide', label: 'Wide, follows the action' }, { value: 'push', label: 'Push: slowly moves in' },
     { value: 'drift', label: 'Drift: a calm slide' }, { value: 'close', label: 'Close: frames small things tightly' },
   ];
-  protected readonly cheatSheet = INK_CHEAT_SHEET;
-  protected readonly looks = INK_LOOKS;
+  protected readonly cheatSheet = computed(() => (this.film() ? FILM_CHEAT_SHEET : INK_CHEAT_SHEET));
+  protected readonly looks = computed(() => (this.film() ? FILM_LOOKS : INK_LOOKS));
   protected readonly board = signal<Storyboard | null>(null);
   protected readonly scenes = signal<StoryScene[]>([]);
   protected readonly library = signal<Asset[]>([]);
@@ -114,7 +131,9 @@ export class StoryboardPage {
     this.store.jobs().find((j) => j.storyboard_id === this.id && (j.state === 'queued' || j.state === 'running'))
     ?? this.board()?.job ?? null);
   protected readonly busy = computed(() => this.job() !== null);
-  protected readonly ink = computed(() => this.board()?.style === 'ink');
+  /** Planned in beat lines: the ink style and the film style (the documentary wall). */
+  protected readonly beats = computed(() => this.board()?.style === 'ink' || this.board()?.style === 'film');
+  protected readonly film = computed(() => this.board()?.style === 'film');
   protected readonly dirty = computed(() => {
     const board = this.board();
     return !!board && JSON.stringify(this.scenes()) !== JSON.stringify(board.scenes);
@@ -176,7 +195,9 @@ export class StoryboardPage {
   protected still(index: number): string {
     // An ink shot builds up as it goes: show it near its end, with everything drawn.
     // (before the camera starts gliding to the next shot, about 0.3 s before it begins)
-    const t = this.ink() ? Math.max(this.start(index), this.end(index) - 0.45)
+    // A film shot: before the camera whips to the next cluster (about a second before it starts).
+    const t = this.film() ? Math.max(this.start(index) + 0.3, this.end(index) - 1.3)
+      : this.beats() ? Math.max(this.start(index), this.end(index) - 0.45)
       : Math.min(this.end(index) - 0.05, this.start(index) + Math.max(0.6, (this.end(index) - this.start(index)) * 0.7));
     return this.api.stillUrl(this.id, t, this.version(), this.board()?.format === 'long' ? 400 : 270);
   }
@@ -320,17 +341,17 @@ export class StoryboardPage {
     return '';
   }
 
-  protected lookName(look: InkLook): string {
-    return (INK_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
+  protected lookName(look: Look): string {
+    return (ALL_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
   }
 
-  protected lookHint(look: InkLook): string {
-    const hint = INK_LOOKS.find((l) => l.value === look)?.hint ?? '';
+  protected lookHint(look: Look): string {
+    const hint = ALL_LOOKS.find((l) => l.value === look)?.hint ?? '';
     return hint.charAt(0).toUpperCase() + hint.slice(1);
   }
 
   /** Draw the same plan another way. Previews change at once; the video needs a render. */
-  protected setLook(look: InkLook): void {
+  protected setLook(look: Look): void {
     this.api.setLook(this.id, look).subscribe({
       next: (board) => {
         this.board.set(board);
@@ -394,19 +415,19 @@ export class StoryboardPage {
   }
 
   protected async removeScene(index: number): Promise<void> {
-    const what = this.ink() ? 'shot' : 'scene';
+    const what = this.beats() ? 'shot' : 'scene';
     if (index === 0) {
       this.toasts.error(`The first ${what} cannot be removed; edit it instead`);
       return;
     }
-    const after = this.ink() ? 'Its beats go too.' : 'The previous scene stays on screen for its words.';
+    const after = this.beats() ? 'Its beats go too.' : 'The previous scene stays on screen for its words.';
     if (!(await this.confirm.ask({ title: `Remove this ${what}?`, message: after, confirm: 'Remove', danger: true }))) return;
     this.scenes.update((list) => list.filter((_, i) => i !== index));
   }
 
   protected splitAt(index: number, word: number): void {
     const scene = this.scenes()[index];
-    if (this.ink()) {
+    if (this.beats()) {
       // beats from that word on move to the new shot
       const lines = scene.lines ?? [];
       const keep = lines.filter((l) => parseInt(l, 10) < word || isNaN(parseInt(l, 10)));

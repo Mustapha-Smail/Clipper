@@ -24,7 +24,7 @@ from ..ffutil import require
 from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import art, beats, sound
+from . import art, beats, film, sound
 from . import voice as voice_mod
 
 FPS = 24
@@ -475,12 +475,12 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
                 "headings": {s["key"]: s["heading"] for s in board.script.sections},
                 "effects": board.effects, "music_db": board.music_db,
                 "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
-        names = beats.prop_names(board.scenes) if board.style == "ink" else \
+        names = beats.prop_names(board.scenes) if board.style == "ink" else set() if board.style == "film" else \
             {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
         wav = Path(board.take.path) if board.take_id and board.take and board.take.path else None
-        if board.style == "ink":
-            queries = beats.photo_queries(board.scenes)
+        if board.style in ("ink", "film"):
+            queries = film.photo_searches(board.style, board.scenes)
             data["photos"] = {p.query: {"path": p.path, "width": p.width, "height": p.height}
                               for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))} if queries else {}
             if board.look == "cartoon":
@@ -496,6 +496,9 @@ def composer_for(board: dict, props: dict[str, str | None], settings: Settings, 
     if board.get("style") == "ink":
         from .stage import InkComposer
         return InkComposer(board, props, settings, mouths)
+    if board.get("style") == "film":
+        from .wall import FilmComposer
+        return FilmComposer(board, props, settings, mouths)
     return Composer(board, props, settings, mouths)
 
 
@@ -580,12 +583,15 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     duration = board["end"] - board["start"]
     lay = LAYOUTS[board["format"]]
     composer = composer_for(board, props, settings, mouth_levels(wav, board["start"], duration))
+    voiced = duration
+    tail = getattr(composer, "tail", 0.0)      # the film style holds a closing shot after the voice ends
+    duration = voiced + tail
     total = math.ceil(duration * FPS)
     out = video_path(board)
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_suffix(".partial.mp4")
     options = RenderOptions.from_settings(settings)
-    audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{duration:.3f}", "-i", str(wav)]
+    audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{voiced:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
     if board["effects"]:
         events = effect_events(composer, duration)
@@ -595,7 +601,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     if board["music"]:
         audio_inputs += ["-stream_loop", "-1", "-i", board["music"]]
         rep.info(f"Music under the voice at {board['music_db']:g} dB, lowered while the voice speaks")
-    graph, mixed = sound.mix_graph(duration, board["effects"], bool(board["music"]), board["music_db"])
+    graph, mixed = sound.mix_graph(duration, board["effects"], bool(board["music"]), board["music_db"], tail)
     cmd = [require("ffmpeg"), "-y", "-v", "error",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{lay.width}x{lay.height}", "-r", str(FPS), "-i", "-",
            *audio_inputs, "-filter_complex", graph,

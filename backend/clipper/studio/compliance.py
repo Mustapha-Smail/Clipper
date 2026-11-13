@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import Idea, Script, Storyboard, StudioEvent, VoiceTake, as_utc
-from . import beats
+from . import beats, film
 
 BY = ("you", "ai", "app")
 LOG_STARTED = datetime(2026, 11, 13, tzinfo=UTC)     # steps before this day were not recorded
@@ -74,7 +74,8 @@ def words_changed(before: str, after: str) -> int:
 
 def lines_changed(before: list[dict], after: list[dict]) -> int:
     """Beat lines added, removed or changed between two versions of a storyboard."""
-    a, b = beats.to_text(before).splitlines(), beats.to_text(after).splitlines()
+    text = film.to_text if any("camera" not in shot for shot in [*before, *after]) else beats.to_text
+    a, b = text(before).splitlines(), text(after).splitlines()
     changed = 0
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if op != "equal":
@@ -139,9 +140,9 @@ def authorship(db: Session, board: Storyboard) -> dict:
         n = sum(e.amount for e in plan_edits)
         line("Visuals", f"Planned by the AI; you changed {n} beat line{'s' if n != 1 else ''} in "
                         f"{len(plan_edits)} edit{'s' if len(plan_edits) != 1 else ''}", n >= 5)
-    elif board.style == "ink":
+    elif board.style in ("ink", "film"):
         line("Visuals", "Planned by the AI; not edited by you yet", False)
-    if any(e.kind == "look" for e in events) or board.look != "ink":
+    if any(e.kind == "look" for e in events) or board.look not in ("ink", "wall"):
         line("Visuals", f"Look: {board.look}, chosen by you", True)
     swaps = [e for e in events if e.kind == "photo"]
     if swaps:
@@ -169,7 +170,7 @@ def authorship(db: Session, board: Storyboard) -> dict:
     if not any(x["yours"] for x in lines if x["part"] in ("Script", "Voice")):
         advice.append("The words and the voice are all AI so far. Putting the script in your own words "
                       "(or recording it yourself) is the strongest sign of your own work.")
-    if not plan_edits and board.style == "ink":
+    if not plan_edits and board.style in ("ink", "film"):
         advice.append("Changing some scenes to your taste makes the video less like a template.")
     return {"lines": lines, "yours": yours, "parts": len(lines), "advice": advice,
             "events": [{"at": as_utc(e.created_at).isoformat(), "kind": e.kind, "by": e.by, "summary": e.summary,
@@ -219,8 +220,8 @@ def compare(a: Storyboard, b: Storyboard) -> tuple[int, list[dict]]:
         if points:
             lines.append({"points": points, "text": text})
 
-    if a.style == b.style and (a.style != "ink" or a.look == b.look):
-        add(10, f"Same look ({a.look if a.style == 'ink' else a.style})")
+    if a.style == b.style and (a.style == "flat" or a.look == b.look):
+        add(10, f"Same look ({a.style if a.style == 'flat' else a.look})")
     if a.music_id and a.music_id == b.music_id:
         add(20, "Same music track")
     ta, tb = a.take, b.take
@@ -250,7 +251,7 @@ def similarity(db: Session, board: Storyboard) -> dict:
             "similar": "Some likeness to a recent video. Fine now and then; vary the look or the music if it "
                        "keeps happening.",
             "different": "Different enough from your recent videos."}[verdict]
-    looks = {b.look if b.style == "ink" else b.style for b in [board, *recent]}
+    looks = {b.style if b.style == "flat" else b.look for b in [board, *recent]}
     tracks = {b.music_id for b in [board, *recent] if b.music_id}
     return {"score": score, "verdict": verdict, "lines": lines, "compared": len(recent), "note": note,
             "nearest": {"id": nearest.id, "title": nearest.title, "script_id": nearest.script_id},
@@ -348,7 +349,11 @@ def disclosure(db: Session, board: Storyboard) -> dict:
     if people:
         lines.append({"needs": False, "text": "Real people are shown as drawn characters (" + ", ".join(people[:5])
                       + "), which no one would take for footage. Keep what they 'say' to what they really said."})
-    if board.style == "ink" and beats.photo_queries(board.scenes or []):
+    if board.style == "film" and film.recreations(board.scenes or []):
+        lines.append({"needs": False, "text": "Typeset pages (" + ", ".join(film.recreations(board.scenes)[:3])
+                      + ") are drawn recreations, marked RECREATION on the page. Quote only words the document "
+                        "really says."})
+    if film.photo_searches(board.style, board.scenes or []):
         lines.append({"needs": False, "text": "Archive photos are real and only framed and toned, which needs no "
                                               "label. Never use one to show an event it is not from."})
     needs = any(x["needs"] for x in lines)

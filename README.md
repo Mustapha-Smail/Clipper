@@ -222,6 +222,13 @@ makes a Short from any section, or the long video. Pick the look first:
   circles, crosses, ticks and arrows are drawn over what matters. Lines wobble
   like hand-drawn animation and drawings move 12 times a second; the camera
   keeps the action framed and glides from shot to shot.
+- **Evidence wall** (the film style, for documentaries): one camera travels
+  over one wall where the story gets pinned as it is told: archive photos
+  with red name bars, typed index cards, typeset pages, map prints with pins
+  and routes, big type and rolling numbers. Stamps slam, highlighters swipe
+  and numbers roll up on the word the narrator says; red string leads from
+  each part of the wall to the next. **Studio board** is the same on a light
+  board.
 - **Flat colour** (the first style): scene by scene, stickers in fixed slots.
 
 ### The ink style
@@ -378,6 +385,43 @@ or so), and the instructions shared by a long video's chapters are cached
 between calls. Measured on the 7-minute LED video: $0.07 to plan on Sonnet 5.5
 (the flat style: $0.25 on Sonnet, about $0.90 on Opus); a one-minute Short
 costs about $0.04.
+
+### The film style (the evidence wall)
+
+Inspired by the [cinematic-film skill](https://github.com/Moh4696/cinematic-skill)
+(MIT): one continuous camera over one designed world, one hero per line of
+narration, every hit on its spoken word. Claude plans it in beat lines too:
+
+```
+0 shot "The first flight, on the date it happened"
+0 big "DECEMBER 17, 1903" bar as date
+4 photo "Wright Flyer first flight 1903" label "KITTY HAWK" as flight
+9 count "12" "SECONDS" as secs
+14 string flight secs
+17 shot "The rival with government money" cut
+18 card "THE RIVAL" "Samuel Langley" "$50,000 of public money" as rival
+30 stamp "FAILED" on rival
+33 doc "THE NEW YORK TIMES" "9 OCTOBER 1903" "one million to ten million years" as nyt
+36 highlight nyt "ten million years"
+40 map us fr as m
+41 pin us "DAYTON" on m
+42 route us fr
+```
+
+Each shot is a cluster of things on the wall. Claude only says what appears
+and on which word; code lays the clusters out (two columns each, snaking over
+the wall), plans the camera (it notices each new thing as it appears, holds
+with a slow push-in, whips to the next cluster along a red string, and pulls
+back to the whole wall after the last word) and keeps a spotlight on the hero.
+Typeset pages are recreations: they say RECREATION on the page and must quote
+only words the document really says; the planner is told so, and Before you
+publish repeats it. Photos keep their own colours, as in every look.
+
+Everything is drawn once and placed with one warp per frame: a one-minute
+Short renders in about a minute on the M1, like the ink style. The sounds are
+synthesised: a pin, a stamp, counter ticks, a marker, typing and a whoosh.
+Fonts: Bebas Neue, Courier Prime and Old Standard (all OFL, bundled with
+their licences in `backend/clipper/assets/fonts/film/`).
 
 ### The flat style
 

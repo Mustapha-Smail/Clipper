@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import llm
 from ..db.models import Storyboard, StudioPhoto, utcnow
-from . import beats, sound
+from . import film, sound
 
 # YouTube's limits (Studio refuses more).
 TITLE_MAX = 100
@@ -51,7 +51,7 @@ def credits(db: Session, board: Storyboard) -> str:
     """Every credit line the description needs: archive pictures, then music."""
     music = board.music
     music_line = (music.attribution or f"Music: {music.name}") if music and music.license else ""
-    queries = beats.photo_queries(board.scenes) if board.style == "ink" else []
+    queries = film.photo_searches(board.style, board.scenes)
     found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
         if queries else {}
     return "\n".join([*(f"Picture: {_credit(found[q])}" for q in queries if q in found),

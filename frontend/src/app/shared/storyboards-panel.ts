@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { INK_LOOKS, InkLook, Script, StoryboardSummary } from '../core/models';
+import { ALL_LOOKS, FILM_LOOKS, INK_LOOKS, Look, Script, StoryStyle, StoryboardSummary } from '../core/models';
 import { Toasts } from '../core/toast';
 
 /** Animated videos made from a script: Shorts, one per section for now. */
@@ -26,10 +26,19 @@ import { Toasts } from '../core/toast';
         <h4>Make a video</h4>
         <label class="field look"><span>Look</span>
           <select [ngModel]="look()" (ngModelChange)="look.set($event)">
-            @for (l of looks; track l.value) {
-              <option [value]="l.value">{{ l.label }}</option>
-            }
-            <option value="flat">Flat colour: the first style, scene by scene</option>
+            <optgroup label="Animated: ink drawings, characters, props">
+              @for (l of looks; track l.value) {
+                <option [value]="l.value">{{ l.label }}</option>
+              }
+            </optgroup>
+            <optgroup label="Documentary: an evidence wall of photos, cards and maps">
+              @for (l of filmLooks; track l.value) {
+                <option [value]="l.value">{{ l.label }}</option>
+              }
+            </optgroup>
+            <optgroup label="The first style">
+              <option value="flat">Flat colour: scene by scene</option>
+            </optgroup>
           </select>
           <small>{{ lookHint() }}</small>
         </label>
@@ -71,8 +80,8 @@ import { Toasts } from '../core/toast';
               <span class="info">
                 <strong>{{ b.title }}</strong>
                 <span class="small muted">{{ b.format === 'short' ? 'Short' : 'Long video' }} ·
-                  {{ b.style === 'ink' ? lookName(b.look) : 'flat' }} · {{ clock(b.duration) }} ·
-                  {{ b.scene_count }} {{ b.style === 'ink' ? 'shots' : 'scenes' }} · {{ b.created_at | ago }}</span>
+                  {{ b.style === 'flat' ? 'flat' : lookName(b.look) }} · {{ clock(b.duration) }} ·
+                  {{ b.scene_count }} {{ b.style === 'flat' ? 'scenes' : 'shots' }} · {{ b.created_at | ago }}</span>
                 @if (b.job) {
                   <span class="pill running">{{ b.job.message }}</span>
                 } @else if (b.has_video) {
@@ -165,10 +174,14 @@ export class StoryboardsPanel {
   protected readonly starting = signal<string | null>(null);
   protected readonly hasTake = signal(true);
   protected readonly looks = INK_LOOKS;
-  /** An ink look, or the older flat style. The look can change later; the style cannot. */
-  protected readonly look = signal<InkLook | 'flat'>('ink');
-  protected readonly style = computed<'ink' | 'flat'>(() => (this.look() === 'flat' ? 'flat' : 'ink'));
-  private inkLook(): InkLook {
+  protected readonly filmLooks = FILM_LOOKS;
+  /** A look of the ink or the film style, or the older flat style. The look can change later; the style cannot. */
+  protected readonly look = signal<Look | 'flat'>('ink');
+  protected readonly style = computed<StoryStyle>(() => {
+    const look = this.look();
+    return look === 'flat' ? 'flat' : FILM_LOOKS.some((l) => l.value === look) ? 'film' : 'ink';
+  });
+  private inkLook(): Look {
     const look = this.look();
     return look === 'flat' ? 'ink' : look;
   }
@@ -176,8 +189,9 @@ export class StoryboardsPanel {
   protected lookHint(): string {
     const look = this.look();
     if (look === 'flat') return 'The first style: scene by scene, flat colour.';
-    const hint = INK_LOOKS.find((l) => l.value === look)?.hint ?? '';
-    return hint.charAt(0).toUpperCase() + hint.slice(1) + '. You can change it later without planning again.';
+    const hint = ALL_LOOKS.find((l) => l.value === look)?.hint ?? '';
+    const other = this.style() === 'film' ? 'the other documentary look' : 'another ink look';
+    return hint.charAt(0).toUpperCase() + hint.slice(1) + `. You can switch to ${other} later without planning again.`;
   }
 
   protected thumb(b: StoryboardSummary): string {
@@ -189,8 +203,8 @@ export class StoryboardsPanel {
     return s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
 
-    protected lookName(look: InkLook): string {
-    return (INK_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
+    protected lookName(look: Look): string {
+    return (ALL_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
   }
 
   constructor() {

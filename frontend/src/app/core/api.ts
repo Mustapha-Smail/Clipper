@@ -2,10 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
-  MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, ExportInfo, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck, YoutubeText, Place,
-  SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
+  ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
+  ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
+  MusicSuggestion, MusicTrack, NewVideo, Place, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
+  SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
+  SystemStatus, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -200,7 +201,7 @@ export class Api {
 
   // Studio storyboards and props
   createStoryboard(scriptId: number, sectionKey: string | null, format: 'short' | 'long' = 'short',
-                   style: 'ink' | 'flat' = 'ink', look: InkLook = 'ink'): Observable<Storyboard> {
+                   style: StoryStyle = 'ink', look: Look = 'ink'): Observable<Storyboard> {
     return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`,
                                       { format, section_key: sectionKey, style, look });
   }
@@ -222,7 +223,7 @@ export class Api {
   reviewStoryboard(id: number, review: 'pending' | 'approved' | 'rejected'): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { review });
   }
-  setLook(id: number, look: InkLook): Observable<Storyboard> {
+  setLook(id: number, look: Look): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { look });
   }
   publishCheck(id: number): Observable<PublishCheck> {

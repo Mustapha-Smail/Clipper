@@ -471,8 +471,8 @@ export interface StoryboardSummary {
   script_id: number;
   take_id: number | null;
   format: 'short' | 'long';
-  style: 'ink' | 'flat';
-  look: InkLook;
+  style: StoryStyle;
+  look: Look;
   section_key: string | null;
   title: string;
   review: 'pending' | 'approved' | 'rejected';
@@ -527,6 +527,11 @@ export interface YoutubeText {
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
 export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon';
+/** How a film storyboard (the documentary wall) is drawn. */
+export type FilmLook = 'wall' | 'studio';
+export type Look = InkLook | FilmLook;
+/** ink: beats on one page; film: a documentary on an evidence wall; flat: the first style, slides. */
+export type StoryStyle = 'ink' | 'flat' | 'film';
 
 export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'ink', label: 'Ink sketch', hint: 'brush lines drawn on cream paper' },
@@ -534,6 +539,13 @@ export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'blueprint', label: 'Blueprint', hint: 'white lines on a blue grid' },
   { value: 'cartoon', label: 'Cartoon', hint: 'colour characters in drawn places, one per setting' },
 ];
+
+export const FILM_LOOKS: { value: FilmLook; label: string; hint: string }[] = [
+  { value: 'wall', label: 'Evidence wall', hint: 'archive photos, cards and stamps pinned on dark cork, red string between them' },
+  { value: 'studio', label: 'Studio board', hint: 'the same documentary on a light board: prints laid down, dark type' },
+];
+
+export const ALL_LOOKS = [...INK_LOOKS, ...FILM_LOOKS];
 
 export interface PublishLine {
   points?: number;
