@@ -32,7 +32,7 @@ export class IdeasPage {
     { value: 'parked', label: 'Parked' },
     { value: 'skipped', label: 'Skipped' },
   ];
-  protected readonly tab = signal<Tab>('review');
+  protected readonly tab = signal<Tab>('generate');
   protected readonly ideas = signal<Idea[] | null>(null);
 
   private settings: AppSettings | null = null;

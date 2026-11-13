@@ -14,7 +14,12 @@
     <div class="tabs" role="tablist">
       @for (t of tabs; track t.value) {
         <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="tab.set(t.value)">
-          {{ t.label }} <span class="muted num">{{ counts()[t.value] }}</span>
+          {{ t.label }}
+          @if (t.value === 'review' && counts()[t.value]) {
+            <span class="tab-badge num" [attr.aria-label]="counts()[t.value] + ' to review'">{{ counts()[t.value] }}</span>
+          } @else {
+            <span class="muted num">{{ counts()[t.value] }}</span>
+          }
         </button>
       }
     </div>
