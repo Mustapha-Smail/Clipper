@@ -1,7 +1,7 @@
 """Campaign scouting: read a marketplace listing, rank it, turn it into a brief.
 
-A listing reaches the app as plain page text (pasted by the user, or sent by a
-scout that browses the marketplace). Claude turns the text into structured
+A listing reaches the app as plain page text (pasted by the user, read by the
+scout job in `scout.py`, or sent by the campaign-scout skill). Claude turns the text into structured
 terms. Ranking is plain arithmetic on those terms, so every score can be
 explained line by line.
 """
@@ -9,6 +9,8 @@ explained line by line.
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from . import llm
 from .db.models import Campaign, utcnow
@@ -88,10 +90,39 @@ def extract(text: str, theme: str) -> Terms:
     return llm.ask("campaign", SYSTEM, prompt, Terms, effort="medium")
 
 
-def apply_terms(campaign: Campaign, terms: Terms, raw_text: str) -> None:
+def ingest(db: Session, url: str | None, text: str, settings: Settings) -> tuple[Campaign, bool]:
+    """Read one listing and store it: (campaign, whether it is new).
+
+    A URL already known refreshes that campaign and keeps the user's decision
+    and notes. Raises RuntimeError when the model cannot read the text.
+    """
+    return store(db, url, extract(text, settings.theme), text)
+
+
+def store(db: Session, url: str | None, terms: Terms | dict, text: str,
+          read_by: str = "ai") -> tuple[Campaign, bool]:
+    """Save terms already extracted from a listing: (campaign, whether it is new).
+
+    `terms` is Claude's reading, or, with read_by "page", the fields the scout
+    read from the page layout without AI (`scout.page_terms`).
+    """
+    fields = terms.model_dump() if isinstance(terms, Terms) else terms
+    url = (url or "").strip() or None
+    campaign = db.scalar(select(Campaign).where(Campaign.url == url)) if url else None
+    created = campaign is None
+    if created:
+        campaign = Campaign(url=url, source=source_of(url), title=fields["title"])
+        db.add(campaign)
+    apply_terms(campaign, fields, text, read_by)
+    db.flush()
+    return campaign, created
+
+
+def apply_terms(campaign: Campaign, terms: Terms | dict, raw_text: str, read_by: str = "ai") -> None:
     """Copy extracted terms onto a row. The user's decision and notes are left alone."""
-    for field, value in terms.model_dump().items():
+    for field, value in (terms.model_dump() if isinstance(terms, Terms) else terms).items():
         setattr(campaign, field, value)
+    campaign.read_by = read_by
     campaign.raw_text = raw_text[:MAX_TEXT]
     campaign.last_seen = utcnow()
 
@@ -143,6 +174,11 @@ def assess(c: Campaign, settings: Settings) -> dict:
 
     if c.theme_fit is not None:
         parts.append((f"Theme fit {c.theme_fit}/10", c.theme_fit / 10 * 25))
+    elif c.read_by == "page":
+        # Not judged: the same 40% an unknown budget gets, so it neither leads nor sinks the list.
+        parts.append(("Theme fit not judged: read without AI", 10.0))
+        flags.append("Read without AI, from the page layout: rules, location and theme fit not checked. "
+                     "The next scout run with AI reads it again")
 
     if c.budget_left is None:
         parts.append(("Budget left not stated", 6.0))

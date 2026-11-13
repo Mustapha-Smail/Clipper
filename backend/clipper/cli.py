@@ -129,3 +129,21 @@ def run(src: Annotated[str, typer.Argument(help="Video URL or local file path")]
         typer.secho(f"Error: {err}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from err
     typer.echo(f"Done. Clips are in {settings_mod.clips_dir(settings) / video_id}")
+
+
+@app.command()
+def scout():
+    """Read public campaign listings now, in the foreground, and add them to Campaigns."""
+    from . import scout as scout_mod
+    from . import settings as settings_mod
+    from .jobs import ConsoleReporter
+
+    db.upgrade()
+    rep = ConsoleReporter()
+    rep.stage("scout")
+    try:
+        result = scout_mod.run(settings_mod.load(), rep)
+    except RuntimeError as err:
+        typer.secho(f"Error: {err}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from err
+    typer.echo(f"{scout_mod.outcome(result)}. {result['new']} new campaigns, {result['read']} listings read.")

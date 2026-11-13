@@ -189,6 +189,9 @@ export interface AppSettings {
   voice_pauses: Pauses;
   audience_tier1_share: number | null;
   platforms: string[];
+  /** Hours between automatic campaign scouts; 0 = only by hand. */
+  scout_every_hours: 0 | 6 | 12 | 24 | 72 | 168;
+  scout_max_pages: number;
   output_dir: string;
   delete_source_after_render: boolean;
   /** Days an unapproved Studio render is kept before it is deleted; 0 = forever. */

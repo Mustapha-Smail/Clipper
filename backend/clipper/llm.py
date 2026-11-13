@@ -36,6 +36,7 @@ TASKS = {
     "idea_check": ("quick", "Checking ideas"),
     "themes": ("quick", "Suggesting themes"),
     "campaign": ("quick", "Reading campaign listings"),
+    "campaign_pick": ("quick", "Choosing campaigns to read"),
     "brief_check": ("quick", "Checking clips against briefs"),
     "verdicts": ("quick", "Reading fact-check results"),
     "props": ("quick", "Drawing props"),

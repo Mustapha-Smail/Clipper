@@ -1,8 +1,10 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
+import { JobsStore } from '../core/jobs-store';
+import { JobCard } from '../shared/job-card';
 import { Campaign, CampaignDecision, CampaignPatch } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -12,7 +14,7 @@ type Tab = 'consider' | 'joined' | 'skipped' | 'closed';
 /** Campaigns found on marketplaces, ranked by what a clip is likely to earn. */
 @Component({
   selector: 'app-campaigns-page',
-  imports: [FormsModule, RouterLink, AgoPipe],
+  imports: [FormsModule, RouterLink, AgoPipe, JobCard],
   templateUrl: './campaigns.html',
   styleUrl: './campaigns.scss',
 })
@@ -20,6 +22,7 @@ export class CampaignsPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
+  private readonly store = inject(JobsStore);
 
   protected readonly tabs: { value: Tab; label: string }[] = [
     { value: 'consider', label: 'To consider' },
@@ -49,8 +52,27 @@ export class CampaignsPage {
     return counts;
   });
 
+  /** The latest scout job (the job list is newest first). */
+  protected readonly scoutJob = computed(() => this.store.jobs().find((j) => j.kind === 'scout') ?? null);
+  protected readonly scouting = computed(() => ['queued', 'running'].includes(this.scoutJob()?.state ?? ''));
+  /** The job card shows while the scout runs, and after a run started from this page. */
+  protected readonly startedHere = signal(false);
+
   constructor() {
     this.load();
+    effect(() => {
+      if (this.store.finished().some((j) => j.kind === 'scout')) untracked(() => this.load());
+    });
+  }
+
+  protected scout(): void {
+    this.api.scoutCampaigns().subscribe({
+      next: () => {
+        this.startedHere.set(true);
+        this.store.refresh();
+      },
+      error: (err) => this.toasts.error(err),
+    });
   }
 
   private load(): void {

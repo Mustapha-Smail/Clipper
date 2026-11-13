@@ -90,6 +90,9 @@ class Campaign(Base):
     theme_fit: Mapped[int | None] = mapped_column(Integer)             # 0..10 against the user's theme
     theme_reason: Mapped[str] = mapped_column(Text, default="")
     raw_text: Mapped[str] = mapped_column(Text, default="")            # the listing as it was read
+    # "ai": Claude read the terms. "page": the scout read them from the page layout because
+    # the AI was unavailable; rules, location and theme fit are then unchecked.
+    read_by: Mapped[str] = mapped_column(String(8), default="ai", server_default="ai")
     decision: Mapped[str] = mapped_column(String(16), default="new", index=True)  # new|interested|joined|skipped
     notes: Mapped[str] = mapped_column(Text, default="")
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

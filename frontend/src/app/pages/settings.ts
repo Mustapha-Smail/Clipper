@@ -145,6 +145,30 @@ import { Toasts } from '../core/toast';
           </section>
 
           <section class="card">
+            <h3>Campaign scout</h3>
+            <p class="small muted">Reads public listings on Content Rewards and adds them to Campaigns: the ones you
+              marked interested or joined, new ones that fit your theme, and a few of the best paid. Plain page
+              reads, no account, no joining. Costs a few cents of the quick AI tier per run.</p>
+            <div class="form-grid">
+              <label class="field"><span>Look for campaigns</span>
+                <select [(ngModel)]="f.scout_every_hours">
+                  <option [ngValue]="0">Only when I press the button</option>
+                  <option [ngValue]="6">Every 6 hours</option>
+                  <option [ngValue]="12">Every 12 hours</option>
+                  <option [ngValue]="24">Once a day</option>
+                  <option [ngValue]="72">Every 3 days</option>
+                  <option [ngValue]="168">Once a week</option>
+                </select>
+                <small>A scheduled run waits behind any job already running.</small>
+              </label>
+              <label class="field"><span>Listings read per run</span>
+                <input type="number" min="1" max="30" [(ngModel)]="f.scout_max_pages" />
+                <small>Each one is a page read and one quick AI call.</small>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
             <h3>Moments and brief checks</h3>
             <p class="small muted">Defaults for new videos. Each video can override the numbers.</p>
             <div class="form-grid">

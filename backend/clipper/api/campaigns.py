@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import campaigns as campaigns_mod
+from .. import scout
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Campaign, Video
@@ -51,21 +52,20 @@ def ingest_campaign(body: s.CampaignIngest, db: Session = Depends(get_db)):
     decision and notes.
     """
     settings = settings_mod.load()
-    url = (body.url or "").strip() or None
     try:
-        terms = campaigns_mod.extract(body.text, settings.theme)
+        campaign, created = campaigns_mod.ingest(db, body.url, body.text, settings)
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
-
-    campaign = db.scalar(select(Campaign).where(Campaign.url == url)) if url else None
-    created = campaign is None
-    if created:
-        campaign = Campaign(url=url, source=campaigns_mod.source_of(url), title=terms.title)
-        db.add(campaign)
-    campaigns_mod.apply_terms(campaign, terms, body.text)
-    db.flush()
     log.info("campaign read", extra={"campaign_id": campaign.id, "is_new": created, "campaign": campaign.title})
     return campaign_out(campaign, settings)
+
+
+@router.post("/scout", response_model=s.JobOut, status_code=202)
+def start_scout(db: Session = Depends(get_db)):
+    """Queue the scout job: it reads public listings and adds them here (see scout.py)."""
+    if scout.is_active(db):
+        raise HTTPException(409, "The scout is already looking for campaigns")
+    return scout.queue(db)
 
 
 @router.patch("/{campaign_id}", response_model=s.CampaignOut)

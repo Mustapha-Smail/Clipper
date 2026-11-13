@@ -13,6 +13,28 @@
     </div>
   </div>
 
+  <div class="scout row">
+    <button class="primary" (click)="scout()" [disabled]="scouting()">
+      {{ scouting() ? 'Looking for campaigns…' : 'Look for campaigns' }}</button>
+    <span class="small muted">
+      Reads public listings on Content Rewards: yours to refresh, new ones that fit your theme, a few of the best paid.
+      @if (scoutJob(); as j) {
+        @if (j.finished_at && !scouting()) { Last run {{ j.finished_at | ago }}@if (j.state !== 'succeeded') { ({{ j.state }})}. }
+      }
+      <a routerLink="/settings">Schedule it in Settings</a>.
+    </span>
+  </div>
+  @if (scoutJob(); as j) {
+    @if (scouting() || (startedHere() && j.state !== 'succeeded')) { <app-job-card [job]="j" /> }
+    @else if (j.state === 'succeeded' && j.message.startsWith('Done, AI skipped')) {
+      <div class="notice small ai-skipped"><span>
+        The last run skipped the AI: {{ j.message.slice('Done, AI skipped: '.length) }}
+        Listings were still added, read from the page layout: their rules, location and theme fit are not
+        checked (flagged on each one). The next run with AI reads them again. <a routerLink="/activity">See its log</a>.
+      </span></div>
+    }
+  }
+
   <details class="fold card" #add>
     <summary>Add a campaign</summary>
     <div class="stack">
@@ -132,7 +154,7 @@
       } @empty {
         <div class="empty">
           @if (!all.length) {
-            No campaigns yet. Add one above by pasting its page.
+            No campaigns yet. Look for some above, or add one by pasting its page.
           } @else {
             Nothing in this list.
           }

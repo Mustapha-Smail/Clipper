@@ -13,7 +13,7 @@ import socket
 import threading
 import time
 
-from . import jobs, llm, pipeline
+from . import jobs, llm, pipeline, scout
 from . import settings as settings_mod
 from .db import session_scope
 from .db.models import Job, Worker, utcnow
@@ -27,6 +27,7 @@ from .studio import voice as voice_mod
 
 HEARTBEAT_SECONDS = 5
 SWEEP_SECONDS = 3600        # how often an idle worker looks for renders past their grace period
+SCOUT_CHECK_SECONDS = 300   # how often an idle worker checks whether a scheduled campaign scout is due
 log = logging.getLogger("clipper.worker")
 
 
@@ -44,6 +45,7 @@ def run_job(job_id: int) -> None:
     try:
         settings = settings_mod.load()
         clip_ids = params.get("clip_ids")
+        done = "Done"          # the final message; a stage may say more (the scout, when it ran without AI)
         for stage in stages:
             rep.stage(stage)
             if stage == "download":
@@ -64,6 +66,8 @@ def run_job(job_id: int) -> None:
                 clip_ids = pipeline.render(video_id, settings, rep, params.get("moment_ids"))
             elif stage == "check":
                 pipeline.check(video_id, settings, rep, clip_ids, skip_without_brief=kind != "check")
+            elif stage == "scout":
+                done = scout.outcome(scout.run(settings, rep))
             elif stage == "research":
                 script_mod.research(params["script_id"], rep)
             elif stage == "write":
@@ -86,7 +90,7 @@ def run_job(job_id: int) -> None:
                 animate_mod.render(params["storyboard_id"], settings, rep)
         with session_scope() as db:
             compliance.record_job(db, kind, params)
-        jobs.finish(job_id, "succeeded", "Done")
+        jobs.finish(job_id, "succeeded", done)
         outcome = "succeeded"
     except jobs.JobCancelled:
         jobs.finish(job_id, "cancelled", "Cancelled")
@@ -146,7 +150,7 @@ def main() -> None:
     threading.Thread(target=_heartbeat, args=(worker_id, stop), daemon=True, name="heartbeat").start()
     log.info("worker ready", extra={"worker_id": worker_id})
 
-    next_sweep = 0.0
+    next_sweep = next_scout = 0.0
     while not stop.is_set():
         try:
             job_id = jobs.claim_next(worker_id)
@@ -161,6 +165,14 @@ def main() -> None:
                     retention.sweep(settings_mod.load())
                 except Exception:  # noqa: BLE001 - housekeeping must never stop the worker
                     log.warning("grace period sweep failed", exc_info=True)
+            # A scheduled scout is queued like any job, so it waits behind real work.
+            if time.monotonic() >= next_scout:
+                next_scout = time.monotonic() + SCOUT_CHECK_SECONDS
+                try:
+                    if scout.queue_if_due(settings_mod.load()):
+                        log.info("scheduled campaign scout queued")
+                except Exception:  # noqa: BLE001
+                    log.warning("could not queue the campaign scout", exc_info=True)
             stop.wait(1.0)
         else:
             run_job(job_id)

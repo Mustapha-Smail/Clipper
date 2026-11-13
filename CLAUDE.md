@@ -51,8 +51,20 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
 - `campaigns.py`: listings arrive as page text; Claude extracts the terms, and
   `assess()` ranks them with plain arithmetic whose lines are shown to the user.
   Keep the score explainable: every adjustment must appear in the breakdown.
-  The app never scrapes marketplaces itself; the `campaign-scout` skill does the
-  reading from public pages and posts `{url, text}` to `/api/v1/campaigns`.
+  Listings go through `campaigns.ingest`, whoever read them.
+- `scout.py`: the `scout` job (button on Campaigns, or `scout_every_hours` in
+  Settings, checked by the idle worker) reads public Content Rewards pages over
+  plain HTTP: allow-listed hosts only (`scout.HOSTS`), robots.txt honoured
+  (longest match, by hand), no login, never joins or submits, at most
+  `scout_max_pages` listings one at a time with a pause. Claude picks theme fits
+  from the cards (`llm` task `campaign_pick`); refreshes and best-paid picks are
+  code. AI failures never fail the job: a listing the AI cannot read is read
+  from the page layout (`scout.page_terms`: fixed blocks only, `read_by="page"`,
+  theme fit None, scored as 4/10 and flagged); two failures in a row stop AI
+  calls for the run (`scout.AiState`). It is announced in the log and the job's
+  message ("Done, AI skipped: ..."), and the next run with AI re-reads page-read
+  campaigns. The `campaign-scout` skill remains for other marketplaces: it posts
+  `{url, text}` to `/api/v1/campaigns`.
 - `studio/ideas.py`: same rule as campaigns. The score is arithmetic on the
   stored YouTube results and Claude's judgement, every line in the breakdown.
   YouTube data comes only from the official Data API (`studio/youtube.py`,

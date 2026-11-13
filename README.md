@@ -76,12 +76,28 @@ given the per-clip cap, budget left, fit with your theme, and warnings (location
 rules, restricted products, closed listings). Open "Rules, score and notes" on
 any campaign to see exactly how its score was reached.
 
-Two ways to add campaigns:
+Three ways to add campaigns:
 
+- **Look for campaigns:** the button on the Campaigns page queues the scout job.
+  The worker reads the public discover page of Content Rewards, then up to 15
+  listings (Settings, "Campaign scout"): the campaigns you marked interested or
+  joined, to refresh budget and status; new ones that Claude judges a fit for
+  your theme from their cards; and a few of the best paid, for comparison.
+  Skipped campaigns are never read again. Plain page reads with no account,
+  robots.txt honoured, one page at a time. Settings can run it on a schedule
+  (every 6 hours to once a week); a scheduled run waits behind other jobs. From a
+  terminal: `uv run clipper scout`. Costs a few cents of the quick tier per run.
+  When the AI is unavailable (no credit, no key, an outage) the run still
+  succeeds and the listings still show up: it chooses by rate, reads each page's
+  fixed blocks itself (rates per platform, caps, budget, status, any rules shown
+  before joining), and ranks them with the same arithmetic. Theme fit is then
+  unknown and counts as 4/10; rules and location are flagged as not checked.
+  The Campaigns page says so, and the next run with AI reads them again.
 - **Paste:** on the Campaigns page, "Add a campaign", paste the listing's page
   text and its link. Claude extracts the terms.
-- **Scout:** ask Claude Code to "run the campaign scout". It reads public
+- **Scout skill:** ask Claude Code to "run the campaign scout". It reads public
   listings in its browser and loads them (see `.claude/skills/campaign-scout/`).
+  Useful for other marketplaces; the job above covers Content Rewards.
 
 Mark a campaign as joined, then "Clip a video for it": its rules become the
 video's brief, which drives both moment selection and the pre-post check.
@@ -432,7 +448,7 @@ models):
 | Tier | Tasks | Default |
 |---|---|---|
 | Writing | moments, ideas, scripts, section rewrites, fact-check claims, storyboards | Claude Opus 5.5 |
-| Quick tasks | idea checks, campaign terms, brief checks, reading fact-check results, drawing props | Claude Haiku 5.5 |
+| Quick tasks | idea checks, campaign terms, choosing campaigns to read, brief checks, reading fact-check results, drawing props | Claude Haiku 5.5 |
 | Research | script research and claim look-ups, with web search and citations | Claude Sonnet 5.5 |
 
 Models are picked from a list: the known current ones first with their prices,

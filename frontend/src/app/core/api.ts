@@ -104,6 +104,9 @@ export class Api {
   deleteCampaign(id: number): Observable<void> {
     return this.http.delete<void>(`${BASE}/campaigns/${id}`);
   }
+  scoutCampaigns(): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/campaigns/scout`, {});
+  }
 
   // Studio ideas
   ideas(): Observable<Idea[]> {

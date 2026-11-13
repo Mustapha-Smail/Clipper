@@ -34,6 +34,10 @@ class Settings(BaseModel):
     audience_tier1_share: int | None = Field(None, ge=0, le=100)
     # Where you post. A campaign is ranked on the best rate it pays on one of these.
     platforms: list[Literal["tiktok", "instagram", "youtube", "x", "facebook"]] = ["tiktok", "instagram", "youtube"]
+    # Campaign scout (scout.py): how often the worker reads public listings by itself
+    # (0 = only when you press the button), and how many listing pages one run reads.
+    scout_every_hours: Literal[0, 6, 12, 24, 72, 168] = 0
+    scout_max_pages: int = Field(15, ge=1, le=30)
 
     # Studio: the animated channel. Ideas are generated and judged against this theme.
     studio_theme: str = Field("How everyday things secretly work", max_length=300)

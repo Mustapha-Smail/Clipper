@@ -144,3 +144,19 @@
     grid-template-columns: 1fr;
   }
 }
+
+.scout {
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+
+  button { flex: none; }
+  span { flex: 1 1 260px; }
+}
+
+app-job-card {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.ai-skipped { margin-bottom: 12px; }

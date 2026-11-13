@@ -9,6 +9,10 @@ Reads campaign listings from public marketplace pages and sends each page's text
 to the Clipper app. The app (not you) extracts the terms with Claude and ranks
 them, so your job is only to pick pages and pass their text along unchanged.
 
+For Content Rewards the app can do this itself: `curl -s -X POST localhost:8000/api/v1/campaigns/scout`
+queues its scout job (see `backend/clipper/scout.py`). Prefer that unless the user asks for the
+browser, or the marketplace is another one.
+
 ## Before you start
 
 - The app must be running: `curl -s localhost:8000/healthz` returns `{"status":"ok"}`.

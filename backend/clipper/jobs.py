@@ -26,6 +26,7 @@ STAGES = {
     "render": ["render", "check"],
     "check": ["check"],
     "subtitles": ["subtitles"],
+    "scout": ["scout"],
     # Studio scripts
     "script": ["research", "write", "factcheck"],
     "redraft": ["write", "factcheck"],
@@ -44,6 +45,7 @@ STAGE_LABELS = {
     "select": "Choosing moments",
     "render": "Rendering clips",
     "check": "Checking clips against the brief",
+    "scout": "Reading public campaign listings",
     "research": "Researching with web sources",
     "write": "Writing the script",
     "factcheck": "Checking the facts",
