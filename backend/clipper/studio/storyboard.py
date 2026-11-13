@@ -27,6 +27,7 @@ from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
 from . import art, beats, ink
+from . import places as places_mod
 from . import voice as voice_mod
 
 log = logging.getLogger("clipper.studio")
@@ -244,6 +245,8 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
 class InkPlan(BaseModel):
     beats: str = Field(description="The storyboard in the beat language: shot lines and beat lines, one per line")
     new_props: list[PropRequest] = Field(description="Every prop drawn in the beats that is not in the library")
+    new_settings: list[PropRequest] = Field(default_factory=list,
+                                            description="Every setting used on shot lines that is not in the library")
 
 
 INK_PLAN = """\
@@ -282,7 +285,7 @@ These are where a viewer's eye goes; use them whenever the narration names one.
 
 The beat language. Each line starts with the number of the narration word on which it \
 happens. A shot line opens each shot; beat lines follow it:
-  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut]
+  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut] [in SETTING]
   N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
   N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [as ID]
   N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
@@ -316,6 +319,14 @@ file, the name first ("Pope Gregory XIII portrait", "Hagia Sophia", "Gutenberg B
 FACE: {faces}
 COLOUR: warm (flow, emphasis), bad (problems, myths), good (answers, truth), gold, green
 TARGET and FROM/TO: an actor's name, a prop's name, an ID given with `as`, or a PLACE.
+SETTING: where the shot happens, drawn behind it in the cartoon look. Give one on the first \
+shot; later shots stay there until a shot names another. Change it only when the story \
+moves (about 2 to 5 settings in a Short, one or two per chapter of a long video). Use the \
+setting library's names when they fit; for anywhere else (a Roman forum, a laboratory) \
+invent a snake_case name and describe it in new_settings. Prefer a concrete place where \
+the people or things of the shot would really be. idea (an abstract colour field) is only \
+for a single shot of pure explanation, at most one shot in five; the shot after it names \
+a real place again.
 `talk` makes the actor's mouth move with the narration: use it for the narrator when he \
 is the one speaking to the viewer.
 Things stay until erased or until their shot ends; an actor mentioned in the next shot \
@@ -346,7 +357,7 @@ draw line and describe it in new_props.
 - {format_rules}
 
 A short example, for a different video:
-0 shot "The narrator drops toast; it lands butter side down"
+0 shot "The narrator drops toast; it lands butter side down" in kitchen
 0 actor narrator left deadpan talk
 2 draw toast center
 3 do narrator carry toast
@@ -360,7 +371,7 @@ A short example, for a different video:
 14 arrow kitchen_table toast warm
 16 circle kitchen_table
 18 do narrator point kitchen_table surprised
-21 shot "Murphy, the engineer behind the law" cut
+21 shot "Murphy, the engineer behind the law" cut in air_base
 21 who murphy "Edward Murphy" short brown_hair uniform
 22 actor murphy right crossed
 24 flag us top_left small
@@ -389,7 +400,8 @@ def ink_system(fmt: str, props: str) -> str:
                             colours=" ".join(ink.HAIR_COLOURS), facial=" ".join(ink.FACIAL),
                             hats=" ".join(ink.HEADWEAR), eyes=" ".join(ink.EYEWEAR), outfits=" ".join(ink.OUTFITS),
                             skins=" ".join(ink.SKINS))
-            + f"\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>")
+            + f"\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>"
+            + f"\n\n<setting_library>\n{places_mod.listing()}\n</setting_library>")
 
 
 def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter) -> None:
@@ -424,7 +436,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
                 results.append(result)
                 rep.progress(len(results) / len(chunks), f"Planned {len(results)} of {len(chunks)} chapters")
 
-    shots, descriptions = [], {}
+    shots, descriptions, settings = [], {}, {}
     for n, (offset, size, result) in enumerate(results):
         part = beats.parse_plan(result.beats, offset + size, offset, check=False)
         if not part:
@@ -434,6 +446,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         part[0]["page"] = n > 0                 # ...on a new row of the page
         shots.extend(part)
         descriptions.update({p.name: p.description for p in result.new_props})
+        settings.update({beats._name(p.name): p.description for p in result.new_settings})
     shots, dropped = beats.clean(shots, len(words))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "
@@ -445,6 +458,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         for name in beats.prop_names(shots):
             if db.get(StudioAsset, name) is None:
                 db.add(StudioAsset(name=name, description=descriptions.get(name, name.replace("_", " "))))
+    places_mod.register(beats.place_names(shots), settings)
     lines = sum(len(s["lines"]) for s in shots)
     new = [n for n in beats.prop_names(shots) if n not in known]
     rep.info(f"{len(shots)} shots, {lines} beats, {len(new)} new props to draw")
@@ -525,6 +539,7 @@ def find_photos(storyboard_id: int, rep: Reporter) -> None:
 
 def draw_missing(storyboard_id: int, rep: Reporter) -> None:
     find_photos(storyboard_id, rep)
+    places_mod.prepare(storyboard_id, rep)
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         names = prop_names(board.style, board.scenes)

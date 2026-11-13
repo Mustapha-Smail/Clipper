@@ -426,6 +426,21 @@ export interface StoryScene {
   elements: StoryElement[];
   lines?: string[];
   page?: boolean;
+  cut?: boolean;
+  /** Ink shots: where it happens, drawn behind it in the cartoon look; empty = where the shot before was. */
+  place?: string;
+}
+
+/** A place for the cartoon look. Six are drawn by code; the others by Claude when a video needs them. */
+export interface Place {
+  name: string;
+  description: string;
+  built_in: boolean;
+  wide: boolean;
+  tall: boolean;
+  origin: string;
+  updated_at: string | null;
+  used_in: number;
 }
 
 export interface LivelinessScore {
@@ -482,12 +497,13 @@ export interface YoutubeText {
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
-export type InkLook = 'ink' | 'paper' | 'blueprint';
+export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon';
 
 export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'ink', label: 'Ink sketch', hint: 'brush lines drawn on cream paper' },
   { value: 'paper', label: 'Paper cut-out', hint: 'colour pieces on kraft card, popping on with a shadow' },
   { value: 'blueprint', label: 'Blueprint', hint: 'white lines on a blue grid' },
+  { value: 'cartoon', label: 'Cartoon', hint: 'colour characters in drawn places, one per setting' },
 ];
 
 export interface PublishLine {

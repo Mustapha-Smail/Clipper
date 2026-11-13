@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck, YoutubeText,
+  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck, YoutubeText, Place,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -306,6 +306,18 @@ export class Api {
   }
   storyboardVideoUrl(board: StoryboardSummary): string {
     return `${BASE}/storyboards/${board.id}/video?v=${encodeURIComponent(board.rendered_at ?? '')}`;
+  }
+  places(): Observable<Place[]> {
+    return this.http.get<Place[]>(`${BASE}/places`);
+  }
+  placeImageUrl(name: string, shape: 'wide' | 'tall', version: string, size = 480): string {
+    return `${BASE}/places/${encodeURIComponent(name)}/image?shape=${shape}&size=${size}&v=${encodeURIComponent(version)}`;
+  }
+  redrawPlace(name: string, shape: 'wide' | 'tall', instruction: string): Observable<Place> {
+    return this.http.post<Place>(`${BASE}/places/${encodeURIComponent(name)}/redraw`, { shape, instruction });
+  }
+  deletePlace(name: string): Observable<void> {
+    return this.http.delete<void>(`${BASE}/places/${encodeURIComponent(name)}`);
   }
   assets(): Observable<Asset[]> {
     return this.http.get<Asset[]>(`${BASE}/assets`);

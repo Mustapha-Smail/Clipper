@@ -6,11 +6,12 @@ import { Asset, MusicFound, MusicTrack } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { CAST, EXPRESSIONS, POSES } from './storyboard';
+import { PlacesLibrary } from '../shared/places-library';
 
 /** The prop library and the cast: everything the animated videos are drawn with. */
 @Component({
   selector: 'app-props-page',
-  imports: [FormsModule, AgoPipe],
+  imports: [FormsModule, AgoPipe, PlacesLibrary],
   template: `
     <div class="page">
       <div class="page-head">
@@ -60,6 +61,8 @@ import { CAST, EXPRESSIONS, POSES } from './storyboard';
       } @else {
         <div class="skeleton" style="height:200px"></div>
       }
+
+      <app-places-library />
 
       <h2>Music</h2>
       <p class="muted small">Background tracks, looped under the voice and lowered while it speaks. Upload only music you

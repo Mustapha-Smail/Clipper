@@ -22,7 +22,7 @@ from PIL import Image
 
 from .. import captions as captions_mod
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, art, beats, geo, ink, looks, photos
+from . import animate, art, beats, cartoon, geo, ink, looks, photos
 
 FPS = 24
 ART_FPS = 12
@@ -176,6 +176,13 @@ class InkComposer:
         self.cache_limit = 250 * 1024 * 1024
         self._sized: OrderedDict = OrderedDict()      # sprites resized for the current zoom
         self._sized_bytes = 0
+        # cartoon: one drawn place per shot, a little larger than the frame so the camera can move across it
+        self.places: list[str] = list(board.get("places") or [])
+        self.place_svgs: dict[str, str] = dict(board.get("place_svgs") or {})
+        self._place_size = cartoon.picture_size(self.W, self.H)
+        self._place_pictures: OrderedDict = OrderedDict()      # a few places drawn, the latest kept
+        self._place_ground: dict[int, float | None] = {}
+        self._place_origin: dict[int, float] = {}
         self._dressed: OrderedDict = OrderedDict()    # sprites dressed for the look (cut out, recoloured)
         self._dressed_bytes = 0
         self._last: tuple | None = None
@@ -941,6 +948,8 @@ class InkComposer:
                     return image
                 size = int(self.sizes["text"]["small"] * thing.scale * zq * 0.85)
                 label = ink.render(ink.text_svg([thing.line.text], size, ink.INK, (p - 0.6) / 0.4))
+                if self.look.cartoon:            # a label reads over a busy place only on a card
+                    label = looks.cutout(label, max(5, round(self.H / 110 * zq)))
                 out = Image.new("RGBA", (max(image.width, label.width), image.height + label.height), (0, 0, 0, 0))
                 out.alpha_composite(image, ((out.width - image.width) // 2, 0))
                 out.alpha_composite(label, ((out.width - label.width) // 2, image.height))
@@ -1009,8 +1018,12 @@ class InkComposer:
         blink = ((t + thing.order * 1.3) % 3.9) < 0.12
         key = ("a", thing.id, pose.key(), expression, mouth, blink, facing, pq, zq, thing.line.who)
         variant = thing.line.who if thing.line.who in art.CHARACTERS else "person"
-        image = self._cached(key, lambda: ink.render(ink.figure_svg(
-            variant, pose, expression, mouth, blink, facing, p, k * zq, look=thing.look or None)))
+        if self.look.cartoon:
+            image = self._cached(key, lambda: ink.render(cartoon.figure_svg(
+                variant, pose, expression, mouth, blink, facing, k * zq, look=thing.look or None)))
+        else:
+            image = self._cached(key, lambda: ink.render(ink.figure_svg(
+                variant, pose, expression, mouth, blink, facing, p, k * zq, look=thing.look or None)))
         return image, (hip[0] + ink.BOX[0] * k, hip[1] + ink.BOX[1] * k)
 
     def _resized(self, image: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -1025,10 +1038,66 @@ class InkComposer:
                 self._sized_bytes -= _weight(old)
         return out[1]
 
+    # --- cartoon places ---------------------------------------------------------------------
+
+    def _place_name(self, shot: int) -> str:
+        return self.places[shot] if shot < len(self.places) else (self.places[-1] if self.places else "idea")
+
+    def _ground(self, shot: int) -> float | None:
+        """Where the feet of the shot's actors are on the page, to put the place's floor under them."""
+        if shot not in self._place_ground:
+            t = self.starts[shot] + 0.4
+            feet = [self.position(x, t)[1] for x in self.things if x.kind == "actor" and x.born <= t + 1.5
+                    and (x.gone is None or x.gone > t)]
+            self._place_ground[shot] = max(feet) if feet else None
+        return self._place_ground[shot]
+
+    def _crop(self, shot: int, cx: float, cy: float, zoom: float) -> np.ndarray:
+        name = self._place_name(shot)
+        pw, ph = self._place_size
+        picture = self._place_pictures.get(name)
+        if picture is None:
+            svg = self.place_svgs.get(name)
+            picture = np.asarray(cartoon.place_image(name if svg or name in cartoon.PLACES else "idea",
+                                                     self.W, self.H, svg).convert("RGBA"))
+            self._place_pictures[name] = picture
+            while len(self._place_pictures) > 3:
+                self._place_pictures.popitem(last=False)
+        else:
+            self._place_pictures.move_to_end(name)
+        run = shot
+        while run > 0 and self._place_name(run - 1) == name:
+            run -= 1
+        if run not in self._place_origin:
+            self._place_origin[run] = self.camera(self.starts[run] + 0.01)[0]
+        dx = (cx - self._place_origin[run]) * zoom * 0.3                  # parallax: the place moves slower
+        x0 = int(min(max((pw - self.W) / 2 + dx, 0), pw - self.W))
+        ground = self._ground(shot)
+        screen = (ground - cy) * zoom + self.H / 2 if ground is not None else self.H * 0.8
+        floor_at = min(max(screen - self.H * 0.07, self.H * 0.45), self.H * 0.85)
+        y0 = int(min(max(ph * cartoon.FLOOR - floor_at, 0), ph - self.H))
+        return picture[y0:y0 + self.H, x0:x0 + self.W]
+
+    def _place(self, tq: float, t: float, cx: float, cy: float, zoom: float) -> Image.Image:
+        """The drawn place behind this moment; a short dissolve when a gliding shot changes place."""
+        shot = self.shot_at(t)
+        out = self._crop(shot, cx, cy, zoom)
+        age = t - self.starts[shot]
+        if shot > 0 and age < 0.45 and not self.shots[shot].get("cut") and \
+                self._place_name(shot - 1) != self._place_name(shot):
+            before = self._crop(shot - 1, cx, cy, zoom)
+            k = ink.ease(age / 0.45)
+            out = (before.astype(np.float32) * (1 - k) + out.astype(np.float32) * k).astype(np.uint8)
+        return Image.fromarray(np.ascontiguousarray(out), "RGBA")
+
     def _dress(self, kind: str, image: Image.Image, zq: float) -> Image.Image:
         """The sprite as the look wants it: cut out of card (paper), or in white lines (blueprint)."""
         if self.look.recolour and kind not in looks.PASTED:
             how = "bp"
+        elif self.look.cartoon and kind in ("text", "tag", "timeline"):
+            how = "card"                 # words on a card, so they read over a busy place
+        elif self.look.cartoon and kind == "map":
+            how = "board"                # a map on a board: its seas must not show the place through
         elif self.look.shadow and kind not in looks.NO_EDGE:
             how = "cut"
         else:
@@ -1038,6 +1107,10 @@ class InkComposer:
         if out is None or out[0] is not image:
             if how == "bp":
                 dressed = looks.blueprint_sprite(image)
+            elif how == "card":
+                dressed = looks.cutout(image, max(6, round(self.H / 80 * zq)))
+            elif how == "board":
+                dressed = looks.board(image, max(6, round(self.H / 120 * zq)))
             else:
                 dressed = looks.cutout(image, max(2, round(self.H / 270 * zq)))
             out = (image, dressed)
@@ -1104,7 +1177,7 @@ class InkComposer:
         for at, number, heading in self.chapters:
             if at <= t < at + BANNER:
                 self._banner(layer, number, heading, tq - at)
-        ground = self.paper
+        ground = self._place(tq, t, cx, cy, zoom) if self.look.cartoon else self.paper
         if pasted is not None and pasted.getbbox():
             ground = Image.alpha_composite(ground, pasted)
         if self.look.shadow:

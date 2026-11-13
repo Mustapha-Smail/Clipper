@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
+from PIL import Image
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,8 +15,9 @@ from sqlalchemy.orm import Session
 from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, VoiceTake, utcnow
-from ..studio import animate, art, beats, compliance, music_pick, music_search, publish, sound
+from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
+from ..studio import animate, art, beats, cartoon, compliance, music_pick, music_search, publish, sound
+from ..studio import places as places_mod
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import voice as voice_mod
@@ -157,6 +159,9 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
             compliance.record(db, board.script_id, "beats_edit", "you",
                               f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})", changed, board.id)
         board.scenes = shots
+        for name in beats.place_names(shots):
+            if name not in cartoon.PLACES and db.get(StudioPlace, name) is None:
+                db.add(StudioPlace(name=name, description=name.replace("_", " ")))
     else:
         try:
             scenes = [storyboard_mod.Scene.model_validate(scene).model_dump() for scene in body.scenes]
@@ -345,7 +350,6 @@ def photo_image(photo_id: int, size: int = Query(320, ge=64, le=1200), db: Sessi
     photo = db.get(StudioPhoto, photo_id)
     if photo is None or not Path(photo.path).is_file():
         raise HTTPException(404, "Picture not found")
-    from PIL import Image
 
     image = Image.open(photo.path)
     image.thumbnail((size, size))
@@ -461,6 +465,83 @@ def asset_image(name: str, size: int = Query(256, ge=32, le=1024), db: Session =
     out = io.BytesIO()
     art.rasterize(asset.svg or art.placeholder_svg(name), size).save(out, format="PNG")
     return Response(out.getvalue(), media_type="image/png", headers={"Cache-Control": "no-cache"})
+
+
+# --- places (the cartoon look's backgrounds) ------------------------------------------------------
+
+def _place_usage(db: Session) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for style, scenes in db.execute(select(Storyboard.style, Storyboard.scenes)):
+        if style == "ink":
+            for name in beats.place_names(scenes or []):
+                counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+@router.get("/places", response_model=list[s.PlaceOut])
+def list_places(db: Session = Depends(get_db)):
+    """The places of the cartoon look: six drawn by code, then those Claude drew, used or waiting."""
+    used = _place_usage(db)
+    out = [s.PlaceOut(name=n, description=d, built_in=True, wide=True, tall=True, origin="code",
+                      used_in=used.get(n, 0)) for n, d in cartoon.BUILT_IN.items()]
+    for p in db.scalars(select(StudioPlace).order_by(StudioPlace.name)):
+        out.append(s.PlaceOut(name=p.name, description=p.description, built_in=False, wide=p.svg is not None,
+                              tall=p.svg_tall is not None, origin=p.origin, updated_at=p.updated_at,
+                              used_in=used.get(p.name, 0)))
+    return out
+
+
+@router.get("/places/{name}/image")
+def place_image(name: str, shape: str = Query("wide", pattern="^(wide|tall)$"), size: int = Query(480, ge=96, le=1920),
+                db: Session = Depends(get_db)):
+    """What the camera sees of the place when it rests in the middle, as PNG."""
+    tall = shape == "tall"
+    svg = None
+    if name not in cartoon.PLACES:
+        row = db.get(StudioPlace, name)
+        if row is None:
+            raise HTTPException(404, "No such place")
+        svg = (row.svg_tall or row.svg) if tall else (row.svg or row.svg_tall)
+        if svg is None:
+            raise HTTPException(404, "Not drawn yet: it is drawn when a cartoon video first needs it")
+    return Response(cartoon.preview(name, tall, size, svg), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@router.post("/places/{name}/redraw", response_model=s.PlaceOut)
+def redraw_place(name: str, body: s.PlaceRedraw, db: Session = Depends(get_db)):
+    """Have Claude draw the place (again), wide or tall, optionally with your instruction. About 30 seconds."""
+    if name in cartoon.PLACES:
+        raise HTTPException(400, "This place is drawn by code and cannot be redrawn")
+    place = db.get(StudioPlace, name)
+    if place is None:
+        raise HTTPException(404, "No such place")
+    if body.description is not None:
+        place.description = body.description.strip()
+    tall = body.shape == "tall"
+    try:
+        with llm.attribute(None):
+            svg = places_mod.draw(name, place.description, tall, body.instruction.strip())
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    if tall:
+        place.svg_tall = svg
+    else:
+        place.svg = svg
+    place.origin, place.updated_at = "claude", utcnow()
+    db.flush()
+    return s.PlaceOut(name=place.name, description=place.description, built_in=False, wide=place.svg is not None,
+                      tall=place.svg_tall is not None, origin=place.origin, updated_at=place.updated_at,
+                      used_in=_place_usage(db).get(name, 0))
+
+
+@router.delete("/places/{name}", status_code=204)
+def delete_place(name: str, db: Session = Depends(get_db)):
+    """Forget a drawn place. Videos that name it show the plain colour background until it is drawn again."""
+    place = db.get(StudioPlace, name)
+    if place is None:
+        raise HTTPException(404, "No such place" if name not in cartoon.PLACES else "Places drawn by code stay")
+    db.delete(place)
 
 
 @router.post("/assets/{name}/redraw", response_model=s.AssetOut)

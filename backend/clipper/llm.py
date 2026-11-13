@@ -41,6 +41,8 @@ TASKS = {
     "props": ("quick", "Drawing props"),
     "music": ("quick", "Suggesting music"),
     "description": ("writing", "Writing YouTube titles and descriptions"),
+    "places": ("writing", "Drawing places"),
+    "places_assign": ("quick", "Choosing places for shots"),
     "research": ("research", "Researching scripts"),
     "verify": ("research", "Looking up claims"),
 }

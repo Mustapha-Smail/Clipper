@@ -90,6 +90,13 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
 - Looks (`studio/looks.py`): `storyboards.look` is ink, paper or blueprint and
   changes only drawing (backgrounds, sprites dressed per sprite and cached,
   pop-on, shadow), never the plan. Photos, flags and maps are never recoloured.
+- Cartoon look (`studio/cartoon.py`, `studio/places.py`): colour characters on the
+  ink rig (`ink.joints`), never a separate skeleton. Shots carry a `place`
+  (`in NAME` on the shot line), inherited by later shots (`places.resolved`).
+  Six places are code (`cartoon.PLACES`, laid out around the frame centre); the
+  rest are `studio_places` rows drawn by Claude (`llm` task `places`) in the
+  fixed views `WIDE_VIEW`/`TALL_VIEW`, floor at `FLOOR`, only when a cartoon
+  render needs them (`places.prepare` in the draw step).
 - `studio/compliance.py` advises before publishing and never approves. User
   steps are logged with `compliance.record` from the routes, finished jobs with
   `compliance.record_job` in the worker (`studio_events`). The similarity and

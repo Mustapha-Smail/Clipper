@@ -566,7 +566,7 @@ class AiTakeCreate(BaseModel):
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
     style: Literal["ink", "flat"] = Field("ink", description="ink: beats on one page; flat: the first style, slides")
-    look: Literal["ink", "paper", "blueprint"] = Field("ink", description="Ink style: how it is drawn")
+    look: Literal["ink", "paper", "blueprint", "cartoon"] = Field("ink", description="Ink style: how it is drawn")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
 
@@ -577,7 +577,7 @@ class StoryboardSummary(Model):
     take_id: int | None
     format: Literal["short", "long"]
     style: Literal["ink", "flat"]
-    look: Literal["ink", "paper", "blueprint"] = "ink"
+    look: Literal["ink", "paper", "blueprint", "cartoon"] = "ink"
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -650,7 +650,8 @@ class StoryboardScenes(BaseModel):
 
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
-    look: Literal["ink", "paper", "blueprint"] | None = Field(None, description="Ink style: render again to see it")
+    look: Literal["ink", "paper", "blueprint", "cartoon"] | None = Field(
+        None, description="Ink style: render again to see it")
     music_id: int | None = None
     music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")
     music_db: float | None = Field(None, ge=-40, le=-6)
@@ -759,6 +760,23 @@ class AssetOut(Model):
     origin: str
     updated_at: UtcDatetime
     used_in: int
+
+
+class PlaceOut(BaseModel):
+    name: str
+    description: str
+    built_in: bool                     # drawn by code, always there
+    wide: bool                         # a drawing for long videos exists
+    tall: bool                         # and one for Shorts
+    origin: str
+    updated_at: UtcDatetime | None = None
+    used_in: int = 0
+
+
+class PlaceRedraw(BaseModel):
+    shape: Literal["wide", "tall"] = "wide"
+    instruction: str = Field("", max_length=500)
+    description: str | None = Field(None, max_length=500)
 
 
 class AssetRedraw(BaseModel):

@@ -204,6 +204,24 @@ class StudioAsset(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class StudioPlace(Base):
+    """A place for the cartoon look (a study, a scriptorium...), drawn once and used by every video.
+
+    Two drawings, made only when a video needs them: wide for long videos, tall for
+    Shorts. The six places drawn by code (`cartoon.PLACES`) have no row.
+    """
+
+    __tablename__ = "studio_places"
+
+    name: Mapped[str] = mapped_column(String(48), primary_key=True)   # snake_case, used on shot lines
+    description: Mapped[str] = mapped_column(Text, default="")
+    svg: Mapped[str | None] = mapped_column(Text)                      # wide; NULL = not drawn yet
+    svg_tall: Mapped[str | None] = mapped_column(Text)                 # tall, for Shorts
+    origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StudioMusic(Base):
     """A background track you uploaded. Use only music you have the rights to,
     for example from the YouTube Audio Library."""

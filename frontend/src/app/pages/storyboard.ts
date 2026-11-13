@@ -6,7 +6,7 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
   ArchivePhoto, Asset, Chapters, INK_LOOKS, InkLook, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
-  SuggestedTrack, YoutubeText,
+  SuggestedTrack, YoutubeText, Place,
 } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -45,7 +45,9 @@ ACTION   jump kick throw pickup stumble laugh dance cartwheel jacks signal
          (recorded movements, played once; kick and throw send a TARGET flying)
 FACE     ${EXPRESSIONS.join(' ')}
 COLOUR   warm bad good gold green
-TARGET   an actor's name, a prop's name, an ID given with "as", or a PLACE`;
+TARGET   an actor's name, a prop's name, an ID given with "as", or a PLACE
+SETTING  where a shot happens, in the cartoon look: the Setting field above (study, church, town,
+         hills, night, idea, or any snake_case name: Claude draws new ones). Empty = same as before.`;
 
 function blank(kind: StoryElement['kind']): StoryElement {
   return {
@@ -98,6 +100,7 @@ export class StoryboardPage {
   protected readonly board = signal<Storyboard | null>(null);
   protected readonly scenes = signal<StoryScene[]>([]);
   protected readonly library = signal<Asset[]>([]);
+  protected readonly placeList = signal<Place[]>([]);
   protected readonly saving = signal(false);
   /** Bumped after a save or a job, so preview images reload. */
   protected readonly version = signal(Date.now());
@@ -120,6 +123,7 @@ export class StoryboardPage {
   constructor() {
     this.load();
     this.api.assets().subscribe({ next: (list) => this.library.set(list), error: () => undefined });
+    this.api.places().subscribe({ next: (list) => this.placeList.set(list), error: () => undefined });
     this.api.music().subscribe({ next: (list) => this.music.set(list), error: () => undefined });
     effect(() => {
       const done = this.store.finished().filter((j) => j.storyboard_id === this.id);
@@ -307,6 +311,13 @@ export class StoryboardPage {
   protected setYoutube(text: YoutubeText): void {
     this.board.update((b) => b && { ...b, youtube: text });
     this.version.set(Date.now());
+  }
+
+  /** The setting shot i is in: its own, or the last one named before it. */
+  protected placeOf(i: number): string {
+    const list = this.scenes();
+    for (let k = Math.min(i, list.length - 1); k >= 0; k--) if (list[k].place) return list[k].place!;
+    return '';
   }
 
   protected lookName(look: InkLook): string {

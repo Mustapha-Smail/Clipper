@@ -483,6 +483,11 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
             queries = beats.photo_queries(board.scenes)
             data["photos"] = {p.query: {"path": p.path, "width": p.width, "height": p.height}
                               for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))} if queries else {}
+            if board.look == "cartoon":
+                from . import places as places_mod
+
+                data["places"] = places_mod.resolved(board.scenes)
+                data["place_svgs"] = places_mod.drawings(sorted(set(data["places"])), board.format == "short")
     return data, props, wav
 
 
@@ -511,7 +516,7 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
 
     board, props, _ = load(storyboard_id)
     # A page of stills asks for many frames of one board: keep its composer while the board is unchanged.
-    key = (storyboard_id, board.get("look"), repr(board["scenes"]),
+    key = (storyboard_id, board.get("look"), repr(board["scenes"]), repr(sorted(board.get("place_svgs", {}))),
            tuple(sorted((k, hash(v)) for k, v in props.items())))
     with _still_lock:
         composer = _still_cache.get(key)

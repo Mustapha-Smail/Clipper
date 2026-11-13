@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-LOOK_NAMES = ("ink", "paper", "blueprint")
+LOOK_NAMES = ("ink", "paper", "blueprint", "cartoon")
 
 
 @dataclass(frozen=True)
@@ -26,12 +26,14 @@ class Look:
     shadow: bool = False         # a drop shadow under every piece
     flat_props: bool = False     # props in their own flat colours, not ink lines and a wash
     recolour: str = ""           # "blueprint": ink becomes white lines
+    cartoon: bool = False        # colour characters in front of drawn places (trial)
 
 
 LOOKS = {
     "ink": Look("ink"),
     "paper": Look("paper", pop=True, boil=False, shadow=True, flat_props=True),
     "blueprint": Look("blueprint", recolour="blueprint"),
+    "cartoon": Look("cartoon", pop=True, boil=False, flat_props=True, cartoon=True),
 }
 POPPED = ("actor", "prop", "photo", "flag", "map", "text", "timeline")   # what pops on in a cut-out look
 
@@ -127,6 +129,18 @@ def cutout(image: Image.Image, edge: int) -> Image.Image:
     card[..., :3] = CARD
     card[..., 3] = margin
     out = Image.fromarray(card, "RGBA")
+    out.alpha_composite(image, (pad, pad))
+    return out
+
+
+def board(image: Image.Image, edge: int) -> Image.Image:
+    """A picture with holes (a map's seas) pinned on a card that fills its whole box."""
+    pad = edge
+    out = Image.new("RGBA", (image.width + 2 * pad, image.height + 2 * pad), (0, 0, 0, 0))
+    from PIL import ImageDraw
+
+    ImageDraw.Draw(out).rounded_rectangle((1, 1, out.width - 2, out.height - 2), radius=pad,
+                                          fill=(*CARD, 255), outline=(43, 34, 32, 255), width=max(2, pad // 3))
     out.alpha_composite(image, (pad, pad))
     return out
 

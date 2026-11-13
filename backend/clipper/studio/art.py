@@ -52,7 +52,7 @@ def rasterize(svg: str, height: int) -> Image.Image:
 SVG_FORBIDDEN = re.compile(r"<\s*(script|image|foreignObject|text|style|use)\b|href\s*=|on\w+\s*=|url\(", re.I)
 
 
-def check_prop_svg(svg: str) -> str:
+def check_prop_svg(svg: str, limit: int = 40_000) -> str:
     """Raise ValueError unless the SVG is a self-contained drawing we can render. Returns it trimmed."""
     svg = svg.strip()
     start = svg.find("<svg")
@@ -63,8 +63,8 @@ def check_prop_svg(svg: str) -> str:
         raise ValueError("Uses scripts, text, styles, links or external images, which the house style forbids")
     if "viewBox" not in svg:
         raise ValueError("Missing viewBox")
-    if len(svg) > 40_000:
-        raise ValueError("Too complex: keep it under 40,000 characters")
+    if len(svg) > limit:
+        raise ValueError(f"Too complex: keep it under {limit:,} characters")
     image = rasterize(svg, 128)
     if image.getbbox() is None:
         raise ValueError("Renders as an empty picture")

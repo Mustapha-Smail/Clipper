@@ -263,10 +263,33 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
 # --- shots --------------------------------------------------------------------------------
 
 def shot(start_word: int, note: str = "", camera: str = "wide", page: bool = False,
-         lines: list[str] | None = None, cut: bool = False) -> dict:
-    """A shot. `cut`: the camera jumps to it (a hard cut) instead of gliding across the page."""
+         lines: list[str] | None = None, cut: bool = False, place: str = "") -> dict:
+    """A shot. `cut`: the camera jumps to it (a hard cut) instead of gliding across the page.
+
+    `place`: where it happens ("in kitchen"), drawn behind it in the cartoon look; a
+    shot without one stays where the shot before it was.
+    """
+    place = _name(place or "")
     return {"start_word": start_word, "note": note, "camera": camera if camera in CAMERAS else "wide",
-            "page": bool(page), "cut": bool(cut), "lines": list(lines or [])}
+            "page": bool(page), "cut": bool(cut), "lines": list(lines or []),
+            "place": place if NAME.match(place) else ""}
+
+
+def place_at(shots: list[dict], index: int) -> str:
+    """The place of shot `index`: its own, or the last one named before it ("" if none yet)."""
+    for sh in reversed(shots[:index + 1]):
+        if sh.get("place"):
+            return sh["place"]
+    return ""
+
+
+def place_names(shots: list[dict]) -> list[str]:
+    """Every place a storyboard names, in order of appearance."""
+    out: list[str] = []
+    for sh in shots:
+        if sh.get("place") and sh["place"] not in out:
+            out.append(sh["place"])
+    return out
 
 
 SHOT = re.compile(r'^\[?(\d+)\]?\s+shot\b(.*)$', re.I)
@@ -290,7 +313,8 @@ def parse_plan(text: str, word_count: int, offset: int = 0, check: bool = True) 
             note = (re.search(r'"([^"]*)"', rest) or [None, ""])[1]
             words = re.sub(r'"[^"]*"', " ", rest).lower().split()
             camera = next((w for w in words if w in CAMERAS), "wide")
-            shots.append(shot(word, note, camera, "page" in words, cut="cut" in words))
+            place = words[words.index("in") + 1] if "in" in words[:-1] else ""
+            shots.append(shot(word, note, camera, "page" in words, cut="cut" in words, place=place))
             continue
         line = parse_line(raw)
         if line is None:
@@ -324,7 +348,7 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
             ordered[-1]["lines"] += list(raw.get("lines") or [])
             continue
         ordered.append(shot(start, str(raw.get("note", ""))[:200], raw.get("camera", "wide"), raw.get("page", False),
-                            list(raw.get("lines") or []), raw.get("cut", False)))
+                            list(raw.get("lines") or []), raw.get("cut", False), str(raw.get("place") or "")))
     if ordered:
         ordered[0]["start_word"] = 0
 
@@ -460,6 +484,8 @@ def to_text(shots: list[dict]) -> str:
             options.append("page")
         if sh.get("cut"):
             options.append("cut")
+        if sh.get("place"):
+            options += ["in", sh["place"]]
         out.append(" ".join([str(sh["start_word"]), "shot", _quote(sh["note"]), *options]).strip())
         out += sh["lines"]
     return "\n".join(out)

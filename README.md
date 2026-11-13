@@ -286,6 +286,20 @@ piece cut from card with a pale edge and a shadow, popping on instead of being
 drawn, no wobble) and blueprint (white lines on a blue grid). Archive photos,
 flags and maps are pasted as they are in every look.
 
+**Cartoon.** A fourth look: the same characters drawn in colour (filled
+shapes with an outline, on the same skeleton, so every pose, walk and action
+works), standing in a drawn place. Each shot line can say where it happens
+(`12 shot "A monk at work" push in scriptorium`); a shot without one stays where
+the one before was. Six places are drawn by code (study, church, town, hills,
+night, idea); for anywhere else the planner invents a name and Claude draws it
+the first time a cartoon video needs it, wide for long videos or tall for
+Shorts (about 4 cents each, kept in the Library under Places and reused by
+every later video). Storyboards planned before settings existed get them from
+a quick call when they are first drawn as cartoons, so switching the look never
+needs a new plan. Words, labels and timelines sit on cards and maps on a board,
+so they read over a busy place. The place moves a little slower than the
+camera (parallax) and dissolves into the next when a shot glides.
+
 **The storyboard page** has four tabs: Video (the render, your review, the
 look), Scenes (the shots, the liveliness score, archive pictures), Sound
 (music, level, effects) and Publish.
