@@ -191,6 +191,8 @@ export interface AppSettings {
   platforms: string[];
   output_dir: string;
   delete_source_after_render: boolean;
+  /** Days an unapproved Studio render is kept before it is deleted; 0 = forever. */
+  unapproved_keep_days: number;
   clips_per_video: number;
   min_len: number;
   max_len: number;
@@ -463,6 +465,8 @@ export interface StoryboardSummary {
   title: string;
   review: 'pending' | 'approved' | 'rejected';
   rendered_at: string | null;
+  /** When the render was deleted for not being approved in time (the plan is kept). */
+  expired_at: string | null;
   created_at: string;
   music_id: number | null;
   music_db: number;
@@ -471,6 +475,18 @@ export interface StoryboardSummary {
   scene_count: number;
   has_video: boolean;
   job: Job | null;
+  /** When the render is deleted if it is still not approved; null = never. */
+  expires_at: string | null;
+}
+
+/** The last copy of an approved video in the output folder. */
+export interface ExportInfo {
+  folder: string;
+  files: string[];
+  at: string;
+  size_bytes: number;
+  /** The video was rendered again since. */
+  stale: boolean;
 }
 
 export interface Storyboard extends StoryboardSummary {
@@ -483,6 +499,7 @@ export interface Storyboard extends StoryboardSummary {
   photo_searches_missing: string[];
   credits: string;
   youtube: YoutubeText | null;
+  export: ExportInfo | null;
 }
 
 /** The YouTube title, description and tags of an approved video. Copied into YouTube Studio by you. */

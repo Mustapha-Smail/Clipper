@@ -41,6 +41,18 @@ export class AgoPipe implements PipeTransform {
   }
 }
 
+@Pipe({ name: 'until' })
+export class UntilPipe implements PipeTransform {
+  /** A date ahead, as "today", "tomorrow" or "in 12 days (13 Dec)". */
+  transform(iso: string | null): string {
+    if (!iso) return '';
+    const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'tomorrow';
+    return `in ${days} days (${new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })})`;
+  }
+}
+
 @Pipe({ name: 'clock' })
 export class ClockPipe implements PipeTransform {
   transform(iso: string): string {

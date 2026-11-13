@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api } from '../core/api';
-import { AgoPipe } from '../core/format';
+import { AgoPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { StoryboardListItem } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -11,7 +11,7 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
 /** Every animated video across scripts, sorted for review: Shorts and long videos alike. */
 @Component({
   selector: 'app-animations-page',
-  imports: [RouterLink, AgoPipe],
+  imports: [RouterLink, AgoPipe, UntilPipe],
   template: `
     <div class="page">
       <div class="page-head">
@@ -49,7 +49,10 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
                   <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
                     {{ b.review === 'pending' ? 'to review' : b.review }}</span>
                 } @else {
-                  <span class="pill">not rendered</span>
+                  <span class="pill">{{ b.expired_at ? 'render deleted' : 'not rendered' }}</span>
+                }
+                @if (b.expires_at && !b.job) {
+                  <span class="small muted">Deleted {{ b.expires_at | until }} unless approved</span>
                 }
               </div>
             </a>
@@ -117,7 +120,7 @@ export class AnimationsPage {
   });
 
   constructor() {
-    let known = '';
+    let known: string | null = null;      // null, so the list loads even when no job has ever run
     effect(() => {
       const signature = this.store.jobs().filter((j) => j.storyboard_id).map((j) => `${j.id}:${j.state}`).join();
       if (signature !== known) {

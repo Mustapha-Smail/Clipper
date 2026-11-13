@@ -178,9 +178,14 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
+          }
+
+          <h2 class="group-title">Both</h2>
+          <p class="small muted group-note">Used by the Studio and by Clipping.</p>
+
           <section class="card">
             <h3>Storage</h3>
-            <p class="small muted">Where finished clips are written.</p>
+            <p class="small muted">Where finished clips and exported Studio videos are written, and how long unapproved work is kept.</p>
             <div class="form-grid">
               <label class="field wide"><span>Output folder</span>
                 <input type="text" [(ngModel)]="f.output_dir" [placeholder]="bundle()!.default_clips_dir" />
@@ -191,20 +196,26 @@ import { Toasts } from '../core/toast';
                   } @else {
                     Any folder this machine can write to, for example a mounted drive.
                   }
-                  Clips already rendered stay where they are.
+                  Clips already rendered stay where they are. Approved Studio videos are copied to its "studio" folder
+                  when you export them (Publish tab of a video).
                 </small>
               </label>
-              <label class="check wide"><input type="checkbox" [(ngModel)]="f.delete_source_after_render" />
-                <span>Delete the downloaded video once all its clips are rendered
-                  <small>Saves disk space. Re-rendering a clip later means adding the video again.</small></span>
-              </label>
+              @if (f.feature_studio) {
+                <label class="field"><span>Delete unapproved videos after (days)</span>
+                  <input type="number" min="0" max="365" step="1" [(ngModel)]="f.unapproved_keep_days" />
+                  <small>A rendered Studio video that is not approved within this many days is deleted to save space:
+                    the video file and its effects track. The storyboard, the voice and the script stay, so it can be
+                    rendered again at no AI cost. Approved videos are never deleted. 0 keeps everything.</small>
+                </label>
+              }
+              @if (f.feature_clipping) {
+                <label class="check wide"><input type="checkbox" [(ngModel)]="f.delete_source_after_render" />
+                  <span>Delete the downloaded video once all its clips are rendered
+                    <small>Saves disk space. Re-rendering a clip later means adding the video again.</small></span>
+                </label>
+              }
             </div>
           </section>
-
-          }
-
-          <h2 class="group-title">Both</h2>
-          <p class="small muted group-note">Used by the Studio and by Clipping.</p>
 
           <section class="card">
             <h3>AI models</h3>

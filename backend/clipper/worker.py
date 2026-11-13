@@ -20,12 +20,13 @@ from .db.models import Job, Worker, utcnow
 from .ingest import find_video, source_dir
 from .log import configure
 from .studio import animate as animate_mod
-from .studio import compliance
+from .studio import compliance, retention
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
 from .studio import voice as voice_mod
 
 HEARTBEAT_SECONDS = 5
+SWEEP_SECONDS = 3600        # how often an idle worker looks for renders past their grace period
 log = logging.getLogger("clipper.worker")
 
 
@@ -145,6 +146,7 @@ def main() -> None:
     threading.Thread(target=_heartbeat, args=(worker_id, stop), daemon=True, name="heartbeat").start()
     log.info("worker ready", extra={"worker_id": worker_id})
 
+    next_sweep = 0.0
     while not stop.is_set():
         try:
             job_id = jobs.claim_next(worker_id)
@@ -152,6 +154,13 @@ def main() -> None:
             log.warning("could not read the queue", exc_info=True)
             job_id = None
         if job_id is None:
+            # Idle: nothing is rendering, so unapproved renders past their grace period can go.
+            if time.monotonic() >= next_sweep:
+                next_sweep = time.monotonic() + SWEEP_SECONDS
+                try:
+                    retention.sweep(settings_mod.load())
+                except Exception:  # noqa: BLE001 - housekeeping must never stop the worker
+                    log.warning("grace period sweep failed", exc_info=True)
             stop.wait(1.0)
         else:
             run_job(job_id)

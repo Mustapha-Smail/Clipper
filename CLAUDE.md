@@ -104,6 +104,14 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
 - `studio/publish.py`: the YouTube text of an approved video (`storyboards.youtube`).
   The model writes only titles, the opening, hashtags and tags from the
   narration; chapters, sources and credits are assembled by code. Never upload.
+- `studio/retention.py`: a render not approved within `unapproved_keep_days`
+  (Settings, 30 by default, 0 = never) is deleted by the idle worker: the
+  storyboard's render folder only, never the plan, the take or an approved
+  video. The clock starts at the render or the last verdict (`review_at`).
+- `studio/export.py`: copies an approved video, its .srt (long videos),
+  YouTube text and authorship log to `<output folder>/studio/<title>-<id>/`.
+  A copy for the user to upload or sync; the app never reads it back and
+  never posts.
 - Flags, maps and timelines (`studio/geo.py`): flags from flag-icons (MIT) and
   country outlines from Natural Earth (public domain), packed by
   `backend/tools/geo_import.py` into `clipper/assets/*.json.gz`; keep their

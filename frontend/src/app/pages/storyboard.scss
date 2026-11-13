@@ -119,6 +119,25 @@
   }
 }
 
+.export {
+  display: grid;
+  gap: 10px;
+
+  .row.spread {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  pre {
+    margin: 0;
+  }
+}
+
+.expiry {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
 .publish-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));

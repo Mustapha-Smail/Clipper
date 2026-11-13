@@ -312,6 +312,25 @@ chapters (long videos), the research sources the checked claims rely on, and
 the credit lines for pictures and music. You edit it and copy each part into
 YouTube Studio; counters show YouTube's limits (100, 5000 and 500 characters).
 
+**Export.** The Publish tab of an approved video has an Export button. It
+copies the video into the output folder (Settings, Storage) as
+`studio/<title>-<id>/`, with its subtitles (.srt, long videos only: Shorts have
+theirs burned in), `youtube.txt` (title, description and tags, once written)
+and `authorship.txt`. Exporting again replaces those files; the page says when
+the copy is of an earlier render. In Docker the output folder is `/output`
+(`CLIPPER_OUTPUT`), so point it at a synced or shared folder to get finished
+videos out of the machine. Nothing is posted.
+
+**Grace period.** A rendered video that is not approved within 30 days is
+deleted to save space: the video file and its effects track, nothing else. The
+days count from the render, or from your last verdict if that is later, so
+taking an approval back gives a full period again. The storyboard, the voice,
+the sound choices and the YouTube text stay, and rendering again costs no AI.
+Approved videos and exported copies are never deleted. The video's page and
+the Animations list show the date; Settings, Storage, "Delete unapproved videos
+after" changes the days (0 keeps everything). The worker checks once an hour
+while idle.
+
 **Before you publish.** Once a video is rendered, its page shows a checklist
 and four pieces of advice, all plain rules with every point shown. Nothing here
 approves or posts anything.

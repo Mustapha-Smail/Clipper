@@ -24,6 +24,9 @@ class Settings(BaseModel):
     # Storage
     output_dir: str = ""                      # empty = <data folder>/clips
     delete_source_after_render: bool = False
+    # Studio: a rendered video that is not approved within this many days is deleted to
+    # save space (its plan is kept, so it can be rendered again). 0 = keep renders forever.
+    unapproved_keep_days: int = Field(30, ge=0, le=365)
 
     # Your channel: used to rank campaigns
     theme: str = Field("Tech, AI, SaaS, and founder or business podcasts", max_length=300)

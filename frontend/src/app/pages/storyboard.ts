@@ -2,11 +2,11 @@ import { Component, computed, effect, inject, signal, untracked } from '@angular
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
-import { AgoPipe } from '../core/format';
+import { AgoPipe, MegabytesPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
   ArchivePhoto, Asset, Chapters, INK_LOOKS, InkLook, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
-  SuggestedTrack, YoutubeText, Place,
+  SuggestedTrack, YoutubeText, Place, ExportInfo,
 } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -63,7 +63,7 @@ type BoardTab = (typeof BOARD_TABS)[number];
 /** One storyboard in four tabs: the video and its review, the scenes, the sound, and publishing. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView, PublishCheckView, YoutubeTextView],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
@@ -504,6 +504,30 @@ export class StoryboardPage {
     this.api.reviewStoryboard(this.id, verdict).subscribe({
       next: (board) => this.board.set(board),
       error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected readonly exporting = signal(false);
+
+  /** The exported folder with its files under it, one per line. */
+  protected exportListing(x: ExportInfo): string {
+    return [x.folder, ...x.files.map((f) => `  ${f}`)].join('\n');
+  }
+
+  /** Copy the approved video and its publishing files to the output folder. */
+  protected exportVideo(): void {
+    this.exporting.set(true);
+    this.api.exportStoryboard(this.id).subscribe({
+      next: (info) => {
+        this.exporting.set(false);
+        this.board.update((b) => b && { ...b, export: info });
+        this.version.set(Date.now());       // the authorship log has a new line
+        this.toasts.ok('Exported to the output folder');
+      },
+      error: (err) => {
+        this.exporting.set(false);
+        this.toasts.error(err);
+      },
     });
   }
 

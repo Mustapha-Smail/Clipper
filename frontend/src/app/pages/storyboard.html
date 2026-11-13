@@ -41,11 +41,21 @@
                     {{ b.review === 'rejected' ? 'Rejected' : 'Reject' }}</button>
                   <a class="btn quiet" [href]="videoUrl()" download>Download</a>
                 </div>
+                @if (b.expires_at) {
+                  <p class="small expiry">{{ b.review === 'rejected' ? 'Rejected' : 'Not approved yet' }}: this render is deleted
+                    {{ b.expires_at | until }} to save space. The storyboard stays, so it can be rendered again.</p>
+                }
               </div>
             </div>
           }
           @if (!b.has_video && !busy()) {
-            <p class="small muted">Not rendered yet. Edit the shots in Scenes and the sound in Sound, then render.</p>
+            @if (b.expired_at) {
+              <div class="notice small"><span>The render was deleted ({{ b.expired_at | ago }}): it was not approved within the
+                grace period set in <a routerLink="/settings">Settings</a>, Storage. Only the video file went; the plan,
+                the voice and the sound choices are as you left them. Rendering again costs no AI.</span></div>
+            } @else {
+              <p class="small muted">Not rendered yet. Edit the shots in Scenes and the sound in Sound, then render.</p>
+            }
           }
           @if (ink()) {
             <div class="sound look-row">
@@ -385,6 +395,36 @@
           <app-youtube-text [storyboardId]="b.id" [text]="b.youtube" (changed)="setYoutube($event)" />
         } @else {
           <div class="notice small"><span>{{ b.has_video ? 'Approve the video (Video tab) and the YouTube title and description can be written here.' : 'Render the video and approve it first; the YouTube title and description are written here.' }}</span></div>
+        }
+        @if (b.has_video && b.review === 'approved') {
+          <section class="card publish export">
+            <div class="row spread">
+              <div>
+                <h3>Export</h3>
+                <p class="small muted">Copies the video{{ b.format === 'long' ? ', its subtitles' : '' }}, the YouTube title and
+                  description and the authorship log into one folder of the output folder
+                  (<a routerLink="/settings">Settings</a>, Storage), ready to upload or sync. Nothing is posted.</p>
+              </div>
+              <button class="primary" (click)="exportVideo()" [disabled]="exporting()">
+                {{ exporting() ? 'Copying…' : b.export ? 'Export again' : 'Export' }}</button>
+            </div>
+            @if (b.export; as x) {
+              <p class="small">Exported {{ x.at | ago }}, {{ x.size_bytes | megabytes }}, to:</p>
+              <pre class="chapters">{{ exportListing(x) }}</pre>
+              <div class="row">
+                <button class="sm" (click)="copy(x.folder)">Copy the folder path</button>
+              </div>
+              @if (x.stale) {
+                <div class="notice small"><span>The video was rendered again since this export. Export again to replace the copy.</span></div>
+              } @else if (b.youtube && !x.files.includes('youtube.txt')) {
+                <div class="notice small"><span>The title and description were written after this export. Export again to add them.</span></div>
+              } @else {
+                <p class="small muted">Exporting again replaces these files, for example after you edit the title or description.</p>
+              }
+            } @else if (!b.youtube) {
+              <p class="small muted">Tip: write the title and description above first, and the export includes them.</p>
+            }
+          </section>
         }
         @if (b.has_video) {
           <app-publish-check [storyboardId]="b.id" [version]="b.review + b.look + b.music_id + b.rendered_at + version()" />

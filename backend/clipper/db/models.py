@@ -270,6 +270,12 @@ class Storyboard(Base):
     video_path: Mapped[str | None] = mapped_column(Text)
     rendered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review: Mapped[str] = mapped_column(String(16), default="pending")   # pending|approved|rejected
+    # When the verdict last changed. With rendered_at it starts the grace period (studio/retention.py).
+    review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when the render was deleted because it was not approved in time; cleared by the next render.
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last export of the approved video: {folder, files, at, rendered_at} (studio/export.py).
+    export: Mapped[dict | None] = mapped_column(JSON)
     # Sound under the voice.
     music_id: Mapped[int | None] = mapped_column(
         ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id"))

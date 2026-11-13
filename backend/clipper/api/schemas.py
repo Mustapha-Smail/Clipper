@@ -582,6 +582,8 @@ class StoryboardSummary(Model):
     title: str
     review: Literal["pending", "approved", "rejected"]
     rendered_at: UtcDatetime | None
+    # Set when the render was deleted for not being approved in time; the plan is kept.
+    expired_at: UtcDatetime | None = None
     created_at: UtcDatetime
     music_id: int | None
     music_db: float
@@ -591,6 +593,8 @@ class StoryboardSummary(Model):
     scene_count: int
     has_video: bool
     job: JobOut | None
+    # When the render is deleted if it is still not approved; None = never (approved, or the setting is 0).
+    expires_at: UtcDatetime | None = None
 
 
 class StoryboardListItem(StoryboardSummary):
@@ -618,7 +622,17 @@ class YoutubeText(BaseModel):
     problems: list[str] = []
 
 
+class ExportInfo(BaseModel):
+    """The last copy of an approved video in the output folder."""
+    folder: str
+    files: list[str]
+    at: str
+    size_bytes: int = 0
+    stale: bool = Field(False, description="The video was rendered again since this export")
+
+
 class StoryboardOut(StoryboardSummary):
+    export: ExportInfo | None = None
     words: list[dict]
     scenes: list[dict]
     missing_props: list[str]

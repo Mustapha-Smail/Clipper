@@ -16,7 +16,8 @@ from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
-from ..studio import animate, art, beats, cartoon, compliance, music_pick, music_search, publish, sound
+from ..studio import animate, art, beats, cartoon, compliance, music_pick, music_search, publish, retention, sound
+from ..studio import export as export_mod
 from ..studio import places as places_mod
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
@@ -44,16 +45,25 @@ def _prop_names(board: Storyboard) -> set[str]:
     return storyboard_mod.prop_names(board.style, board.scenes)
 
 
-def _computed(board: Storyboard, job: Job | None) -> dict:
+def _keep_days() -> int:
+    return settings_mod.load().unapproved_keep_days
+
+
+def _computed(board: Storyboard, job: Job | None, keep_days: int) -> dict:
     return {"duration": round(board.end - board.start, 2), "scene_count": len(board.scenes),
-            "has_video": bool(board.video_path), "job": s.JobOut.model_validate(job) if job else None}
+            "has_video": bool(board.video_path), "job": s.JobOut.model_validate(job) if job else None,
+            "expires_at": retention.deadline(board, keep_days)}
 
 
-SUMMARY_FIELDS = set(s.StoryboardSummary.model_fields) - {"duration", "scene_count", "has_video", "job"}
+SUMMARY_FIELDS = set(s.StoryboardSummary.model_fields) - {"duration", "scene_count", "has_video", "job", "expires_at"}
 
 
-def summary_out(board: Storyboard, job: Job | None) -> s.StoryboardSummary:
-    return s.StoryboardSummary(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job))
+def summary_out(board: Storyboard, job: Job | None, keep_days: int) -> s.StoryboardSummary:
+    return s.StoryboardSummary(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job, keep_days))
+
+
+def export_out(board: Storyboard) -> s.ExportInfo | None:
+    return s.ExportInfo(**board.export, stale=export_mod.is_stale(board)) if board.export else None
 
 
 def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOut:
@@ -71,8 +81,9 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
         words = board.words
         score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"],
                             board.end - board.start)
-    return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job),
-                           words=board.words, scenes=board.scenes, missing_props=sorted(names - drawn),
+    return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job, _keep_days()),
+                           export=export_out(board), words=board.words, scenes=board.scenes,
+                           missing_props=sorted(names - drawn),
                            music_credit=credit, score=score, photos=used,
                            photo_searches_missing=[q for q in queries if q not in found], credits=credits,
                            youtube=board.youtube)
@@ -128,7 +139,8 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
 @router.get("/scripts/{script_id}/storyboards", response_model=list[s.StoryboardSummary])
 def list_storyboards(script: Script = Depends(get_script), db: Session = Depends(get_db)):
     running = _board_jobs(db)
-    return [summary_out(b, running.get(b.id)) for b in reversed(script.storyboards)]
+    keep = _keep_days()
+    return [summary_out(b, running.get(b.id), keep) for b in reversed(script.storyboards)]
 
 
 @router.get("/storyboards", response_model=list[s.StoryboardListItem])
@@ -136,7 +148,8 @@ def all_storyboards(db: Session = Depends(get_db)):
     """Every animated video, newest first, for review across scripts."""
     running = _board_jobs(db)
     boards = db.scalars(select(Storyboard).order_by(Storyboard.id.desc())).all()
-    return [s.StoryboardListItem(**summary_out(b, running.get(b.id)).model_dump(), script_title=b.script.title)
+    keep = _keep_days()
+    return [s.StoryboardListItem(**summary_out(b, running.get(b.id), keep).model_dump(), script_title=b.script.title)
             for b in boards]
 
 
@@ -216,6 +229,7 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                               {"approved": "Watched and approved the video",
                                "rejected": "Watched and rejected the video",
                                "pending": "Took back the review"}[body.review], storyboard_id=board.id)
+            board.review_at = utcnow()      # an unapproved render gets a full grace period from here
         board.review = body.review
     if body.look is not None and body.look != board.look:
         if board.style != "ink":
@@ -424,6 +438,22 @@ def save_youtube_text(body: s.YoutubeEdit, board: Storyboard = Depends(get_board
                           f"Edited the YouTube title and description ({changed} words)", changed, board.id)
     db.flush()
     return board.youtube
+
+
+@router.post("/storyboards/{storyboard_id}/export", response_model=s.ExportInfo)
+def export_video(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Copy the approved video, its subtitles, YouTube text and authorship log to the output folder.
+
+    A copy for you to upload or sync. Nothing is posted.
+    """
+    try:
+        export_mod.run(db, board, settings_mod.load())
+    except export_mod.ExportError as err:
+        raise HTTPException(409, str(err)) from err
+    compliance.record(db, board.script_id, "export", "you", "Exported the approved video to the output folder",
+                      storyboard_id=board.id)
+    db.flush()
+    return export_out(board)
 
 
 # --- the library ------------------------------------------------------------------------------

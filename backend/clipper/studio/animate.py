@@ -621,4 +621,5 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     with session_scope() as db:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"
+        row.review_at = row.expired_at = None      # a new render starts a new grace period
     rep.info(f"Rendered {out.name}: {out.stat().st_size / 1e6:.1f} MB. It waits for your review.")
