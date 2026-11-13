@@ -286,6 +286,18 @@ piece cut from card with a pale edge and a shadow, popping on instead of being
 drawn, no wobble) and blueprint (white lines on a blue grid). Archive photos,
 flags and maps are pasted as they are in every look.
 
+**The storyboard page** has four tabs: Video (the render, your review, the
+look), Scenes (the shots, the liveliness score, archive pictures), Sound
+(music, level, effects) and Publish.
+
+**YouTube title and description.** On the Publish tab of an approved video,
+"Write the title and description" asks the writing model for three title
+options, an opening of two or three paragraphs, hashtags and tags, using only
+the script's own facts (about one cent). The app adds the rest as it is:
+chapters (long videos), the research sources the checked claims rely on, and
+the credit lines for pictures and music. You edit it and copy each part into
+YouTube Studio; counters show YouTube's limits (100, 5000 and 500 characters).
+
 **Before you publish.** Once a video is rendered, its page shows a checklist
 and four pieces of advice, all plain rules with every point shown. Nothing here
 approves or posts anything.

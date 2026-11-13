@@ -132,3 +132,13 @@ def test_a_search_that_finds_nothing_tries_its_first_two_words(app_env, monkeypa
     monkeypatch.setattr(photos, "_download", lambda url, target: (900, 1200))
     found = photos.find("Bede Historia ecclesiastica manuscript")
     assert asked == ["Bede Historia ecclesiastica manuscript", "Bede Historia"] and found.key == "7"
+
+
+def test_a_name_said_twice_is_credited_once():
+    from clipper.studio import photos
+
+    assert photos._once("Unknown author Unknown author") == "Unknown author"
+    assert photos._once("Jean Jean Paul") == "Jean Jean Paul"
+    line = photos.credit({"title": "Nicaea icon", "creator": "Unknown author Unknown author",
+                          "license": "Public domain", "license_url": "", "landing_url": "https://commons.wikimedia.org/x"})
+    assert "by Unknown author, public domain" in line

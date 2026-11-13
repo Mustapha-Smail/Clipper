@@ -15,7 +15,7 @@ from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, VoiceTake, utcnow
-from ..studio import animate, art, beats, compliance, music_pick, music_search, sound
+from ..studio import animate, art, beats, compliance, music_pick, music_search, publish, sound
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import voice as voice_mod
@@ -63,7 +63,7 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
         if queries else {}
     used = [found[q] for q in queries if q in found]
-    credits = "\n".join([*(f"Picture: {p.credit}" for p in used), *([credit] if credit else [])])
+    credits = publish.credits(db, board)
     score = None
     if board.style == "ink" and board.scenes and board.words:
         words = board.words
@@ -72,7 +72,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job),
                            words=board.words, scenes=board.scenes, missing_props=sorted(names - drawn),
                            music_credit=credit, score=score, photos=used,
-                           photo_searches_missing=[q for q in queries if q not in found], credits=credits)
+                           photo_searches_missing=[q for q in queries if q not in found], credits=credits,
+                           youtube=board.youtube)
 
 
 def _idle(db: Session, board: Storyboard) -> None:
@@ -389,6 +390,36 @@ def authorship_log(board: Storyboard = Depends(get_board), db: Session = Depends
     """Who did what, as text to keep with the video."""
     return PlainTextResponse(compliance.authorship_text(db, board), headers={
         "Content-Disposition": f'attachment; filename="authorship-{board.id}.txt"'})
+
+
+@router.post("/storyboards/{storyboard_id}/youtube", response_model=s.YoutubeText)
+def write_youtube_text(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Draft the title, description and tags for an approved video. Replaces your edits. About a cent."""
+    if not board.video_path or board.review != "approved":
+        raise HTTPException(409, "Render the video and approve it first")
+    try:
+        with llm.attribute(f"storyboard:{board.id}"):
+            board.youtube = publish.draft(db, board)
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    compliance.record(db, board.script_id, "description", "ai", "Drafted the YouTube title and description",
+                      storyboard_id=board.id)
+    db.flush()
+    return board.youtube
+
+
+@router.put("/storyboards/{storyboard_id}/youtube", response_model=s.YoutubeText)
+def save_youtube_text(body: s.YoutubeEdit, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Your edited title, description and tags."""
+    before = board.youtube or {}
+    board.youtube = publish.edit(before, body.title, body.description, body.tags)
+    changed = compliance.words_changed(f"{before.get('title', '')} {before.get('description', '')}",
+                                       f"{board.youtube['title']} {board.youtube['description']}")
+    if changed:
+        compliance.record(db, board.script_id, "description_edit", "you",
+                          f"Edited the YouTube title and description ({changed} words)", changed, board.id)
+    db.flush()
+    return board.youtube
 
 
 # --- the library ------------------------------------------------------------------------------

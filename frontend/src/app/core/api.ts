@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck,
+  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck, YoutubeText,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -224,6 +224,12 @@ export class Api {
   }
   publishCheck(id: number): Observable<PublishCheck> {
     return this.http.get<PublishCheck>(`${BASE}/storyboards/${id}/publish-check`);
+  }
+  writeYoutubeText(id: number): Observable<YoutubeText> {
+    return this.http.post<YoutubeText>(`${BASE}/storyboards/${id}/youtube`, {});
+  }
+  saveYoutubeText(id: number, text: { title: string; description: string; tags: string[] }): Observable<YoutubeText> {
+    return this.http.put<YoutubeText>(`${BASE}/storyboards/${id}/youtube`, text);
   }
   authorshipUrl(id: number): string {
     return `${BASE}/storyboards/${id}/authorship.txt`;

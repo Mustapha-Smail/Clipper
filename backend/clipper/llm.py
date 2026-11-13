@@ -40,6 +40,7 @@ TASKS = {
     "verdicts": ("quick", "Reading fact-check results"),
     "props": ("quick", "Drawing props"),
     "music": ("quick", "Suggesting music"),
+    "description": ("writing", "Writing YouTube titles and descriptions"),
     "research": ("research", "Researching scripts"),
     "verify": ("research", "Looking up claims"),
 }

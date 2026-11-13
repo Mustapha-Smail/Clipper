@@ -608,6 +608,16 @@ class PhotoOut(Model):
     rank: int
 
 
+class YoutubeText(BaseModel):
+    titles: list[str] = []
+    title: str
+    description: str
+    tags: list[str] = []
+    made_at: str | None = None
+    edited: bool = False
+    problems: list[str] = []
+
+
 class StoryboardOut(StoryboardSummary):
     words: list[dict]
     scenes: list[dict]
@@ -617,6 +627,13 @@ class StoryboardOut(StoryboardSummary):
     photo_searches_missing: list[str] = []       # searches with no picture yet (found when it renders)
     credits: str = ""                            # every credit line the description needs
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
+    youtube: YoutubeText | None = None
+
+
+class YoutubeEdit(BaseModel):
+    title: str = Field(max_length=300)
+    description: str = Field(max_length=20000)
+    tags: list[str] = Field(default_factory=list, max_length=100)
 
 
 class PublishCheck(BaseModel):

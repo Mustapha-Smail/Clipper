@@ -150,6 +150,10 @@ def authorship(db: Session, board: Storyboard) -> dict:
     music = [e for e in events if e.kind == "music"]
     if board.music_id:
         line("Music", "Chosen by you" if music and music[-1].by == "you" else "Suggested by the AI", bool(music))
+    if board.youtube:
+        own = [e for e in events if e.kind == "description_edit"]
+        line("Description", "Drafted by the AI, edited by you" if own else "Drafted by the AI, not edited yet",
+             bool(own))
     reviewed = next((e for e in reversed(events) if e.kind == "review"), None)
     if board.review != "pending":
         when = reviewed.created_at.strftime("%d %b %Y") if reviewed else ""
@@ -372,7 +376,7 @@ def before_publish(db: Session, board: Storyboard) -> dict:
          + (f" ({len(flagged)} claim{'s' if len(flagged) != 1 else ''} to look at)" if checked and flagged else "")},
         {"done": sim["verdict"] != "close", "text": "Not a near copy of a recent video"},
         {"done": who["yours"] >= 3, "text": f"Your own input is on record ({who['yours']} of {who['parts']} parts)"},
-        {"done": None, "text": "Paste the description credits (pictures and music) when you upload"},
+        {"done": bool(board.youtube), "text": "The YouTube description is written, with its sources and credits"},
         {"done": None, "text": "Answer 'made for kids' and 'altered content' in YouTube Studio"},
     ]
     return {"checklist": checklist, "authorship": who, "similarity": sim, "kids": kids(board),

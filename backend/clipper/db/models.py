@@ -257,6 +257,8 @@ class Storyboard(Base):
         ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id"))
     music_db: Mapped[float] = mapped_column(Float, default=-18.0)        # music level vs the voice, before ducking
     effects: Mapped[bool] = mapped_column(Boolean, default=True)         # pops and whooshes
+    # The YouTube text, once written: {titles, title, description, tags, made_at, edited, problems}.
+    youtube: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

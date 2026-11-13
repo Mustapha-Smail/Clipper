@@ -94,6 +94,9 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   steps are logged with `compliance.record` from the routes, finished jobs with
   `compliance.record_job` in the worker (`studio_events`). The similarity and
   kids scores are arithmetic with every point in their lines.
+- `studio/publish.py`: the YouTube text of an approved video (`storyboards.youtube`).
+  The model writes only titles, the opening, hashtags and tags from the
+  narration; chapters, sources and credits are assembled by code. Never upload.
 - Flags, maps and timelines (`studio/geo.py`): flags from flag-icons (MIT) and
   country outlines from Natural Earth (public domain), packed by
   `backend/tools/geo_import.py` into `clipper/assets/*.json.gz`; keep their

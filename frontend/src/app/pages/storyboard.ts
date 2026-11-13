@@ -6,12 +6,13 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
   ArchivePhoto, Asset, Chapters, INK_LOOKS, InkLook, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
-  SuggestedTrack,
+  SuggestedTrack, YoutubeText,
 } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
 import { PublishCheckView } from '../shared/publish-check';
+import { YoutubeTextView } from '../shared/youtube-text';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -54,10 +55,13 @@ function blank(kind: StoryElement['kind']): StoryElement {
   };
 }
 
-/** One storyboard: its scenes with a preview frame each, every element editable; render and review. */
+const BOARD_TABS = ['video', 'scenes', 'sound', 'publish'] as const;
+type BoardTab = (typeof BOARD_TABS)[number];
+
+/** One storyboard in four tabs: the video and its review, the scenes, the sound, and publishing. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView, PublishCheckView],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView, PublishCheckView, YoutubeTextView],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
@@ -67,7 +71,21 @@ export class StoryboardPage {
   private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
   protected readonly store = inject(JobsStore);
-  private readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id'));
+  private readonly route = inject(ActivatedRoute);
+  private readonly id = Number(this.route.snapshot.paramMap.get('id'));
+
+  protected readonly tabs: { value: BoardTab; label: string }[] = [
+    { value: 'video', label: 'Video' }, { value: 'scenes', label: 'Scenes' },
+    { value: 'sound', label: 'Sound' }, { value: 'publish', label: 'Publish' },
+  ];
+  /** Kept in the address (?tab=scenes), so a link or a reload opens the same tab. */
+  protected readonly tab = signal<BoardTab>(BOARD_TABS.includes(this.route.snapshot.queryParamMap.get('tab') as BoardTab)
+    ? this.route.snapshot.queryParamMap.get('tab') as BoardTab : 'video');
+
+  protected setTab(tab: BoardTab): void {
+    this.tab.set(tab);
+    this.router.navigate([], { queryParams: { tab: tab === 'video' ? null : tab }, replaceUrl: true });
+  }
 
   protected readonly options = { SLOTS, CAST, POSES, EXPRESSIONS, BACKGROUNDS, CAMERAS, MOTIONS };
   protected readonly Math = Math;
@@ -283,6 +301,12 @@ export class StoryboardPage {
 
   protected trackName(id: number | null): string {
     return this.music().find((m) => m.id === id)?.name ?? 'a track';
+  }
+
+  /** The YouTube text was written or saved: keep it, and let the checks see it. */
+  protected setYoutube(text: YoutubeText): void {
+    this.board.update((b) => b && { ...b, youtube: text });
+    this.version.set(Date.now());
   }
 
   protected lookName(look: InkLook): string {

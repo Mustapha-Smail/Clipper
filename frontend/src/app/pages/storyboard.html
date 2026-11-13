@@ -17,375 +17,407 @@
 
     @if (job(); as j) { <app-job-card [job]="j" /> }
 
-    <section class="card top">
-      @if (b.has_video && !busy()) {
-        <div class="preview" [class.wide]="b.format === 'long'">
-          <video controls preload="metadata" [src]="videoUrl()"></video>
-          <div class="verdict">
-            <p class="small muted">Rendered {{ b.rendered_at | ago }}. Watch it to the end before you approve it: nothing is posted for you.</p>
-            <div class="row">
-              <button [class.on-good]="b.review === 'approved'" (click)="review(b.review === 'approved' ? 'pending' : 'approved')">
-                {{ b.review === 'approved' ? 'Approved' : 'Approve' }}</button>
-              <button [class.on-bad]="b.review === 'rejected'" (click)="review(b.review === 'rejected' ? 'pending' : 'rejected')">
-                {{ b.review === 'rejected' ? 'Rejected' : 'Reject' }}</button>
-              <a class="btn quiet" [href]="videoUrl()" download>Download</a>
-            </div>
-          </div>
-        </div>
-      }
-      @if (b.missing_props.length) {
-        <div class="notice small"><span>Props not drawn yet: {{ b.missing_props.join(', ') }}. They are drawn when you render,
-          or now from <a routerLink="/props">Props</a>.</span></div>
-      }
-      <div class="sound">
-        @if (ink()) {
-          <label class="field"><span>Look</span>
-            <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
-              @for (l of looks; track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
-            </select>
-            <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
-          </label>
-        }
-        <label class="field"><span>Music</span>
-          <select [ngModel]="b.music_id" (ngModelChange)="setSound({ music_id: $event })">
-            <option [ngValue]="null">No music</option>
-            @for (m of music(); track m.id) { <option [ngValue]="m.id">{{ m.name }}</option> }
-          </select>
-          @if (!music().length) { <small><a routerLink="/props">Upload a track</a> in the Library first.</small> }
-        </label>
-        <label class="field"><span>Music level {{ b.music_db }} dB</span>
-          <input type="range" min="-34" max="-10" step="1" [ngModel]="b.music_db" (change)="setSound({ music_db: +$any($event.target).value })"
-                 [disabled]="!b.music_id" />
-          <small>Lowered further while the voice speaks.</small>
-        </label>
-        <label class="check"><input type="checkbox" [ngModel]="b.effects" (ngModelChange)="setSound({ effects: $event })" />
-          <span>{{ ink() ? 'Pen and camera sounds' : 'Pops and whooshes' }}<small>{{ ink()
-            ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
-            : 'Quiet sounds when things appear.' }}</small></span></label>
-      </div>
-      <div class="row sound-tools">
-        <button class="sm" (click)="suggest()" [disabled]="suggesting()">
-          {{ suggesting() ? (searchOnline() ? 'Searching and listening… about 20 s' : 'Thinking…') : 'Suggest music' }}</button>
-        <label class="check small"><input type="checkbox" [ngModel]="searchOnline()" (ngModelChange)="searchOnline.set($event)" />
-          <span>Search online too</span></label>
-        <button class="sm" (click)="hear(b.music_id, b.music_db)">Hear the mix (first 25 s)</button>
-        <span class="small muted">A preview of voice, music and effects together; nothing is rendered.</span>
-      </div>
-      @if (previewSrc()) {
-        <audio class="mix" controls autoplay [src]="previewSrc()"></audio>
-      }
-      @if (suggestion(); as sg) {
-        <div class="suggestion">
-          @if (chosen(sg); as c) {
-            <p class="small"><strong>Suggested: “{{ c.title }}”{{ c.source === 'online' ? ' (online)' : '' }} at {{ sg.level_db }} dB.</strong> {{ sg.reason }}</p>
-          } @else {
-            <p class="small"><strong>Suggested: no music.</strong> {{ sg.reason }}</p>
-          }
-          @if (sg.searches.length) { <p class="small muted">Searched online for: {{ sg.searches.join(', ') }}.</p> }
-          <div class="row">
-            @if (chosen(sg); as c) {
-              <button class="sm primary" (click)="useTrack(c, sg.level_db)" [disabled]="adding() === c.ref">
-                {{ adding() === c.ref ? 'Adding…' : c.source === 'online' ? 'Add and use' : 'Use this' }}</button>
-              <button class="sm" (click)="hearTrack(c, sg.level_db)">Hear it with the voice</button>
-            } @else if (b.music_id !== null) {
-              <button class="sm primary" (click)="setSound({ music_id: null })">Use no music</button>
-            }
-          </div>
-          @if (sg.ranking.length) {
-            <ul class="ranking">
-              @for (r of sg.ranking; track r.ref) {
-                <li><span class="num fit">{{ r.fit }}/10</span>
-                  <span class="grow">
-                    <strong>{{ r.title }}</strong>
-                    <span class="pill tiny" [class.online]="r.source === 'online'">{{ r.source === 'online' ? licence(r.license) : 'in library' }}</span>
-                    <span class="muted"> {{ r.creator ? 'by ' + r.creator + ' · ' : '' }}{{ clock(r.duration) }}{{ r.words.length ? ' · ' + r.words.join(', ') : '' }}</span>
-                    <span class="reason muted">{{ r.reason }}</span>
-                  </span>
-                  <button class="sm quiet" (click)="hearTrack(r, sg.level_db)">Hear</button>
-                  <button class="sm" (click)="useTrack(r, sg.level_db)" [disabled]="adding() === r.ref">
-                    {{ adding() === r.ref ? 'Adding…' : r.source === 'online' ? 'Add and use' : 'Use' }}</button>
-                  @if (r.landing_url) { <a class="small" [href]="r.landing_url" target="_blank" rel="noopener">source</a> }
-                </li>
-              }
-            </ul>
-          }
-        </div>
-      }
-      <div class="row">
-        <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
-          {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
-        <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ ink() ? 'the shots' : 'the scenes' }} again</button>
-        <span class="grow"></span>
-        <button class="quiet danger" (click)="remove()" [disabled]="busy()">Delete</button>
-      </div>
-    </section>
-
-    @if (b.score; as sc) {
-      <section class="card score">
-        <div class="row spread">
-          <div class="row">
-            <h3>Liveliness <span class="num">{{ sc.score }}</span><span class="muted small">/100</span></h3>
-            <span class="pill" [class.approved]="sc.score >= 80" [class.failed]="sc.score < 60">{{ sc.verdict }}</span>
-          </div>
-          <span class="small muted">{{ sc.shots }} shots · something new every {{ sc.pace }} s on average</span>
-        </div>
-        @if (sc.lines.length) {
-          <ul class="deductions">
-            @for (l of sc.lines; track l.label) {
-              <li><span class="num points">{{ l.points }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
-            }
-          </ul>
-        } @else {
-          <p class="small muted">No deductions: every few seconds something is drawn, moves or gets marked.</p>
-        }
-        <p class="small muted">Plain arithmetic on the saved plan, every point shown. It advises; you decide.</p>
-      </section>
-    }
-
-    @if (b.photos.length || b.photo_searches_missing.length) {
-      <section class="card archive">
-        <h3>Pictures from the archives</h3>
-        <p class="small muted">Found on Wikimedia Commons: public domain, CC0 and CC BY only. "Try another" uses the
-          next result for that search, in every video that asks for it; render again to see it.</p>
-        <div class="photos">
-          @for (p of b.photos; track p.id) {
-            <article class="photo">
-              <img [src]="photoUrl(p)" [alt]="p.title" loading="lazy" />
-              <div class="small">
-                <strong>“{{ p.query }}”</strong>
-                <span class="muted">{{ p.title }} · {{ p.creator }} · {{ p.license }}</span>
-                <span class="row">
-                  <a [href]="p.landing_url" target="_blank" rel="noopener">source</a>
-                  <button class="sm quiet" (click)="nextPhoto(p)" [disabled]="swapping() === p.id">
-                    {{ swapping() === p.id ? 'Looking…' : 'Try another' }}</button>
-                </span>
-              </div>
-            </article>
-          }
-        </div>
-        @if (b.photo_searches_missing.length) {
-          <p class="small muted">Found when it renders: {{ b.photo_searches_missing.join(', ') }}.</p>
-        }
-      </section>
-    }
-
-    @if (b.has_video) {
-      <app-publish-check [storyboardId]="b.id" [version]="b.review + b.look + b.music_id + b.rendered_at + version()" />
-    }
-
-    <section class="card publish">
-      <h3>For YouTube</h3>
-      <div class="publish-grid">
-        <div>
-          <p class="small muted">Subtitles from the script's exact words, timed to the voice. Upload them in YouTube Studio
-            (Subtitles, Upload file, With timing).</p>
-          <a class="btn sm" [href]="subtitlesUrl()" download>Download subtitles (.srt)</a>
-        </div>
-        @if (b.credits) {
-          <div>
-            <p class="small muted">Credits: pictures and music used. CC BY licences ask for these lines in the
-              description; for public-domain works they are a courtesy.</p>
-            <pre class="chapters">{{ b.credits }}</pre>
-            <button class="sm" (click)="copy(b.credits)">Copy credits</button>
-          </div>
-        }
-        @if (b.format === 'long') {
-          @if (chapterList(); as c) {
-            <div>
-              <p class="small muted">Chapters: paste these lines into the video description.</p>
-              <pre class="chapters">{{ c.text }}</pre>
-              @for (p of c.problems; track p) { <div class="notice small"><span>{{ p }}</span></div> }
-              <button class="sm" (click)="copy(c.text)">Copy chapters</button>
-            </div>
-          }
-        }
-      </div>
-    </section>
-
-    @if (!scenes().length) {
-      <div class="empty">{{ busy() ? 'Claude is planning the scenes and drawing props. This takes a minute or two.' : 'No scenes.' }}</div>
-    }
-
-    @if (groups().length > 1) {
-      <div class="row group-tools">
-        <span class="small muted">{{ scenes().length }} scenes in {{ groups().length }} {{ b.format === 'long' ? 'chapters' : 'parts' }}</span>
-        <button class="sm quiet" (click)="openAll(true)">Open all</button>
-        <button class="sm quiet" (click)="openAll(false)">Close all</button>
-      </div>
-    }
-    @for (g of groups(); track g.from) {
-      <section class="group">
-        <button class="group-head" (click)="toggleGroup(g.from)" [attr.aria-expanded]="isOpen(g.from)">
-          <span class="caret">{{ isOpen(g.from) ? '▾' : '▸' }}</span>
-          <strong>{{ g.label }}</strong>
-          <span class="small muted">{{ g.indices.length }} {{ g.indices.length === 1 ? 'scene' : 'scenes' }} ·
-            {{ clock(g.start) }}–{{ clock(g.end) }}</span>
-          @if (!isOpen(g.from)) {
-            <span class="strip">
-              @for (i of g.indices.slice(0, 8); track i) { <img [src]="still(i)" alt="" loading="lazy" [class.wide]="b.format === 'long'" /> }
-            </span>
-          }
+    <div class="tabs page-tabs" role="tablist">
+      @for (t of tabs; track t.value) {
+        <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
+          {{ t.label }}@if (t.value === 'scenes') { <span class="tab-count">{{ scenes().length }}</span> }
+          @if (t.value === 'publish' && b.review === 'approved' && !b.youtube) { <span class="tab-dot" title="Description not written yet"></span> }
         </button>
-        @if (isOpen(g.from)) {
-    <div class="scenes" [class.wide]="b.format === 'long'">
-      @for (i of g.indices; track i) {
-        @let scene = scenes()[i];
-        @if (ink()) {
-        <article class="card scene ink" [class.open]="openScene() === i">
-          <img class="still" [src]="still(i)" [alt]="'Shot ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
-          <div class="body">
-            <div class="row spread">
-              <strong>Shot {{ i + 1 }}@if (scene.page) { <span class="pill tiny">new page</span> }</strong>
-              <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
-            </div>
-            <p class="small said">@for (w of spoken(i); track w.n) {<span class="w"><sup>{{ w.n }}</sup>{{ w.w }}</span> }</p>
-            <p class="small muted">{{ scene.note }}@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }</p>
-            @if (openScene() !== i) {
-              <pre class="beats">{{ (scene.lines ?? []).join('\n') }}</pre>
-            }
-            <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
-          </div>
+      }
+    </div>
 
-          @if (openScene() === i) {
-            <div class="editor">
-              <div class="scene-fields ink-fields">
-                <label class="field"><span>Camera</span>
-                  <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
-                    @for (o of inkCameras; track o.value) { <option [value]="o.value">{{ o.label }}</option> }</select></label>
-                <label class="field wide"><span>What the viewer sees</span>
-                  <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
-              </div>
-              <label class="field"><span>Beats: one per line, the word number first (the small numbers above the words)</span>
-                <textarea class="beats" spellcheck="false" [rows]="Math.max(4, (scene.lines ?? []).length + 1)"
-                          [ngModel]="(scene.lines ?? []).join('\n')" (ngModelChange)="setLines(i, $event)"></textarea></label>
-              <details class="fold small">
-                <summary class="muted">How to write beats</summary>
-                <pre class="cheat">{{ cheatSheet }}</pre>
-              </details>
-              <div class="row">
-                <span class="grow"></span>
-                <label class="field split"><span>New shot from</span>
-                  <select #splitInk>
-                    @for (w of spoken(i).slice(1); track w.n) { <option [value]="w.n">“{{ w.w }}”</option> }</select></label>
-                <button class="sm" (click)="splitAt(i, +splitInk.value)" [disabled]="spoken(i).length < 2">Split</button>
-                <button class="sm quiet danger" (click)="removeScene(i)">Remove shot</button>
+    @switch (tab()) {
+      @case ('video') {
+        <section class="card top">
+          @if (b.has_video && !busy()) {
+            <div class="preview" [class.wide]="b.format === 'long'">
+              <video controls preload="metadata" [src]="videoUrl()"></video>
+              <div class="verdict">
+                <p class="small muted">Rendered {{ b.rendered_at | ago }}. Watch it to the end before you approve it: nothing is posted for you.</p>
+                <div class="row">
+                  <button [class.on-good]="b.review === 'approved'" (click)="review(b.review === 'approved' ? 'pending' : 'approved')">
+                    {{ b.review === 'approved' ? 'Approved' : 'Approve' }}</button>
+                  <button [class.on-bad]="b.review === 'rejected'" (click)="review(b.review === 'rejected' ? 'pending' : 'rejected')">
+                    {{ b.review === 'rejected' ? 'Rejected' : 'Reject' }}</button>
+                  <a class="btn quiet" [href]="videoUrl()" download>Download</a>
+                </div>
               </div>
             </div>
           }
-        </article>
-        } @else {
-        <article class="card scene" [class.open]="openScene() === i">
-          <img class="still" [src]="still(i)" [alt]="'Scene ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
-          <div class="body">
-            <div class="row spread">
-              <strong>Scene {{ i + 1 }}</strong>
-              <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
+          @if (!b.has_video && !busy()) {
+            <p class="small muted">Not rendered yet. Edit the shots in Scenes and the sound in Sound, then render.</p>
+          }
+          @if (ink()) {
+            <div class="sound look-row">
+              <label class="field"><span>Look</span>
+                <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
+                  @for (l of looks; track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
+                </select>
+                <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
+              </label>
             </div>
-            <p class="small said">“@for (w of spoken(i); track w.n) {{{ w.w }} }”</p>
-            <p class="small muted">{{ scene.note }}</p>
-            <div class="chips">
-              @for (e of scene.elements; track $index) {
-                <span class="chip">{{ e.kind === 'character' ? e.name + ' · ' + label(e.pose) : e.kind === 'prop' ? e.name : e.kind === 'arrow' ? 'arrow' : '“' + e.text + '”' }}</span>
-              }
-            </div>
-            <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
+          }
+          @if (b.missing_props.length) {
+            <div class="notice small"><span>Props not drawn yet: {{ b.missing_props.join(', ') }}. They are drawn when you render,
+              or now from <a routerLink="/props">Props</a>.</span></div>
+          }
+          <div class="row">
+            <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
+              {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
+            <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ ink() ? 'the shots' : 'the scenes' }} again</button>
+            <span class="grow"></span>
+            <button class="quiet danger" (click)="remove()" [disabled]="busy()">Delete</button>
           </div>
+        </section>
+      }
+      @case ('scenes') {
+        @if (b.score; as sc) {
+          <section class="card score">
+            <div class="row spread">
+              <div class="row">
+                <h3>Liveliness <span class="num">{{ sc.score }}</span><span class="muted small">/100</span></h3>
+                <span class="pill" [class.approved]="sc.score >= 80" [class.failed]="sc.score < 60">{{ sc.verdict }}</span>
+              </div>
+              <span class="small muted">{{ sc.shots }} shots · something new every {{ sc.pace }} s on average</span>
+            </div>
+            @if (sc.lines.length) {
+              <ul class="deductions">
+                @for (l of sc.lines; track l.label) {
+                  <li><span class="num points">{{ l.points }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
+                }
+              </ul>
+            } @else {
+              <p class="small muted">No deductions: every few seconds something is drawn, moves or gets marked.</p>
+            }
+            <p class="small muted">Plain arithmetic on the saved plan, every point shown. It advises; you decide.</p>
+          </section>
+        }
 
-          @if (openScene() === i) {
-            <div class="editor">
-              <div class="scene-fields">
-                <label class="field"><span>Background</span>
-                  <select [ngModel]="scene.background" (ngModelChange)="change(i, { background: $event })">
-                    @for (o of options.BACKGROUNDS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                <label class="field"><span>Camera</span>
-                  <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
-                    @for (o of options.CAMERAS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
-                <label class="field wide"><span>Note</span>
-                  <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
+        @if (!scenes().length) {
+          <div class="empty">{{ busy() ? 'Claude is planning the scenes and drawing props. This takes a minute or two.' : 'No scenes.' }}</div>
+        }
+
+        @if (groups().length > 1) {
+          <div class="row group-tools">
+            <span class="small muted">{{ scenes().length }} scenes in {{ groups().length }} {{ b.format === 'long' ? 'chapters' : 'parts' }}</span>
+            <button class="sm quiet" (click)="openAll(true)">Open all</button>
+            <button class="sm quiet" (click)="openAll(false)">Close all</button>
+          </div>
+        }
+        @for (g of groups(); track g.from) {
+          <section class="group">
+            <button class="group-head" (click)="toggleGroup(g.from)" [attr.aria-expanded]="isOpen(g.from)">
+              <span class="caret">{{ isOpen(g.from) ? '▾' : '▸' }}</span>
+              <strong>{{ g.label }}</strong>
+              <span class="small muted">{{ g.indices.length }} {{ g.indices.length === 1 ? 'scene' : 'scenes' }} ·
+                {{ clock(g.start) }}–{{ clock(g.end) }}</span>
+              @if (!isOpen(g.from)) {
+                <span class="strip">
+                  @for (i of g.indices.slice(0, 8); track i) { <img [src]="still(i)" alt="" loading="lazy" [class.wide]="b.format === 'long'" /> }
+                </span>
+              }
+            </button>
+            @if (isOpen(g.from)) {
+        <div class="scenes" [class.wide]="b.format === 'long'">
+          @for (i of g.indices; track i) {
+            @let scene = scenes()[i];
+            @if (ink()) {
+            <article class="card scene ink" [class.open]="openScene() === i">
+              <img class="still" [src]="still(i)" [alt]="'Shot ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
+              <div class="body">
+                <div class="row spread">
+                  <strong>Shot {{ i + 1 }}@if (scene.page) { <span class="pill tiny">new page</span> }</strong>
+                  <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
+                </div>
+                <p class="small said">@for (w of spoken(i); track w.n) {<span class="w"><sup>{{ w.n }}</sup>{{ w.w }}</span> }</p>
+                <p class="small muted">{{ scene.note }}@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }</p>
+                @if (openScene() !== i) {
+                  <pre class="beats">{{ (scene.lines ?? []).join('\n') }}</pre>
+                }
+                <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
               </div>
 
-              @for (e of scene.elements; track $index; let k = $index) {
-                <div class="element">
-                  <div class="thumb">
-                    @if (e.kind === 'character') { <img [src]="castThumb(e)" alt="" /> }
-                    @else if (e.kind === 'prop' && propThumb(e.name)) { <img [src]="propThumb(e.name)" alt="" /> }
-                    @else { <span class="muted small">{{ e.kind }}</span> }
+              @if (openScene() === i) {
+                <div class="editor">
+                  <div class="scene-fields ink-fields">
+                    <label class="field"><span>Camera</span>
+                      <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
+                        @for (o of inkCameras; track o.value) { <option [value]="o.value">{{ o.label }}</option> }</select></label>
+                    <label class="field wide"><span>What the viewer sees</span>
+                      <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
                   </div>
-                  <div class="fields">
-                    <label class="field"><span>Kind</span>
-                      <select [ngModel]="e.kind" (ngModelChange)="changeElement(i, k, { kind: $event, name: $event === 'character' ? 'narrator' : e.name })">
-                        @for (o of ['character', 'prop', 'text', 'number', 'arrow']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                    @if (e.kind === 'character') {
-                      <label class="field"><span>Who</span>
-                        <select [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })">
-                          @for (o of options.CAST; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                      <label class="field"><span>Pose</span>
-                        <select [ngModel]="e.pose" (ngModelChange)="changeElement(i, k, { pose: $event })">
-                          @for (o of options.POSES; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
-                      <label class="field"><span>Face</span>
-                        <select [ngModel]="e.expression" (ngModelChange)="changeElement(i, k, { expression: $event })">
-                          @for (o of options.EXPRESSIONS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                      <label class="field"><span>Facing</span>
-                        <select [ngModel]="e.facing" (ngModelChange)="changeElement(i, k, { facing: $event })">
-                          <option value="right">right</option><option value="left">left</option></select></label>
-                      <label class="check small"><input type="checkbox" [ngModel]="e.talking" (ngModelChange)="changeElement(i, k, { talking: $event })" />
-                        <span>Talks</span></label>
-                    }
-                    @if (e.kind === 'prop') {
-                      <label class="field"><span>Prop</span>
-                        <input type="text" list="props" [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })"
-                               placeholder="snake_case name" /></label>
-                    }
-                    @if (e.kind === 'text' || e.kind === 'number' || e.kind === 'prop') {
-                      <label class="field"><span>{{ e.kind === 'prop' ? 'Label' : 'Text' }}</span>
-                        <input type="text" maxlength="60" [ngModel]="e.text" (ngModelChange)="changeElement(i, k, { text: $event })" /></label>
-                    }
-                    <label class="field"><span>{{ e.kind === 'arrow' ? 'From' : 'Place' }}</span>
-                      <select [ngModel]="e.slot" (ngModelChange)="changeElement(i, k, { slot: $event })">
-                        @for (o of options.SLOTS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
-                    @if (e.kind === 'arrow') {
-                      <label class="field"><span>To</span>
-                        <select [ngModel]="e.to_slot" (ngModelChange)="changeElement(i, k, { to_slot: $event })">
-                          @for (o of options.SLOTS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
-                    }
-                    <label class="field"><span>Size</span>
-                      <select [ngModel]="e.size" (ngModelChange)="changeElement(i, k, { size: $event })">
-                        <option value="small">small</option><option value="medium">medium</option><option value="large">large</option></select></label>
-                    <label class="field"><span>Appears</span>
-                      <select [ngModel]="e.enter_word" (ngModelChange)="changeElement(i, k, { enter_word: $event })">
-                        <option [ngValue]="null">with the scene</option>
-                        @for (w of spoken(i); track w.n) { <option [ngValue]="w.n">on “{{ w.w }}”</option> }</select></label>
-                    <label class="field"><span>Entrance</span>
-                      <select [ngModel]="e.enter" (ngModelChange)="changeElement(i, k, { enter: $event })">
-                        @for (o of ['pop', 'slide', 'fade', 'none']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                    <label class="field"><span>Motion</span>
-                      <select [ngModel]="e.motion" (ngModelChange)="changeElement(i, k, { motion: $event })">
-                        @for (o of options.MOTIONS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
-                    <button class="sm quiet danger" (click)="removeElement(i, k)">Remove</button>
+                  <label class="field"><span>Beats: one per line, the word number first (the small numbers above the words)</span>
+                    <textarea class="beats" spellcheck="false" [rows]="Math.max(4, (scene.lines ?? []).length + 1)"
+                              [ngModel]="(scene.lines ?? []).join('\n')" (ngModelChange)="setLines(i, $event)"></textarea></label>
+                  <details class="fold small">
+                    <summary class="muted">How to write beats</summary>
+                    <pre class="cheat">{{ cheatSheet }}</pre>
+                  </details>
+                  <div class="row">
+                    <span class="grow"></span>
+                    <label class="field split"><span>New shot from</span>
+                      <select #splitInk>
+                        @for (w of spoken(i).slice(1); track w.n) { <option [value]="w.n">“{{ w.w }}”</option> }</select></label>
+                    <button class="sm" (click)="splitAt(i, +splitInk.value)" [disabled]="spoken(i).length < 2">Split</button>
+                    <button class="sm quiet danger" (click)="removeScene(i)">Remove shot</button>
                   </div>
                 </div>
               }
-
-              <div class="row">
-                <span class="small muted">Add:</span>
-                @for (kind of ['character', 'prop', 'text', 'number', 'arrow']; track kind) {
-                  <button class="sm" (click)="addElement(i, $any(kind))" [disabled]="scene.elements.length >= 4">{{ kind }}</button>
-                }
-                <span class="grow"></span>
-                <label class="field split"><span>New scene from</span>
-                  <select #split>
-                    @for (w of spoken(i).slice(1); track w.n) { <option [value]="w.n">“{{ w.w }}”</option> }</select></label>
-                <button class="sm" (click)="splitAt(i, +split.value)" [disabled]="spoken(i).length < 2">Split</button>
-                <button class="sm quiet danger" (click)="removeScene(i)">Remove scene</button>
+            </article>
+            } @else {
+            <article class="card scene" [class.open]="openScene() === i">
+              <img class="still" [src]="still(i)" [alt]="'Scene ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
+              <div class="body">
+                <div class="row spread">
+                  <strong>Scene {{ i + 1 }}</strong>
+                  <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
+                </div>
+                <p class="small said">“@for (w of spoken(i); track w.n) {{{ w.w }} }”</p>
+                <p class="small muted">{{ scene.note }}</p>
+                <div class="chips">
+                  @for (e of scene.elements; track $index) {
+                    <span class="chip">{{ e.kind === 'character' ? e.name + ' · ' + label(e.pose) : e.kind === 'prop' ? e.name : e.kind === 'arrow' ? 'arrow' : '“' + e.text + '”' }}</span>
+                  }
+                </div>
+                <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
               </div>
+
+              @if (openScene() === i) {
+                <div class="editor">
+                  <div class="scene-fields">
+                    <label class="field"><span>Background</span>
+                      <select [ngModel]="scene.background" (ngModelChange)="change(i, { background: $event })">
+                        @for (o of options.BACKGROUNDS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                    <label class="field"><span>Camera</span>
+                      <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
+                        @for (o of options.CAMERAS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
+                    <label class="field wide"><span>Note</span>
+                      <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
+                  </div>
+
+                  @for (e of scene.elements; track $index; let k = $index) {
+                    <div class="element">
+                      <div class="thumb">
+                        @if (e.kind === 'character') { <img [src]="castThumb(e)" alt="" /> }
+                        @else if (e.kind === 'prop' && propThumb(e.name)) { <img [src]="propThumb(e.name)" alt="" /> }
+                        @else { <span class="muted small">{{ e.kind }}</span> }
+                      </div>
+                      <div class="fields">
+                        <label class="field"><span>Kind</span>
+                          <select [ngModel]="e.kind" (ngModelChange)="changeElement(i, k, { kind: $event, name: $event === 'character' ? 'narrator' : e.name })">
+                            @for (o of ['character', 'prop', 'text', 'number', 'arrow']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                        @if (e.kind === 'character') {
+                          <label class="field"><span>Who</span>
+                            <select [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })">
+                              @for (o of options.CAST; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                          <label class="field"><span>Pose</span>
+                            <select [ngModel]="e.pose" (ngModelChange)="changeElement(i, k, { pose: $event })">
+                              @for (o of options.POSES; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
+                          <label class="field"><span>Face</span>
+                            <select [ngModel]="e.expression" (ngModelChange)="changeElement(i, k, { expression: $event })">
+                              @for (o of options.EXPRESSIONS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                          <label class="field"><span>Facing</span>
+                            <select [ngModel]="e.facing" (ngModelChange)="changeElement(i, k, { facing: $event })">
+                              <option value="right">right</option><option value="left">left</option></select></label>
+                          <label class="check small"><input type="checkbox" [ngModel]="e.talking" (ngModelChange)="changeElement(i, k, { talking: $event })" />
+                            <span>Talks</span></label>
+                        }
+                        @if (e.kind === 'prop') {
+                          <label class="field"><span>Prop</span>
+                            <input type="text" list="props" [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })"
+                                   placeholder="snake_case name" /></label>
+                        }
+                        @if (e.kind === 'text' || e.kind === 'number' || e.kind === 'prop') {
+                          <label class="field"><span>{{ e.kind === 'prop' ? 'Label' : 'Text' }}</span>
+                            <input type="text" maxlength="60" [ngModel]="e.text" (ngModelChange)="changeElement(i, k, { text: $event })" /></label>
+                        }
+                        <label class="field"><span>{{ e.kind === 'arrow' ? 'From' : 'Place' }}</span>
+                          <select [ngModel]="e.slot" (ngModelChange)="changeElement(i, k, { slot: $event })">
+                            @for (o of options.SLOTS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
+                        @if (e.kind === 'arrow') {
+                          <label class="field"><span>To</span>
+                            <select [ngModel]="e.to_slot" (ngModelChange)="changeElement(i, k, { to_slot: $event })">
+                              @for (o of options.SLOTS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
+                        }
+                        <label class="field"><span>Size</span>
+                          <select [ngModel]="e.size" (ngModelChange)="changeElement(i, k, { size: $event })">
+                            <option value="small">small</option><option value="medium">medium</option><option value="large">large</option></select></label>
+                        <label class="field"><span>Appears</span>
+                          <select [ngModel]="e.enter_word" (ngModelChange)="changeElement(i, k, { enter_word: $event })">
+                            <option [ngValue]="null">with the scene</option>
+                            @for (w of spoken(i); track w.n) { <option [ngValue]="w.n">on “{{ w.w }}”</option> }</select></label>
+                        <label class="field"><span>Entrance</span>
+                          <select [ngModel]="e.enter" (ngModelChange)="changeElement(i, k, { enter: $event })">
+                            @for (o of ['pop', 'slide', 'fade', 'none']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                        <label class="field"><span>Motion</span>
+                          <select [ngModel]="e.motion" (ngModelChange)="changeElement(i, k, { motion: $event })">
+                            @for (o of options.MOTIONS; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                        <button class="sm quiet danger" (click)="removeElement(i, k)">Remove</button>
+                      </div>
+                    </div>
+                  }
+
+                  <div class="row">
+                    <span class="small muted">Add:</span>
+                    @for (kind of ['character', 'prop', 'text', 'number', 'arrow']; track kind) {
+                      <button class="sm" (click)="addElement(i, $any(kind))" [disabled]="scene.elements.length >= 4">{{ kind }}</button>
+                    }
+                    <span class="grow"></span>
+                    <label class="field split"><span>New scene from</span>
+                      <select #split>
+                        @for (w of spoken(i).slice(1); track w.n) { <option [value]="w.n">“{{ w.w }}”</option> }</select></label>
+                    <button class="sm" (click)="splitAt(i, +split.value)" [disabled]="spoken(i).length < 2">Split</button>
+                    <button class="sm quiet danger" (click)="removeScene(i)">Remove scene</button>
+                  </div>
+                </div>
+              }
+            </article>
+            }
+          }
+        </div>
+            }
+          </section>
+        }
+
+        @if (b.photos.length || b.photo_searches_missing.length) {
+          <section class="card archive">
+            <h3>Pictures from the archives</h3>
+            <p class="small muted">Found on Wikimedia Commons: public domain, CC0 and CC BY only. "Try another" uses the
+              next result for that search, in every video that asks for it; render again to see it.</p>
+            <div class="photos">
+              @for (p of b.photos; track p.id) {
+                <article class="photo">
+                  <img [src]="photoUrl(p)" [alt]="p.title" loading="lazy" />
+                  <div class="small">
+                    <strong>“{{ p.query }}”</strong>
+                    <span class="muted">{{ p.title }} · {{ p.creator }} · {{ p.license }}</span>
+                    <span class="row">
+                      <a [href]="p.landing_url" target="_blank" rel="noopener">source</a>
+                      <button class="sm quiet" (click)="nextPhoto(p)" [disabled]="swapping() === p.id">
+                        {{ swapping() === p.id ? 'Looking…' : 'Try another' }}</button>
+                    </span>
+                  </div>
+                </article>
+              }
+            </div>
+            @if (b.photo_searches_missing.length) {
+              <p class="small muted">Found when it renders: {{ b.photo_searches_missing.join(', ') }}.</p>
+            }
+          </section>
+        }
+
+      }
+      @case ('sound') {
+        <section class="card top">
+          <div class="sound">
+            <label class="field"><span>Music</span>
+              <select [ngModel]="b.music_id" (ngModelChange)="setSound({ music_id: $event })">
+                <option [ngValue]="null">No music</option>
+                @for (m of music(); track m.id) { <option [ngValue]="m.id">{{ m.name }}</option> }
+              </select>
+              @if (!music().length) { <small><a routerLink="/props">Upload a track</a> in the Library first.</small> }
+            </label>
+            <label class="field"><span>Music level {{ b.music_db }} dB</span>
+              <input type="range" min="-34" max="-10" step="1" [ngModel]="b.music_db" (change)="setSound({ music_db: +$any($event.target).value })"
+                     [disabled]="!b.music_id" />
+              <small>Lowered further while the voice speaks.</small>
+            </label>
+            <label class="check"><input type="checkbox" [ngModel]="b.effects" (ngModelChange)="setSound({ effects: $event })" />
+              <span>{{ ink() ? 'Pen and camera sounds' : 'Pops and whooshes' }}<small>{{ ink()
+                ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
+                : 'Quiet sounds when things appear.' }}</small></span></label>
+          </div>
+          <div class="row sound-tools">
+            <button class="sm" (click)="suggest()" [disabled]="suggesting()">
+              {{ suggesting() ? (searchOnline() ? 'Searching and listening… about 20 s' : 'Thinking…') : 'Suggest music' }}</button>
+            <label class="check small"><input type="checkbox" [ngModel]="searchOnline()" (ngModelChange)="searchOnline.set($event)" />
+              <span>Search online too</span></label>
+            <button class="sm" (click)="hear(b.music_id, b.music_db)">Hear the mix (first 25 s)</button>
+            <span class="small muted">A preview of voice, music and effects together; nothing is rendered.</span>
+          </div>
+          @if (previewSrc()) {
+            <audio class="mix" controls autoplay [src]="previewSrc()"></audio>
+          }
+          @if (suggestion(); as sg) {
+            <div class="suggestion">
+              @if (chosen(sg); as c) {
+                <p class="small"><strong>Suggested: “{{ c.title }}”{{ c.source === 'online' ? ' (online)' : '' }} at {{ sg.level_db }} dB.</strong> {{ sg.reason }}</p>
+              } @else {
+                <p class="small"><strong>Suggested: no music.</strong> {{ sg.reason }}</p>
+              }
+              @if (sg.searches.length) { <p class="small muted">Searched online for: {{ sg.searches.join(', ') }}.</p> }
+              <div class="row">
+                @if (chosen(sg); as c) {
+                  <button class="sm primary" (click)="useTrack(c, sg.level_db)" [disabled]="adding() === c.ref">
+                    {{ adding() === c.ref ? 'Adding…' : c.source === 'online' ? 'Add and use' : 'Use this' }}</button>
+                  <button class="sm" (click)="hearTrack(c, sg.level_db)">Hear it with the voice</button>
+                } @else if (b.music_id !== null) {
+                  <button class="sm primary" (click)="setSound({ music_id: null })">Use no music</button>
+                }
+              </div>
+              @if (sg.ranking.length) {
+                <ul class="ranking">
+                  @for (r of sg.ranking; track r.ref) {
+                    <li><span class="num fit">{{ r.fit }}/10</span>
+                      <span class="grow">
+                        <strong>{{ r.title }}</strong>
+                        <span class="pill tiny" [class.online]="r.source === 'online'">{{ r.source === 'online' ? licence(r.license) : 'in library' }}</span>
+                        <span class="muted"> {{ r.creator ? 'by ' + r.creator + ' · ' : '' }}{{ clock(r.duration) }}{{ r.words.length ? ' · ' + r.words.join(', ') : '' }}</span>
+                        <span class="reason muted">{{ r.reason }}</span>
+                      </span>
+                      <button class="sm quiet" (click)="hearTrack(r, sg.level_db)">Hear</button>
+                      <button class="sm" (click)="useTrack(r, sg.level_db)" [disabled]="adding() === r.ref">
+                        {{ adding() === r.ref ? 'Adding…' : r.source === 'online' ? 'Add and use' : 'Use' }}</button>
+                      @if (r.landing_url) { <a class="small" [href]="r.landing_url" target="_blank" rel="noopener">source</a> }
+                    </li>
+                  }
+                </ul>
+              }
             </div>
           }
-        </article>
-        }
+        </section>
       }
-    </div>
+      @case ('publish') {
+        @if (b.has_video && b.review === 'approved') {
+          <app-youtube-text [storyboardId]="b.id" [text]="b.youtube" (changed)="setYoutube($event)" />
+        } @else {
+          <div class="notice small"><span>{{ b.has_video ? 'Approve the video (Video tab) and the YouTube title and description can be written here.' : 'Render the video and approve it first; the YouTube title and description are written here.' }}</span></div>
         }
-      </section>
+        @if (b.has_video) {
+          <app-publish-check [storyboardId]="b.id" [version]="b.review + b.look + b.music_id + b.rendered_at + version()" />
+        }
+
+        <section class="card publish">
+          <h3>Subtitles, chapters and credits</h3>
+          <p class="small muted">The description above already holds the chapters and credits; here they are on their own.</p>
+          <div class="publish-grid">
+            <div>
+              <p class="small muted">Subtitles from the script's exact words, timed to the voice. Upload them in YouTube Studio
+                (Subtitles, Upload file, With timing).</p>
+              <a class="btn sm" [href]="subtitlesUrl()" download>Download subtitles (.srt)</a>
+            </div>
+            @if (b.credits) {
+              <div>
+                <p class="small muted">Credits: pictures and music used. CC BY licences ask for these lines in the
+                  description; for public-domain works they are a courtesy.</p>
+                <pre class="chapters">{{ b.credits }}</pre>
+                <button class="sm" (click)="copy(b.credits)">Copy credits</button>
+              </div>
+            }
+            @if (b.format === 'long') {
+              @if (chapterList(); as c) {
+                <div>
+                  <p class="small muted">Chapters: paste these lines into the video description.</p>
+                  <pre class="chapters">{{ c.text }}</pre>
+                  @for (p of c.problems; track p) { <div class="notice small"><span>{{ p }}</span></div> }
+                  <button class="sm" (click)="copy(c.text)">Copy chapters</button>
+                </div>
+              }
+            }
+          </div>
+        </section>
+
+      }
     }
 
     <datalist id="props">

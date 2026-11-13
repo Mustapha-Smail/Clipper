@@ -108,7 +108,7 @@ def search(query: str, limit: int = 15) -> list[dict]:
         if score < 0.6:
             continue
         out.append({"score": score,"key": str(page.get("pageid")), "title": title.replace("_", " ")[:200],
-                    "creator": _text(meta, "Artist")[:200] or "unknown author",
+                    "creator": _once(_text(meta, "Artist"))[:200] or "unknown author",
                     "license": license_name[:60], "license_url": _text(meta, "LicenseUrl")[:300],
                     "landing_url": info.get("descriptionurl", ""), "image_url": info.get("thumburl") or info.get("url"),
                     "width": info.get("width", 0), "height": info.get("height", 0)})
@@ -116,8 +116,18 @@ def search(query: str, limit: int = 15) -> list[dict]:
     return out
 
 
+def _once(text: str) -> str:
+    """Commons often says a name twice ("Unknown author Unknown author", a label and its tooltip): once is enough."""
+    words = text.split()
+    half = len(words) // 2
+    if half and len(words) % 2 == 0 and words[:half] == words[half:]:
+        return " ".join(words[:half])
+    return text
+
+
 def credit(photo: dict) -> str:
     """The line for the video description."""
+    photo = {**photo, "creator": _once(photo["creator"])}
     if re.match(r"(public domain|pd|pdm|cc0|no restrictions)", photo["license"], re.I):
         return (f"\"{photo['title']}\" by {photo['creator']}, public domain, via Wikimedia Commons "
                 f"({photo['landing_url']})")

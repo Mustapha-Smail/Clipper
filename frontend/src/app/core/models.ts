@@ -467,6 +467,18 @@ export interface Storyboard extends StoryboardSummary {
   photos: ArchivePhoto[];
   photo_searches_missing: string[];
   credits: string;
+  youtube: YoutubeText | null;
+}
+
+/** The YouTube title, description and tags of an approved video. Copied into YouTube Studio by you. */
+export interface YoutubeText {
+  titles: string[];
+  title: string;
+  description: string;
+  tags: string[];
+  made_at: string | null;
+  edited: boolean;
+  problems: string[];
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
