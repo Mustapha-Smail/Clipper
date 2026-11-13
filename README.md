@@ -124,16 +124,25 @@ it into a title, hook, beats and a YouTube search. "Check it" then:
 
 1. searches YouTube for the topic (official YouTube Data API v3, about 102 of
    the 10,000 free daily quota units per check), and
-2. asks Claude to judge the hook, how drawable it is, how settled the facts
-   are, whether the angle is already taken and whether ads would be limited.
+2. asks Claude to judge the hook, how easy it is to follow for your audience,
+   how drawable it is, how settled the facts are, whether the angle is already
+   taken and whether ads would be limited.
 
 The score out of 100 adds demand (views of the 3rd most-viewed long video),
 room for a small channel (best views from a channel under 100K subscribers),
-age of the top videos, a free angle, the hook, drawability, facts and Shorts
+age of the top videos, a free angle, the hook, how easy it is to follow,
+drawability, facts and Shorts
 potential, minus penalties for limited ads or a big channel's recent video on
 the same angle. "Beats, competition and score" shows every line and the
 YouTube results it used. Without `YOUTUBE_API_KEY` in `.env`, only Claude's
-part is scored (out of 40) and the card says so.
+part is scored (out of 50) and the card says so.
+
+**Written for:** next to the theme, choose who the videos are for: Everyone (a
+curious 12-year-old, no background: the default), Curious adults or
+Enthusiasts. Ideas start from daily life for that audience, research picks the
+one thing to understand and plain words for every term, and scripts follow
+plain-language rules: names and terms explained or dropped, few and rounded
+numbers, short sentences, an everyday comparison for every mechanism.
 
 A checked idea also suggests a length, from the same results and shown with
 its reason: when the best Short has more than twice the views of the best long
@@ -163,6 +172,16 @@ to rewrite one section ("shorter", "simpler words") and keep or discard its
 version, then save. Editing marks the fact check out of date until you run it
 again. "Download as text" gives the script to read from. A full run takes about
 four minutes.
+
+**Easy to follow:** every script gets a plain-language check for its
+audience, plain arithmetic with every point shown: school reading grade,
+words per sentence, long words, numbers a minute (a date counts once) and
+names a minute (months, days, everyday holidays and the video's own subject
+are not counted), plus its longest sentences. "Make it simpler" rewrites the
+whole script in plainer words for the audience: it may drop names, numbers and
+details the main idea does not need and add everyday comparisons, never new
+facts. "Switch versions" brings the old text back; check the facts again
+after. It costs about as much as "Make it sound spoken".
 
 Search uses Claude's basic web search tool on purpose: the newer one returned
 answers without citations, which the fact check depends on.

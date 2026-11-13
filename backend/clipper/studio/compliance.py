@@ -32,6 +32,7 @@ JOB_EVENTS = {
     "redraft": ("draft", "ai", "Wrote the script again from the research"),
     "factcheck": ("factcheck", "ai", "Checked the facts against the sources"),
     "spoken": ("spoken", "ai", "Rewrote the script to sound spoken"),
+    "simpler": ("spoken", "ai", "Rewrote the script in plainer words for the audience"),
     "voice_ai": ("voice", "ai", "Generated an AI narration"),
     "voice_rec": ("voice", "you", "Recorded the narration in your own voice"),
     "storyboard": ("plan", "ai", "Planned the scenes"),

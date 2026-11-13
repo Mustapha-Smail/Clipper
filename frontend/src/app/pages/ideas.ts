@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { AppSettings, Idea, IdeaPatch, IdeaStatus, IdeaVideo } from '../core/models';
+import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 
@@ -37,6 +37,12 @@ export class IdeasPage {
 
   private settings: AppSettings | null = null;
   protected readonly theme = signal('');
+  protected readonly audiences = AUDIENCES;
+  protected readonly audience = signal<Audience>('everyone');
+  protected readonly audienceHint = computed(() => {
+    const hint = AUDIENCES.find((a) => a.value === this.audience())?.hint ?? '';
+    return hint.charAt(0).toUpperCase() + hint.slice(1);
+  });
   protected readonly count = signal(8);
   protected readonly generating = signal(false);
   protected readonly ownText = signal('');
@@ -112,6 +118,21 @@ export class IdeasPage {
       next: (bundle) => {
         this.settings = bundle.settings;
         this.theme.set(bundle.settings.studio_theme);
+        this.audience.set(bundle.settings.audience ?? 'everyone');
+      },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  /** Saved at once in Settings: the next ideas, research and scripts are written for this audience. */
+  protected setAudience(audience: Audience): void {
+    this.audience.set(audience);
+    if (!this.settings) return;
+    const updated = { ...this.settings, audience };
+    this.api.saveSettings(updated).subscribe({
+      next: () => {
+        this.settings = updated;
+        this.toasts.ok(`New ideas and scripts are now written for: ${AUDIENCES.find((a) => a.value === audience)?.label}`);
       },
       error: (err) => this.toasts.error(err),
     });

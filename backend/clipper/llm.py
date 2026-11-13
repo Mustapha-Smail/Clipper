@@ -32,6 +32,7 @@ TASKS = {
     "ideas": ("writing", "Suggesting ideas"),
     "script_write": ("writing", "Writing scripts"),
     "rewrite": ("writing", "Rewriting a section"),
+    "simplify": ("writing", "Making scripts simpler"),
     "factcheck": ("writing", "Listing and checking claims"),
     "storyboard": ("writing", "Planning storyboards"),
     "idea_check": ("quick", "Checking ideas"),

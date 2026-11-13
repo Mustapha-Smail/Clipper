@@ -76,6 +76,8 @@ def run_job(job_id: int) -> None:
                 script_mod.factcheck(params["script_id"], rep)
             elif stage == "spoken":
                 script_mod.make_spoken(params["script_id"], rep)
+            elif stage == "simpler":
+                script_mod.make_simpler(params["script_id"], rep)
             elif stage == "speak":
                 voice_mod.speak(params["take_id"], settings, rep)
             elif stage == "prepare":

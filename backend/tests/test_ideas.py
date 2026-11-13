@@ -15,7 +15,8 @@ def video(views, subs, published=RECENT, duration=600, title="A video"):
 
 
 def judgement(**over):
-    base = dict(hook_score=8, hook_reason="", drawable_score=9, drawable_reason="", facts_score=9, facts_reason="",
+    base = dict(hook_score=8, hook_reason="", easy_score=8, easy_reason="",
+                drawable_score=9, drawable_reason="", facts_score=9, facts_reason="",
                 ad_friendly=True, ad_reason="", angle_taken=False, angle_reason="", big_recent_same="")
     return {**base, **over}
 
@@ -39,7 +40,7 @@ def test_breakdown_adds_up_and_full_marks_need_demand_room_and_a_strong_idea():
     strong = ideas.assess(idea(research(video(3_000_000, 5_000_000, OLD), video(2_000_000, 2_000_000, OLD),
                                         video(1_500_000, 50_000, OLD), video(900_000, 30_000, OLD),
                                         video(700_000, 20_000, OLD)),
-                               judgement(hook_score=10, drawable_score=10, facts_score=10), shorts=5))
+                               judgement(hook_score=10, easy_score=10, drawable_score=10, facts_score=10), shorts=5))
     assert strong["score"] == 100 and strong["complete"]
     assert round(sum(line["points"] for line in strong["breakdown"])) == strong["score"]
     assert strong["demand"]["reference_views"] == 1_500_000
@@ -67,8 +68,9 @@ def test_penalties_are_shown_as_lines_and_flags():
 
 
 def test_without_youtube_the_score_is_partial_and_says_so():
-    result = ideas.assess(idea(None, judgement(hook_score=10, drawable_score=10, facts_score=10), shorts=5))
-    assert not result["complete"] and result["score"] == 40
+    top = judgement(hook_score=10, easy_score=10, drawable_score=10, facts_score=10)
+    result = ideas.assess(idea(None, top, shorts=5))
+    assert not result["complete"] and result["score"] == 50
     assert any("YOUTUBE_API_KEY" in f for f in result["flags"])
 
 
@@ -144,12 +146,12 @@ def test_generate_validate_decide_and_edit(client, fake_claude):
     assert fake_claude["existing"] == ["Idea 0", "Idea 1", "Idea 2"]   # Claude is told what you already have
 
     checked = client.post(f"/api/v1/ideas/{made[1]['id']}/validate").json()
-    assert checked["score"] == 31 and not checked["complete"] and checked["validated_at"]
+    assert checked["score"] == 39 and not checked["complete"] and checked["validated_at"]
     listed = client.get("/api/v1/ideas").json()
     assert listed[0]["id"] == made[1]["id"]                             # checked ideas come first
 
     approved = client.patch(f"/api/v1/ideas/{made[1]['id']}", json={"status": "approved", "notes": "Go"}).json()
-    assert approved["status"] == "approved" and approved["score"] == 31
+    assert approved["status"] == "approved" and approved["score"] == 39
     edited = client.patch(f"/api/v1/ideas/{made[1]['id']}", json={"title": "Better title"}).json()
     assert edited["score"] is None and edited["validated_at"] is None  # the old check no longer applies
 
@@ -178,3 +180,13 @@ def test_theme_suggestions_avoid_existing_themes(client, monkeypatch):
     assert "How everyday things secretly work" in seen["content"] and "five different themes" in seen["content"]
     client.post("/api/v1/ideas/themes", json={"hint": "money"})
     assert "leaning towards: money" in seen["content"]
+
+
+def test_an_idea_that_needs_background_says_so_and_old_checks_are_not_penalised():
+    hard = ideas.assess(idea(None, judgement(easy_score=3, easy_reason="needs the Julian calendar")))
+    assert any("Julian calendar" in f for f in hard["flags"])
+    assert {"label": "Easy to follow 3/10", "points": 3.0} in hard["breakdown"]
+    old = judgement()
+    del old["easy_score"], old["easy_reason"]
+    before = ideas.assess(idea(None, old))
+    assert any(line["label"].startswith("Easy to follow: not checked") for line in before["breakdown"])

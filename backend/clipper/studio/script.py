@@ -24,6 +24,7 @@ from .. import llm
 from ..db import session_scope
 from ..db.models import Script
 from ..jobs import Reporter
+from . import plain
 
 WORDS_PER_MINUTE = 150      # brisk narration
 MAX_WEB_CHECKS = 12         # claims searched per fact check, beyond the research notes
@@ -67,6 +68,7 @@ def _brief(script: Script) -> str:
                  f"Format: {'one topic' if script.format == 'single' else 'a list, one chapter per item'}",
                  f"Target length: about {script.target_minutes} minutes "
                  f"({script.target_minutes * WORDS_PER_MINUTE} words of narration)"]
+    lines.append(f"Audience: {plain.audience()}")
     if idea is not None:
         lines += [f"Hook: {idea.hook}", f"The surprising answer: {idea.answer}", f"Angle: {idea.angle}", "Beats:"]
         lines += [f"- {b['text']}" for b in idea.beats]
@@ -94,11 +96,19 @@ Search the web. Prefer primary and reference sources: manufacturers and standard
 bodies, universities, museums, encyclopedias, established science outlets. Avoid \
 content farms and other YouTube channels.
 
-Write the notes as short bullet points grouped under one heading per beat, then:
-- "Surprising details": specific numbers, names, dates and odd facts a viewer would repeat.
+Start with "The one thing to understand": the single idea the video must leave the \
+viewer with, in one plain sentence the audience would get.
+
+Then write the notes as short bullet points grouped under one heading per beat, then:
+- "Simple explanations": everyday comparisons that make the mechanism easy to picture for \
+the audience, the best first.
+- "Plain words": every technical term the topic needs, each with a plain replacement or a \
+one-line everyday explanation.
+- "Surprising details": numbers, names, dates and odd facts a viewer would repeat. Put the \
+three to five best first; mark the rest "(optional)": the writer leaves out what the \
+story does not need.
 - "Myths and disputes": popular claims on this topic that are false or contested, and \
 what is actually known. The script must not repeat a myth as fact.
-- "Simple explanations": analogies that make the mechanism easy to picture.
 
 Every factual bullet must be backed by a source you found. If you cannot confirm \
 something, leave it out or list it under Myths and disputes as unconfirmed."""
@@ -143,9 +153,11 @@ Write for the ear, as a person talking to one viewer, not as an article read alo
 
 WRITE = """\
 You write narration for a faceless animated YouTube channel: simple drawn characters on \
-screen, one narrator. The voice is deadpan and dry, with jokes that come from the facts \
-themselves, understatement and quick asides, never from mocking the viewer. No stage \
+screen, one narrator. The voice is friendly and lightly funny, with jokes that come from \
+the facts themselves and quick asides, never from mocking the viewer. No stage \
 directions, no music cues, no source markers, no emojis.
+
+{plain}
 
 """ + SPOKEN + """
 
@@ -156,8 +168,9 @@ Structure:
 - A short outro that lands the final surprise. One light line asking to subscribe is \
 fine; no begging.
 
-Use only facts from the research notes. Do not add numbers, dates, names or claims that \
-the notes do not contain, and never present an item from "Myths and disputes" as true; \
+Use only facts from the research notes, and only those the one idea needs: leaving a \
+true detail out is better than crowding the viewer. Do not add numbers, dates, names or \
+claims that the notes do not contain, and never present an item from "Myths and disputes" as true; \
 the myth itself can be a joke or a setup if the script corrects it. Hit the target length \
 within about 10 percent."""
 
@@ -169,7 +182,7 @@ def write(script_id: int, rep: Reporter) -> None:
     prompt = (f"<video>\n{_brief(script)}\n</video>\n\n"
               f"<research_notes>\n{script.research['notes']}\n</research_notes>")
     rep.info("Writing the narration")
-    draft = llm.ask("script_write", WRITE, prompt, Draft, effort="high")
+    draft = llm.ask("script_write", WRITE.format(plain=plain.rules()), prompt, Draft, effort="high")
     sections = [{"key": uuid.uuid4().hex[:8], **s.model_dump()} for s in draft.sections]
     if script.video == "short":       # a Short is one section, and it is the Short
         sections = [{**sections[0], "text": "\n\n".join(s["text"] for s in sections), "short": True}]
@@ -201,7 +214,7 @@ def rewrite_section(script: Script, key: str, instruction: str) -> str:
     prompt = (f"<research_notes>\n{(script.research or {}).get('notes', '')}\n</research_notes>\n\n"
               f"<script>\n{numbered(script.sections)}\n</script>\n\n"
               f"Rewrite the section with key \"{key}\" ({section['heading']}). Instruction: {instruction}")
-    return llm.ask("rewrite", REWRITE, prompt, Rewrite, effort="medium").text.strip()
+    return llm.ask("rewrite", REWRITE.format(plain=plain.rules()), prompt, Rewrite, effort="medium").text.strip()
 
 
 class SpokenSection(BaseModel):
@@ -215,7 +228,7 @@ class SpokenScript(BaseModel):
 
 MAKE_SPOKEN = """\
 You turn an existing narration, written to be read, into narration written to be spoken \
-by the dry, deadpan, curious narrator of a faceless animated YouTube channel.
+by the friendly, lightly funny narrator of a faceless animated YouTube channel.
 
 """ + SPOKEN + """
 
@@ -244,6 +257,53 @@ def make_spoken(script_id: int, rep: Reporter) -> None:
         row.sections = sections
         row.status = "draft"
     rep.info(f"Done: {before} words before, {after} after. Check the facts again before recording.")
+
+
+MAKE_SIMPLER = """\
+You make an existing narration easy to follow for the audience of a faceless animated \
+YouTube channel, without changing what it says is true.
+
+{plain}
+
+""" + SPOKEN + """
+
+Every fact you keep stays exactly as true as it was: no new facts, numbers, names or \
+claims. You may leave out names, dates, numbers and details the main idea does not need, \
+replace a term with plain words, round a number, and add an everyday comparison (a \
+comparison is not a fact: "like a spreadsheet"). Keep each section's job and the jokes \
+that land for everyone. Return every section with its key, in order; it may get shorter, \
+and grow by at most 10 percent."""
+
+
+def make_simpler(script_id: int, rep: Reporter) -> None:
+    """Rewrite the whole script for the audience in one call: plainer words, fewer names and numbers.
+    The old text is kept for undo, and the facts must be checked again."""
+    script = _load(script_id)
+    if not script.sections:
+        raise RuntimeError("The script has no text yet")
+    before_check = plain.check(script.sections, plain.level(), script.title)
+    rep.info(f"Making the script simpler for: {plain.audience()}")
+    notes = (script.research or {}).get("notes", "")
+    prompt = (f"<research_notes>\n{notes}\n</research_notes>\n\n" if notes else "") + \
+        f"<script>\n{numbered(script.sections)}\n</script>"
+    result = llm.ask("simplify", MAKE_SIMPLER.format(plain=plain.rules()), prompt, SpokenScript, effort="high")
+    by_key = {x.key: x.text.strip() for x in result.sections if x.text.strip()}
+    missing = [x["heading"] for x in script.sections if x["key"] not in by_key]
+    if missing:
+        rep.warn(f"Kept as it was (not returned by the model): {', '.join(missing)}")
+    sections = [{**x, "text": by_key.get(x["key"], x["text"])} for x in script.sections]
+    after_check = plain.check(sections, plain.level(), script.title)
+    with session_scope() as db:
+        row = db.get(Script, script_id)
+        row.previous_sections = script.sections
+        row.sections = sections
+        row.status = "draft"
+    words = f"{word_count(script.sections)} words before, {word_count(sections)} after"
+    if before_check and after_check:
+        rep.info(f"Done: {words}; plain-language check {before_check['score']} -> {after_check['score']}. "
+                 "Check the facts again before recording.")
+    else:
+        rep.info(f"Done: {words}. Check the facts again before recording.")
 
 
 # --- 3. fact check -------------------------------------------------------------------

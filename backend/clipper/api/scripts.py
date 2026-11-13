@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .. import jobs, llm
 from ..db import get_db
 from ..db.models import Idea, Job, Script
-from ..studio import compliance
+from ..studio import compliance, plain
 from ..studio import script as script_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
@@ -59,9 +59,10 @@ def summary_out(script: Script, job: Job | None) -> s.ScriptSummary:
 
 def script_out(script: Script, job: Job | None) -> s.ScriptOut:
     fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job",
-                                              "can_undo_rewrite"}
+                                              "can_undo_rewrite", "plain"}
     return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
-                       can_undo_rewrite=bool(script.previous_sections))
+                       can_undo_rewrite=bool(script.previous_sections),
+                       plain=plain.check(script.sections or [], plain.level(), script.title))
 
 
 def _require_idle(db: Session, script: Script) -> None:
@@ -168,6 +169,15 @@ def make_spoken(script: Script = Depends(get_script), db: Session = Depends(get_
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
     return _start(db, script, "spoken")
+
+
+@router.post("/scripts/{script_id}/simpler", response_model=s.JobOut, status_code=202)
+def make_simpler(script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Rewrite the whole script in plainer words for the audience in Settings, keeping what is true.
+    Undo brings the old text back; check the facts again afterwards."""
+    if not script.sections:
+        raise HTTPException(409, "The script has no text yet")
+    return _start(db, script, "simpler")
 
 
 @router.post("/scripts/{script_id}/undo-rewrite", response_model=s.ScriptOut)

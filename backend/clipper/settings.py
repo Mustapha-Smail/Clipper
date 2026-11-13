@@ -41,6 +41,8 @@ class Settings(BaseModel):
 
     # Studio: the animated channel. Ideas are generated and judged against this theme.
     studio_theme: str = Field("How everyday things secretly work", max_length=300)
+    # Who the videos are for: ideas, research and scripts are written for them (see studio/plain.py).
+    audience: Literal["everyone", "curious", "enthusiasts"] = "everyone"
     # AI voice. Kokoro runs on this machine for free; ElevenLabs is paid and needs ELEVENLABS_API_KEY.
     voice_engine: Literal["kokoro", "elevenlabs"] = "kokoro"
     kokoro_voice: str = Field("am_michael", pattern=r"^[a-z]{2}_[a-z]+$")

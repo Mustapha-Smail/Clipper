@@ -217,6 +217,18 @@ export class ScriptPage {
     this.queue(this.api.factcheck(this.id), 'Fact check queued');
   }
 
+  protected async makeSimpler(): Promise<void> {
+    if (this.dirty()) {
+      this.toasts.error('Save your edits first, so the rewrite starts from them');
+      return;
+    }
+    if (!(await this.confirm.ask({ title: 'Rewrite the whole script in plainer words?',
+      message: 'Names, numbers and details the main idea does not need may be left out, and terms replaced with plain '
+        + 'words; nothing new is added. You can switch back to the previous version. Check the facts again after.',
+      confirm: 'Make it simpler' }))) return;
+    this.queue(this.api.makeSimpler(this.id), 'Rewrite queued. About a minute.');
+  }
+
   protected async makeSpoken(): Promise<void> {
     if (this.dirty()) {
       this.toasts.error('Save your edits first, so the rewrite starts from them');

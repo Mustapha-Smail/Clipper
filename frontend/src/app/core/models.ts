@@ -187,6 +187,8 @@ export interface MomentInput {
 export interface AppSettings {
   theme: string;
   studio_theme: string;
+  /** Who the videos are for: ideas, research and scripts are written for them. */
+  audience: Audience;
   voice_engine: 'kokoro' | 'elevenlabs';
   kokoro_voice: string;
   elevenlabs_voice: string;
@@ -367,6 +369,8 @@ export interface Script extends ScriptSummary {
   sections: ScriptSection[];
   claims: ScriptClaim[] | null;
   can_undo_rewrite: boolean;
+  /** How easy the narration is to follow for the audience: arithmetic, every deduction explained. Advice only. */
+  plain: PlainCheck | null;
 }
 
 export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minutes' | 'notes'>>;
@@ -523,6 +527,25 @@ export interface YoutubeText {
   made_at: string | null;
   edited: boolean;
   problems: string[];
+}
+
+export type Audience = 'everyone' | 'curious' | 'enthusiasts';
+
+export const AUDIENCES: { value: Audience; label: string; hint: string }[] = [
+  { value: 'everyone', label: 'Everyone', hint: 'a curious 12-year-old: no background, everyday words, few names and numbers' },
+  { value: 'curious', label: 'Curious adults', hint: 'a general education, no special knowledge of the subject' },
+  { value: 'enthusiasts', label: 'Enthusiasts', hint: 'people who already know the basic terms of the subject' },
+];
+
+export interface PlainCheck {
+  score: number;
+  verdict: 'plain' | 'a bit dense' | 'hard to follow';
+  audience: string;
+  lines: { points: number; label: string; detail: string }[];
+  stats: { grade: number; sentence_words: number; long_words: number; numbers_per_minute: number;
+           names_per_minute: number; minutes: number };
+  names: string[];
+  hardest: string[];
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */

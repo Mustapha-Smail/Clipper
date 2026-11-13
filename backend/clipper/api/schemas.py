@@ -460,6 +460,8 @@ class ScriptOut(ScriptSummary):
     sections: list[ScriptSection]
     claims: list[ScriptClaim] | None
     can_undo_rewrite: bool = False
+    plain: dict | None = Field(None, description="How easy the narration is to follow for the audience in "
+                                                 "Settings: 0-100, every deduction explained. Advice only")
 
 
 class ScriptCreate(BaseModel):

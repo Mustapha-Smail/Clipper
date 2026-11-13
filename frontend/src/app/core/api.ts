@@ -155,6 +155,9 @@ export class Api {
   factcheck(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/factcheck`, {});
   }
+  makeSimpler(id: number): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/scripts/${id}/simpler`, {});
+  }
   makeSpoken(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/spoken`, {});
   }

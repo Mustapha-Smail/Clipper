@@ -41,6 +41,12 @@
       <button class="primary" (click)="generate()" [disabled]="generating()">
         {{ generating() ? 'Thinking… about a minute' : 'Suggest ideas' }}</button>
     </div>
+    <label class="field audience"><span>Written for</span>
+      <select [ngModel]="audience()" (ngModelChange)="setAudience($event)">
+        @for (a of audiences; track a.value) { <option [value]="a.value">{{ a.label }}</option> }
+      </select>
+      <small>{{ audienceHint() }}. Ideas, research and scripts are all written for them, and scripts get a
+        plain-language check.</small></label>
     @if (themeIdeas(); as list) {
       <div class="theme-ideas">
         <div class="row spread">
@@ -70,7 +76,7 @@
     @if (store.status(); as status) {
       @if (!status.youtube_key) {
         <div class="notice small"><span>
-          No YouTube API key yet, so ideas are scored on Claude's judgement alone (out of 40). Create a free key for the
+          No YouTube API key yet, so ideas are scored on Claude's judgement alone (out of 50). Create a free key for the
           YouTube Data API v3 in Google Cloud, put <code>YOUTUBE_API_KEY=…</code> in <code>.env</code>, and restart the app.
         </span></div>
       }

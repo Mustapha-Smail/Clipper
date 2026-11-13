@@ -62,10 +62,38 @@
         </span></div>
       }
 
+      @if (s.plain; as p) {
+        <details class="card plain" [class.ok]="p.score >= 85" [class.warn]="p.score < 85 && p.score >= 65" [class.bad]="p.score < 65">
+          <summary>
+            <span class="plain-title">Easy to follow <span class="num">{{ p.score }}</span><span class="muted small">/100</span></span>
+            <span class="pill" [class.approved]="p.score >= 85" [class.failed]="p.score < 65">{{ p.verdict }}</span>
+            <span class="small muted">for {{ p.audience.toLowerCase() }} · grade {{ p.stats.grade }} ·
+              {{ p.stats.numbers_per_minute }} numbers and {{ p.stats.names_per_minute }} names a minute</span>
+          </summary>
+          @if (p.lines.length) {
+            <ul class="deductions">
+              @for (l of p.lines; track l.label) {
+                <li><span class="num points">{{ l.points }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
+              }
+            </ul>
+          } @else {
+            <p class="small muted">Short sentences, everyday words, few names and numbers: easy on one listen.</p>
+          }
+          @if (p.hardest.length) {
+            <p class="small"><strong>Longest sentences:</strong></p>
+            <ul class="hardest small">@for (h of p.hardest; track h) { <li>{{ h }}</li> }</ul>
+          }
+          <p class="small muted">Plain arithmetic on the text, every point shown. It advises; you decide. "Make it simpler"
+            rewrites the script for this audience; the audience is set on the Ideas page.</p>
+        </details>
+      }
+
       <div class="row">
         <button (click)="checkFacts()" [disabled]="busy() || !s.sections.length">Check the facts</button>
         <button (click)="makeSpoken()" [disabled]="busy() || !s.sections.length"
                 title="Rewrite the whole script for the ear: contractions, questions, beats. Keeps every fact.">Make it sound spoken</button>
+        <button (click)="makeSimpler()" [disabled]="busy() || !s.sections.length"
+                title="Rewrite the whole script in plainer words for the audience: fewer names and numbers, everyday comparisons. Keeps what is true.">Make it simpler</button>
         @if (s.can_undo_rewrite) {
           <button class="quiet" (click)="undoRewrite()" [disabled]="busy()" title="Swap between the text before and after the last rewrite">Switch versions</button>
         }

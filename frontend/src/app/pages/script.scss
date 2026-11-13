@@ -254,3 +254,61 @@ section.card + section.card {
   margin: 0 0 14px;
   width: fit-content;
 }
+
+.plain {
+  margin: 0 0 14px;
+  border-left: 3px solid var(--line);
+
+  &.ok { border-left-color: var(--good); }
+  &.warn { border-left-color: var(--warn, #b7791f); }
+  &.bad { border-left-color: var(--bad); }
+
+  summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .plain-title {
+    font-weight: 650;
+
+    .num {
+      font-size: 18px;
+      margin-left: 4px;
+    }
+  }
+
+  .deductions {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 8px;
+    display: grid;
+    gap: 4px;
+    font-size: 13px;
+
+    li {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+    }
+
+    .points {
+      min-width: 32px;
+      color: var(--bad);
+      font-weight: 650;
+    }
+  }
+
+  .hardest {
+    margin: 4px 0 10px;
+    padding-left: 18px;
+    color: var(--muted);
+  }
+
+  .row {
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+}

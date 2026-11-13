@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from .. import config, llm
 from ..db.models import Idea, utcnow
-from . import youtube
+from . import plain, youtube
 
 log = logging.getLogger("clipper.studio")
 
@@ -51,6 +51,10 @@ class Drafts(BaseModel):
 class Judgement(BaseModel):
     hook_score: int = Field(description="0 to 10: would a casual viewer need to know the answer after the hook?")
     hook_reason: str
+    easy_score: int = Field(description="0 to 10: could the audience follow the whole answer on one listen, with "
+                                        "no background? Low if it needs terms, names, dates or prior knowledge "
+                                        "they lack, or if it starts from something outside their daily life")
+    easy_reason: str
     drawable_score: int = Field(description="0 to 10: can it be told with simple drawn characters, objects and "
                                             "diagrams, without footage or detailed illustration?")
     drawable_reason: str
@@ -68,14 +72,15 @@ class Judgement(BaseModel):
 
 GENERATE = """\
 You come up with video ideas for a faceless YouTube channel of short animated videos: \
-simple drawn characters, deadpan comic narration, one surprising idea per video or per \
+simple drawn characters, light comic narration, one surprising idea per video or per \
 chapter. The channel sticks to one theme, given below.
 
-A good idea is about something specific that viewers use or see every day, and turns on \
-a surprising mechanism or fact the viewer can repeat to a friend. The working title is a \
-claim or question that creates curiosity ("Your fridge doesn't make cold"), never a flat \
-"How X works". Big science channels already cover the obvious explainers, so look for the \
-angle they miss: a funny consequence, a hidden history, a wrong common belief.
+{audience_rules}
+
+A good idea is about something specific that viewers use, see or do every day, and turns \
+on one surprising fact the viewer can repeat to a friend. The working title is a claim or \
+question that creates curiosity ("Your fridge doesn't make cold"), never a flat "How X \
+works". The answer must be explainable with an everyday comparison, in a few short steps.
 
 The facts must be true and well established. Do not build an idea on a popular myth or \
 an anecdote you cannot verify; if a famous story is disputed, the dispute can be the idea. \
@@ -87,6 +92,8 @@ JUDGE = """\
 You assess one video idea for a faceless animated YouTube channel (simple drawn \
 characters, comic narration) before any work is done on it. You get the idea and the top \
 YouTube search results for its topic, with views, channel size, age and length.
+
+The videos are for {audience}.
 
 Be strict and calibrated: 5 is an ordinary idea, 8 or more is rare. Give each reason in \
 one sentence that names what you saw. Judge the angle against the result titles you were \
@@ -102,7 +109,8 @@ def generate(theme: str, count: int, existing: list[str], seed: str = "") -> lis
     ask = (f"Develop this idea of mine into exactly one idea, keeping its subject:\n<my_idea>{seed}</my_idea>"
            if seed else f"Propose {count} different ideas.")
     prompt = (f"<theme>{theme}</theme>\n\n<already_have>\n{_format_existing(existing)}\n</already_have>\n\n{ask}")
-    drafts = llm.ask("ideas", GENERATE, prompt, Drafts, effort="medium").ideas
+    drafts = llm.ask("ideas", GENERATE.format(audience_rules=plain.idea_rules()), prompt, Drafts,
+                     effort="medium").ideas
     return drafts[:1] if seed else drafts[:count]
 
 
@@ -118,7 +126,7 @@ def judge(idea: Idea, research: dict | None) -> Judgement:
               f"Answer: {idea.answer}\nAngle: {idea.angle}\nFormat: {idea.format}\nBeats:\n{beats}\n</idea>\n\n"
               f"<youtube_results query=\"{idea.search_query}\" today=\"{datetime.now(UTC).date()}\">\n"
               f"{results}\n</youtube_results>")
-    return llm.ask("idea_check", JUDGE, prompt, Judgement, effort="medium")
+    return llm.ask("idea_check", JUDGE.format(audience=plain.audience()), prompt, Judgement, effort="medium")
 
 
 def apply_draft(idea: Idea, draft: Draft) -> None:
@@ -156,7 +164,11 @@ characters, deadpan comic narration, one surprising idea per video or per chapte
 theme is what every video of the channel is about, narrow enough to build an audience, \
 wide enough for hundreds of videos.
 
+{audience_rules}
+
 Good themes:
+- are about things most people meet in daily life, so anyone gets the first sentence of any \
+video, with no background;
 - turn on surprising, true, explainable facts that a viewer repeats to friends;
 - can be drawn with stick figures, objects and diagrams, without footage;
 - lean towards topics advertisers pay more for (technology, science, money and \
@@ -173,8 +185,9 @@ def suggest_themes(existing: list[str], hint: str = "") -> list[ThemeIdea]:
     have = "\n".join(f"- {t}" for t in existing[:30]) or "(none yet)"
     ask = (f"The creator is leaning towards: {hint}. Suggest five themes in that direction, each with its own angle."
            if hint.strip() else "Suggest five different themes.")
-    return llm.ask("themes", THEMES, f"<themes_already_used>\n{have}\n</themes_already_used>\n\n{ask}",
-                   ThemeIdeas, effort="low").themes[:5]
+    prompt = f"<themes_already_used>\n{have}\n</themes_already_used>\n\n{ask}"
+    return llm.ask("themes", THEMES.format(audience_rules=plain.idea_rules()), prompt, ThemeIdeas,
+                   effort="low").themes[:5]
 
 
 # --- the score ------------------------------------------------------------------------
@@ -253,7 +266,7 @@ def assess(idea: Idea) -> dict:
     research = idea.research
     if research is None:
         parts.append(("YouTube not checked: demand, room and age unknown", 0.0))
-        flags.append("Scored without YouTube data, so out of 40 at most. Add YOUTUBE_API_KEY to .env to check demand")
+        flags.append("Scored without YouTube data, so out of 50 at most. Add YOUTUBE_API_KEY to .env to check demand")
     else:
         long = sorted((v for v in research["videos"] if v["duration_s"] > LONG_FORM_S),
                       key=lambda v: v["views"], reverse=True)
@@ -264,13 +277,13 @@ def assess(idea: Idea) -> dict:
             reference = long[min(2, len(long) - 1)]
             rank = "3rd most-viewed" if len(long) >= 3 else "Most-viewed"
             parts.append((f"Demand: {rank} video has {_views(reference['views'])} views",
-                          30 * _log_scale(reference["views"], 10_000, 1_000_000)))
+                          25 * _log_scale(reference["views"], 10_000, 1_000_000)))
 
             small = [v for v in long if v["subscribers"] is not None and v["subscribers"] < SMALL_CHANNEL]
             best_small = max(small, key=lambda v: v["views"]) if small else None
             if best_small:
                 parts.append((f"Room: a channel under 100K subscribers got {_views(best_small['views'])} views",
-                              20 * _log_scale(best_small["views"], 5_000, 500_000)))
+                              15 * _log_scale(best_small["views"], 5_000, 500_000)))
             else:
                 parts.append(("Room: no channel under 100K subscribers in the results", 0.0))
 
@@ -292,6 +305,13 @@ def assess(idea: Idea) -> dict:
         parts.append(("Angle not used by the top results", 5.0))
 
     parts.append((f"Hook {judgement['hook_score']}/10", judgement["hook_score"] * 1.5))
+    easy = judgement.get("easy_score")
+    if easy is None:
+        parts.append(("Easy to follow: not checked yet (check the idea again)", 0.0))
+    else:
+        parts.append((f"Easy to follow {easy}/10", float(easy)))
+        if easy <= 4:
+            flags.append(f"Needs background the audience may not have: {judgement.get('easy_reason', '')}")
     parts.append((f"Drawable {judgement['drawable_score']}/10", float(judgement["drawable_score"])))
     parts.append((f"Facts settled {judgement['facts_score']}/10", float(judgement["facts_score"])))
     shorts = sum(1 for b in idea.beats if b.get("short"))
