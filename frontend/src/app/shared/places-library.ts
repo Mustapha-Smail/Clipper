@@ -10,8 +10,7 @@ import { Toasts } from '../core/toast';
   selector: 'app-places-library',
   imports: [FormsModule],
   template: `
-    <h2>Places</h2>
-    <p class="muted small">Backgrounds for the cartoon look. Six are drawn by code; for anywhere else the planner names
+    <p class="muted small intro">Backgrounds for the cartoon look. Six are drawn by code; for anywhere else the planner names
       a place and Claude draws it the first time a cartoon video needs it (about 4 cents), wide for long videos and
       tall for Shorts. Every later video that names it reuses the drawing.</p>
     @if (places(); as list) {
@@ -55,6 +54,7 @@ import { Toasts } from '../core/toast';
     }
   `,
   styles: `
+    .intro { margin: 0 0 14px; }
     .places { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; margin-bottom: 28px; }
     .place { display: grid; gap: 6px; align-content: start; }
     .thumbs { display: flex; gap: 6px; align-items: flex-end; }

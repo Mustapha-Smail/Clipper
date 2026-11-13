@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { Asset, MusicFound, MusicTrack } from '../core/models';
@@ -8,7 +9,10 @@ import { Confirm } from '../core/confirm';
 import { CAST, EXPRESSIONS, POSES } from './storyboard';
 import { PlacesLibrary } from '../shared/places-library';
 
-/** The prop library and the cast: everything the animated videos are drawn with. */
+const LIBRARY_TABS = ['props', 'places', 'music', 'cast'] as const;
+type LibraryTab = (typeof LIBRARY_TABS)[number];
+
+/** The library, one kind per tab: props, places, music and the cast. */
 @Component({
   selector: 'app-props-page',
   imports: [FormsModule, AgoPipe, PlacesLibrary],
@@ -17,10 +21,24 @@ import { PlacesLibrary } from '../shared/places-library';
       <div class="page-head">
         <div>
           <h1>Library</h1>
-          <p class="muted">What your animated videos are made of: props drawn once in the house style and reused, the
-            cast, and background music. Claude draws new props when a storyboard needs them; redraw any you do not like.</p>
+          <p class="muted">What your animated videos are made of, each drawn or chosen once and reused by every video.</p>
         </div>
-        <input type="search" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(0)" aria-label="Find a prop" />
+      </div>
+
+      <div class="tabs page-tabs" role="tablist">
+        @for (t of tabs; track t.value) {
+          <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
+            {{ t.label }}@if (tabCount(t.value) !== null) { <span class="muted num">{{ tabCount(t.value) }}</span> }
+          </button>
+        }
+      </div>
+
+      @switch (tab()) {
+      @case ('props') {
+      <div class="row tab-head">
+        <p class="muted small grow">Single objects drawn once in the house style. Claude draws new props when a storyboard
+          needs them; redraw any you do not like.</p>
+        <input type="search" class="find-prop" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(0)" aria-label="Find a prop" />
       </div>
 
       @if (assets(); as list) {
@@ -62,9 +80,11 @@ import { PlacesLibrary } from '../shared/places-library';
         <div class="skeleton" style="height:200px"></div>
       }
 
+      }
+      @case ('places') {
       <app-places-library />
-
-      <h2>Music</h2>
+      }
+      @case ('music') {
       <p class="muted small">Background tracks, looped under the voice and lowered while it speaks. Upload only music you
         have the rights to use on YouTube, for example from the YouTube Audio Library (YouTube Studio, Audio Library).</p>
       <div class="row" style="margin-bottom:10px">
@@ -121,7 +141,8 @@ import { PlacesLibrary } from '../shared/places-library';
         }
       </div>
 
-      <h2>The cast</h2>
+      }
+      @case ('cast') {
       <p class="muted small">Drawn by code: any member, in any pose, with any expression. Mouths move with the voice when a
         character talks.</p>
       <div class="cast">
@@ -139,10 +160,15 @@ import { PlacesLibrary } from '../shared/places-library';
           <figure><img [src]="castImage('narrator', 'stand', e)" [alt]="e" loading="lazy" /><figcaption class="small">{{ e }}</figcaption></figure>
         }
       </div>
+      }
+      }
     </div>
   `,
   styles: `
-    .page-head input { max-width: 220px; }
+    .page-tabs { margin: 0 0 16px; }
+    .tab-head { margin-bottom: 12px; align-items: flex-end; }
+    .tab-head p { margin: 0; }
+    .find-prop { max-width: 240px; }
     .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 14px 0 6px; }
     .find { margin-bottom: 12px; display: grid; gap: 10px; }
     .find select { width: auto; }
@@ -197,6 +223,29 @@ export class PropsPage {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
+
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  protected readonly tabs: { value: LibraryTab; label: string }[] = [
+    { value: 'props', label: 'Props' }, { value: 'places', label: 'Places' },
+    { value: 'music', label: 'Music' }, { value: 'cast', label: 'Cast' },
+  ];
+  /** Kept in the address (?tab=music), so a link or a reload opens the same tab. */
+  protected readonly tab = signal<LibraryTab>(LIBRARY_TABS.includes(this.route.snapshot.queryParamMap.get('tab') as LibraryTab)
+    ? this.route.snapshot.queryParamMap.get('tab') as LibraryTab : 'props');
+
+  protected setTab(tab: LibraryTab): void {
+    this.tab.set(tab);
+    this.router.navigate([], { queryParams: { tab: tab === 'props' ? null : tab }, replaceUrl: true });
+  }
+
+  protected tabCount(tab: LibraryTab): number | null {
+    if (tab === 'props') return this.assets()?.length ?? null;
+    if (tab === 'music') return this.tracks().length;
+    if (tab === 'cast') return this.cast.length;
+    return null;
+  }
 
   protected readonly cast = CAST;
   protected readonly poses = POSES;

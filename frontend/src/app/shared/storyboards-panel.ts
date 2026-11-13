@@ -23,13 +23,15 @@ import { Toasts } from '../core/toast';
       @if (!hasTake()) {
         <div class="notice small"><span>Mark a voice take with "Use for the video" first.</span></div>
       } @else {
+        <h4>Make a video</h4>
         <label class="field look"><span>Look</span>
           <select [ngModel]="look()" (ngModelChange)="look.set($event)">
             @for (l of looks; track l.value) {
-              <option [value]="l.value">{{ l.label }}: {{ l.hint }}</option>
+              <option [value]="l.value">{{ l.label }}</option>
             }
             <option value="flat">Flat colour: the first style, scene by scene</option>
           </select>
+          <small>{{ lookHint() }}</small>
         </label>
         @if (script().video === 'short') {
           <div class="row">
@@ -58,32 +60,44 @@ import { Toasts } from '../core/toast';
         }
       }
 
-      @for (b of boards(); track b.id) {
-        <a class="board" [routerLink]="['/storyboards', b.id]">
-          <span class="grow">
-            <strong>{{ b.title }}</strong>
-            <span class="small muted"> · {{ b.format === 'short' ? 'Short' : 'Long video' }} · {{ b.style === 'ink' ? lookName(b.look) : 'flat' }} ·
-              {{ b.duration.toFixed(0) }} s · {{ b.scene_count }} {{ b.style === 'ink' ? 'shots' : 'scenes' }} · {{ b.created_at | ago }}</span>
-          </span>
-          @if (b.job) {
-            <span class="pill running">{{ b.job.message }}</span>
-          } @else if (b.has_video) {
-            <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
-              {{ b.review === 'pending' ? 'to review' : b.review }}</span>
-          } @else {
-            <span class="pill">not rendered</span>
+      @if (boards().length) {
+        <h4>Made from this script <span class="muted num">{{ boards().length }}</span></h4>
+        <div class="boards">
+          @for (b of boards(); track b.id) {
+            <a class="board" [routerLink]="['/storyboards', b.id]">
+              <span class="thumb" [class.wide]="b.format === 'long'">
+                <img [src]="thumb(b)" alt="" loading="lazy" />
+              </span>
+              <span class="info">
+                <strong>{{ b.title }}</strong>
+                <span class="small muted">{{ b.format === 'short' ? 'Short' : 'Long video' }} ·
+                  {{ b.style === 'ink' ? lookName(b.look) : 'flat' }} · {{ clock(b.duration) }} ·
+                  {{ b.scene_count }} {{ b.style === 'ink' ? 'shots' : 'scenes' }} · {{ b.created_at | ago }}</span>
+                @if (b.job) {
+                  <span class="pill running">{{ b.job.message }}</span>
+                } @else if (b.has_video) {
+                  <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
+                    {{ b.review === 'pending' ? 'to review' : b.review }}</span>
+                } @else {
+                  <span class="pill">not rendered</span>
+                }
+              </span>
+            </a>
           }
-        </a>
+        </div>
       }
     </section>
   `,
   styles: `
     .videos {
       display: grid;
+      grid-template-columns: minmax(0, 1fr);    // never wider than the card, whatever an option says
       gap: 12px;
       h3 { margin: 0; }
+      h4 { margin: 10px 0 -2px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
       p { margin: 4px 0 0; }
     }
+    .row > button { white-space: normal; text-align: left; }
     .sections {
       list-style: none;
       margin: 0;
@@ -97,20 +111,44 @@ import { Toasts } from '../core/toast';
       }
     }
     .look { max-width: 460px; }
+    .look small { display: block; margin-top: 5px; font-size: 12.5px; color: var(--muted); }
     .pill.tiny {
       font-size: 10.5px;
       padding: 0 6px;
       margin-left: 6px;
     }
+    .boards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+      gap: 10px;
+    }
     .board {
       display: flex;
       gap: 12px;
       align-items: center;
-      padding: 10px 14px;
+      padding: 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       text-decoration: none;
+      min-width: 0;
       &:hover { border-color: var(--text); }
+    }
+    .thumb {
+      flex: none;
+      width: 54px;
+      aspect-ratio: 9 / 16;
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--sunken);
+      &.wide { width: 112px; aspect-ratio: 16 / 9; }
+      img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    }
+    .info {
+      display: grid;
+      gap: 4px;
+      justify-items: start;
+      min-width: 0;
+      strong { line-height: 1.3; }
     }
   `,
 })
@@ -135,7 +173,23 @@ export class StoryboardsPanel {
     return look === 'flat' ? 'ink' : look;
   }
 
-  protected lookName(look: InkLook): string {
+  protected lookHint(): string {
+    const look = this.look();
+    if (look === 'flat') return 'The first style: scene by scene, flat colour.';
+    const hint = INK_LOOKS.find((l) => l.value === look)?.hint ?? '';
+    return hint.charAt(0).toUpperCase() + hint.slice(1) + '. You can change it later without planning again.';
+  }
+
+  protected thumb(b: StoryboardSummary): string {
+    return this.api.stillUrl(b.id, Math.min(2, b.duration / 3), b.rendered_at ?? b.created_at, 180);
+  }
+
+  protected clock(seconds: number): string {
+    const s = Math.round(seconds);
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+    protected lookName(look: InkLook): string {
     return (INK_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
   }
 
