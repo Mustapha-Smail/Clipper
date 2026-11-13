@@ -242,6 +242,7 @@ class Storyboard(Base):
         ForeignKey("voice_takes.id", ondelete="SET NULL", name="fk_storyboards_take_id"))
     format: Mapped[str] = mapped_column(String(8), default="short")      # short|long
     style: Mapped[str] = mapped_column(String(8), default="ink")         # ink (beats on one page) | flat (slides)
+    look: Mapped[str] = mapped_column(String(12), default="ink")         # ink style only: ink | paper | blueprint
     section_key: Mapped[str | None] = mapped_column(String(16))          # NULL = the whole script
     title: Mapped[str] = mapped_column(Text, default="")
     start: Mapped[float] = mapped_column(Float, default=0.0)            # seconds into the take's audio
@@ -290,6 +291,27 @@ class StudioPhoto(Base):
     path: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class StudioEvent(Base):
+    """One step in making a video, by you or by the AI: the authorship log.
+
+    YouTube asks for real human input in what it pays for. This log records who
+    did what (wrote, edited, recorded, chose, reviewed), so the work can be shown
+    if a channel is ever questioned. It records, it never judges.
+    """
+
+    __tablename__ = "studio_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    script_id: Mapped[int] = mapped_column(
+        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_studio_events_script_id"), index=True)
+    storyboard_id: Mapped[int | None] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(24))
+    by: Mapped[str] = mapped_column(String(4))                           # you | ai
+    summary: Mapped[str] = mapped_column(Text, default="")
+    amount: Mapped[int] = mapped_column(Integer, default=0)              # words or lines changed, when it applies
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AiUsage(Base):

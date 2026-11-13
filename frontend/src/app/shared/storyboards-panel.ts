@@ -1,10 +1,10 @@
-import { Component, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Script, StoryboardSummary } from '../core/models';
+import { INK_LOOKS, InkLook, Script, StoryboardSummary } from '../core/models';
 import { Toasts } from '../core/toast';
 
 /** Animated videos made from a script: Shorts, one per section for now. */
@@ -24,8 +24,10 @@ import { Toasts } from '../core/toast';
         <div class="notice small"><span>Mark a voice take with "Use for the video" first.</span></div>
       } @else {
         <label class="field look"><span>Look</span>
-          <select [ngModel]="style()" (ngModelChange)="style.set($event)">
-            <option value="ink">Ink sketch: one hand-drawn page, actors act on things</option>
+          <select [ngModel]="look()" (ngModelChange)="look.set($event)">
+            @for (l of looks; track l.value) {
+              <option [value]="l.value">{{ l.label }}: {{ l.hint }}</option>
+            }
             <option value="flat">Flat colour: the first style, scene by scene</option>
           </select>
         </label>
@@ -60,7 +62,7 @@ import { Toasts } from '../core/toast';
         <a class="board" [routerLink]="['/storyboards', b.id]">
           <span class="grow">
             <strong>{{ b.title }}</strong>
-            <span class="small muted"> · {{ b.format === 'short' ? 'Short' : 'Long video' }} · {{ b.style === 'ink' ? 'ink' : 'flat' }} ·
+            <span class="small muted"> · {{ b.format === 'short' ? 'Short' : 'Long video' }} · {{ b.style === 'ink' ? lookName(b.look) : 'flat' }} ·
               {{ b.duration.toFixed(0) }} s · {{ b.scene_count }} {{ b.style === 'ink' ? 'shots' : 'scenes' }} · {{ b.created_at | ago }}</span>
           </span>
           @if (b.job) {
@@ -124,7 +126,18 @@ export class StoryboardsPanel {
   protected readonly boards = signal<StoryboardSummary[]>([]);
   protected readonly starting = signal<string | null>(null);
   protected readonly hasTake = signal(true);
-  protected readonly style = signal<'ink' | 'flat'>('ink');
+  protected readonly looks = INK_LOOKS;
+  /** An ink look, or the older flat style. The look can change later; the style cannot. */
+  protected readonly look = signal<InkLook | 'flat'>('ink');
+  protected readonly style = computed<'ink' | 'flat'>(() => (this.look() === 'flat' ? 'flat' : 'ink'));
+  private inkLook(): InkLook {
+    const look = this.look();
+    return look === 'flat' ? 'ink' : look;
+  }
+
+  protected lookName(look: InkLook): string {
+    return (INK_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
+  }
 
   constructor() {
     let known = '';
@@ -149,7 +162,7 @@ export class StoryboardsPanel {
 
   protected makeLong(): void {
     this.starting.set('long');
-    this.api.createStoryboard(this.script().id, null, 'long', this.style()).subscribe({
+    this.api.createStoryboard(this.script().id, null, 'long', this.style(), this.inkLook()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();
@@ -173,7 +186,7 @@ export class StoryboardsPanel {
         this.store.refresh();
         return;
       }
-      this.api.createStoryboard(this.script().id, key, 'short', this.style()).subscribe({
+      this.api.createStoryboard(this.script().id, key, 'short', this.style(), this.inkLook()).subscribe({
         next: () => {
           queued++;
           next();
@@ -186,7 +199,7 @@ export class StoryboardsPanel {
 
   protected make(sectionKey: string): void {
     this.starting.set(sectionKey);
-    this.api.createStoryboard(this.script().id, sectionKey, 'short', this.style()).subscribe({
+    this.api.createStoryboard(this.script().id, sectionKey, 'short', this.style(), this.inkLook()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();

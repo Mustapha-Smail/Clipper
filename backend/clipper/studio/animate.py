@@ -469,6 +469,7 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
         if board is None:
             raise RuntimeError(f"Storyboard {storyboard_id} no longer exists")
         data = {"id": board.id, "script_id": board.script_id, "format": board.format, "style": board.style,
+                "look": board.look,
                 "title": board.title,
                 "start": board.start, "end": board.end, "words": list(board.words), "scenes": list(board.scenes),
                 "headings": {s["key"]: s["heading"] for s in board.script.sections},
@@ -510,7 +511,8 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
 
     board, props, _ = load(storyboard_id)
     # A page of stills asks for many frames of one board: keep its composer while the board is unchanged.
-    key = (storyboard_id, repr(board["scenes"]), tuple(sorted((k, hash(v)) for k, v in props.items())))
+    key = (storyboard_id, board.get("look"), repr(board["scenes"]),
+           tuple(sorted((k, hash(v)) for k, v in props.items())))
     with _still_lock:
         composer = _still_cache.get(key)
         if composer is None:

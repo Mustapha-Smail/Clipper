@@ -443,6 +443,7 @@ export interface StoryboardSummary {
   take_id: number | null;
   format: 'short' | 'long';
   style: 'ink' | 'flat';
+  look: InkLook;
   section_key: string | null;
   title: string;
   review: 'pending' | 'approved' | 'rejected';
@@ -466,6 +467,44 @@ export interface Storyboard extends StoryboardSummary {
   photos: ArchivePhoto[];
   photo_searches_missing: string[];
   credits: string;
+}
+
+/** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
+export type InkLook = 'ink' | 'paper' | 'blueprint';
+
+export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
+  { value: 'ink', label: 'Ink sketch', hint: 'brush lines drawn on cream paper' },
+  { value: 'paper', label: 'Paper cut-out', hint: 'colour pieces on kraft card, popping on with a shadow' },
+  { value: 'blueprint', label: 'Blueprint', hint: 'white lines on a blue grid' },
+];
+
+export interface PublishLine {
+  points?: number;
+  text: string;
+  needs?: boolean | null;
+}
+
+/** Advice before uploading. It never approves anything: every decision stays yours. */
+export interface PublishCheck {
+  checklist: { done: boolean | null; text: string }[];
+  authorship: {
+    lines: { part: string; text: string; yours: boolean }[];
+    yours: number;
+    parts: number;
+    advice: string[];
+    events: { at: string; kind: string; by: 'you' | 'ai' | 'app'; summary: string; amount: number }[];
+  };
+  similarity: {
+    score: number;
+    verdict: 'first' | 'different' | 'similar' | 'close';
+    lines: PublishLine[];
+    note: string;
+    compared: number;
+    nearest: { id: number; title: string; script_id: number } | null;
+    variety?: string;
+  };
+  kids: { score: number; verdict: 'kids' | 'unsure' | 'general'; lines: PublishLine[]; advice: string; note: string };
+  disclosure: { verdict: 'none' | 'check' | 'label'; advice: string; lines: PublishLine[] };
 }
 
 /** A picture from Wikimedia Commons used by an ink storyboard, with its credit. */

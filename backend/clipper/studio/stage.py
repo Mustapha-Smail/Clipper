@@ -22,7 +22,7 @@ from PIL import Image
 
 from .. import captions as captions_mod
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, art, beats, geo, ink, photos
+from . import animate, art, beats, geo, ink, looks, photos
 
 FPS = 24
 ART_FPS = 12
@@ -165,9 +165,10 @@ class InkComposer:
         self.looks: list[tuple[float, str | None, int]] = []
         self._build()
         self.keyframes = self._camera_plan()
-        self.paper = Image.fromarray(paper(self.W, self.H), "RGB").convert("RGBA")
+        self.look = looks.get(board.get("look"))
+        self.paper = Image.fromarray(looks.background(self.look, self.W, self.H, paper), "RGB").convert("RGBA")
         strength, self.boil_fps = WOBBLE.get(getattr(settings, "ink_wobble", "subtle"), WOBBLE["subtle"])
-        self.boil = boil_fields(self.W, self.H, strength=strength) if strength else []
+        self.boil = boil_fields(self.W, self.H, strength=strength) if strength and self.look.boil else []
         # Drawings are kept to be reused, up to a memory budget (not a count: a map or a
         # photo weighs as much as a hundred props). Previews in the API keep less.
         self._cache: OrderedDict = OrderedDict()
@@ -175,6 +176,8 @@ class InkComposer:
         self.cache_limit = 250 * 1024 * 1024
         self._sized: OrderedDict = OrderedDict()      # sprites resized for the current zoom
         self._sized_bytes = 0
+        self._dressed: OrderedDict = OrderedDict()    # sprites dressed for the look (cut out, recoloured)
+        self._dressed_bytes = 0
         self._last: tuple | None = None
 
     # --- time --------------------------------------------------------------------------
@@ -922,6 +925,8 @@ class InkComposer:
         p = self._progress(thing, t)
         if p <= 0:
             return None
+        if self.look.pop and thing.kind in looks.POPPED:
+            p = 1.0      # cut-out pieces are whole from the start: they pop on instead
         pq = round(p, 2)
         if thing.kind == "prop":
             _, _, w, h = thing.box
@@ -931,7 +936,7 @@ class InkComposer:
             svg = self._prop_svg(thing)
 
             def make() -> Image.Image:
-                image = ink.prop_image(svg, int(box), p)
+                image = looks.flat_prop(svg, int(box)) if self.look.flat_props else ink.prop_image(svg, int(box), p)
                 if not thing.line.text or p <= 0.6:
                     return image
                 size = int(self.sizes["text"]["small"] * thing.scale * zq * 0.85)
@@ -1020,6 +1025,31 @@ class InkComposer:
                 self._sized_bytes -= _weight(old)
         return out[1]
 
+    def _dress(self, kind: str, image: Image.Image, zq: float) -> Image.Image:
+        """The sprite as the look wants it: cut out of card (paper), or in white lines (blueprint)."""
+        if self.look.recolour and kind not in looks.PASTED:
+            how = "bp"
+        elif self.look.shadow and kind not in looks.NO_EDGE:
+            how = "cut"
+        else:
+            return image
+        key = id(image)
+        out = self._dressed.get(key)
+        if out is None or out[0] is not image:
+            if how == "bp":
+                dressed = looks.blueprint_sprite(image)
+            else:
+                dressed = looks.cutout(image, max(2, round(self.H / 270 * zq)))
+            out = (image, dressed)
+            self._dressed[key] = out
+            self._dressed_bytes += _weight(dressed) + _weight(image)
+            while self._dressed_bytes > self.cache_limit // 4 and len(self._dressed) > 1:
+                _, (first, old) = self._dressed.popitem(last=False)
+                self._dressed_bytes -= _weight(old) + _weight(first)
+        else:
+            self._dressed.move_to_end(key)
+        return out[1]
+
     def frame_rgb(self, t: float) -> np.ndarray:
         """The picture at time t, without captions, as an RGB array."""
         import cv2
@@ -1036,6 +1066,8 @@ class InkComposer:
         if self._last and self._last[0] == key:
             return self._last[1]
         layer = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        # a blueprint recolours its drawings; photos, flags and maps are pasted on a layer of their own
+        pasted = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0)) if self.look.recolour else None
         view = (cx - self.W / 2 / zoom, cy - self.H / 2 / zoom, cx + self.W / 2 / zoom, cy + self.H / 2 / zoom)
         zq = max(0.5, round(zoom * 10) / 10)
         rank = {"photo": -1, "prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "actor": 1, "arrow": 2,
@@ -1054,6 +1086,11 @@ class InkComposer:
             image, (ax, ay) = made
             dx, dy, scale, angle = self._motion(thing, tq)
             centre_x, centre_y = ax + image.width / zq / 2, ay + image.height / zq / 2
+            if self.look.pop and thing.kind in looks.POPPED:
+                scale *= looks.pop_scale(tq - thing.born, None if thing.gone is None else tq - thing.gone, ERASE_TIME)
+                if scale <= 0.01:
+                    continue
+            image = self._dress(thing.kind, image, zq)      # keeps the centre: any margin is added all round
             factor = zoom / zq * scale
             if abs(factor - 1) > 0.004:
                 image = self._resized(image, (max(1, round(image.width * factor)),
@@ -1062,15 +1099,23 @@ class InkComposer:
                 image = image.rotate(angle, resample=Image.BILINEAR, expand=True)
             sx = (centre_x + dx - cx) * zoom + self.W / 2 - image.width / 2
             sy = (centre_y + dy - cy) * zoom + self.H / 2 - image.height / 2
-            animate._composite_clipped(layer, image, round(sx), round(sy))
+            target = pasted if pasted is not None and thing.kind in looks.PASTED else layer
+            animate._composite_clipped(target, image, round(sx), round(sy))
         for at, number, heading in self.chapters:
             if at <= t < at + BANNER:
                 self._banner(layer, number, heading, tq - at)
+        ground = self.paper
+        if pasted is not None and pasted.getbbox():
+            ground = Image.alpha_composite(ground, pasted)
+        if self.look.shadow:
+            under = looks.shadow(layer, self.H)
+            if under is not None:
+                ground = Image.alpha_composite(ground, under)
         box = layer.getbbox()
         if box is None:
-            out = np.asarray(self.paper)
+            out = np.asarray(ground)
         elif not self.boil:
-            out = np.asarray(Image.alpha_composite(self.paper, layer))
+            out = np.asarray(Image.alpha_composite(ground, layer))
         else:
             # boil only where there is ink: warp that part of the layer by this moment's noise field
             mx, my = self.boil[int(tq * self.boil_fps) % len(self.boil)]
@@ -1081,7 +1126,7 @@ class InkComposer:
             warped[y0:y1, x0:x1] = cv2.remap(np.asarray(layer), mx[y0:y1, x0:x1], my[y0:y1, x0:x1],
                                              interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
                                              borderValue=(0, 0, 0, 0))
-            out = np.asarray(Image.alpha_composite(self.paper, Image.fromarray(warped, "RGBA")))
+            out = np.asarray(Image.alpha_composite(ground, Image.fromarray(warped, "RGBA")))
         self._last = (key, out)
         return out
 

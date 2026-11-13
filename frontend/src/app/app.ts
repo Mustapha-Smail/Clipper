@@ -37,6 +37,8 @@ export class App {
   protected readonly collapsed = signal(readCollapsed());
   /** Phone: the menu is a drawer over the page. */
   protected readonly menuOpen = signal(false);
+  /** The page shown, once the router has read the address (empty before that). */
+  private readonly url = signal('');
 
   protected readonly studioItems: NavItem[] = [
     { path: '/ideas', label: 'Ideas', icon: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z' },
@@ -71,11 +73,14 @@ export class App {
 
   constructor() {
     this.store.start();
-    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => this.menuOpen.set(false));
+    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
+      this.menuOpen.set(false);
+      this.url.set(e.urlAfterRedirects);
+    });
     effect(() => {
-      // with Clipping off, its pages are not the place to land
+      // with Clipping off, its home page is not the place to land (deep links are left alone)
       const clipping = this.features().clipping;
-      if (!clipping && this.store.status() && this.router.url === '/') this.router.navigateByUrl('/ideas');
+      if (!clipping && this.store.status() && this.url().split('?')[0] === '/') this.router.navigateByUrl('/ideas');
     });
   }
 

@@ -5,7 +5,7 @@
       <div>
         <h1>{{ b.title }}</h1>
         <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
-          {{ ink() ? 'ink sketch' : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
+          {{ ink() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
           {{ scenes().length }} {{ ink() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
         <app-cost-report [of]="{ storyboard: b.id }" label="AI cost of this video, idea to render" />
       </div>
@@ -38,6 +38,14 @@
           or now from <a routerLink="/props">Props</a>.</span></div>
       }
       <div class="sound">
+        @if (ink()) {
+          <label class="field"><span>Look</span>
+            <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
+              @for (l of looks; track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
+            </select>
+            <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
+          </label>
+        }
         <label class="field"><span>Music</span>
           <select [ngModel]="b.music_id" (ngModelChange)="setSound({ music_id: $event })">
             <option [ngValue]="null">No music</option>
@@ -159,6 +167,10 @@
           <p class="small muted">Found when it renders: {{ b.photo_searches_missing.join(', ') }}.</p>
         }
       </section>
+    }
+
+    @if (b.has_video) {
+      <app-publish-check [storyboardId]="b.id" [version]="b.review + b.look + b.music_id + b.rendered_at + version()" />
     }
 
     <section class="card publish">

@@ -13,6 +13,7 @@ from .. import config, jobs
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, VoiceTake
+from ..studio import compliance
 from ..studio import script as script_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
@@ -175,6 +176,9 @@ def realign(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
 @router.post("/takes/{take_id}/choose", response_model=s.TakeOut)
 def choose_take(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
     """Make this the take the video will use."""
+    if not take.chosen:
+        what = "your recording" if take.source == "recording" else f"the {take.voice} AI voice"
+        compliance.record(db, take.script_id, "take", "you", f"Chose {what} (take {take.id}) for the video")
     for other in take.script.takes:
         other.chosen = other.id == take.id
     db.flush()

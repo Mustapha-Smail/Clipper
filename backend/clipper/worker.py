@@ -20,6 +20,7 @@ from .db.models import Job, Worker, utcnow
 from .ingest import find_video, source_dir
 from .log import configure
 from .studio import animate as animate_mod
+from .studio import compliance
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
 from .studio import voice as voice_mod
@@ -82,6 +83,8 @@ def run_job(job_id: int) -> None:
                 storyboard_mod.draw_missing(params["storyboard_id"], rep)
             elif stage == "animate":
                 animate_mod.render(params["storyboard_id"], settings, rep)
+        with session_scope() as db:
+            compliance.record_job(db, kind, params)
         jobs.finish(job_id, "succeeded", "Done")
         outcome = "succeeded"
     except jobs.JobCancelled:

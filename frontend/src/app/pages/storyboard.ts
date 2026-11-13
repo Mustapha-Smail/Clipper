@@ -4,10 +4,14 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { ArchivePhoto, Asset, Chapters, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard, SuggestedTrack } from '../core/models';
+import {
+  ArchivePhoto, Asset, Chapters, INK_LOOKS, InkLook, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
+  SuggestedTrack,
+} from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
+import { PublishCheckView } from '../shared/publish-check';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -53,7 +57,7 @@ function blank(kind: StoryElement['kind']): StoryElement {
 /** One storyboard: its scenes with a preview frame each, every element editable; render and review. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, CostReportView, PublishCheckView],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
@@ -72,6 +76,7 @@ export class StoryboardPage {
     { value: 'drift', label: 'Drift: a calm slide' }, { value: 'close', label: 'Close: frames small things tightly' },
   ];
   protected readonly cheatSheet = INK_CHEAT_SHEET;
+  protected readonly looks = INK_LOOKS;
   protected readonly board = signal<Storyboard | null>(null);
   protected readonly scenes = signal<StoryScene[]>([]);
   protected readonly library = signal<Asset[]>([]);
@@ -234,7 +239,7 @@ export class StoryboardPage {
   /** Use a suggested track: online ones are added to the library first, with their credit. */
   protected useTrack(r: SuggestedTrack, level: number): void {
     if (r.track_id !== null) {
-      this.setSound({ music_id: r.track_id, music_db: level });
+      this.setSound({ music_id: r.track_id, music_db: level, music_suggested: true });
       return;
     }
     this.adding.set(r.ref);
@@ -245,7 +250,7 @@ export class StoryboardPage {
         this.suggestion.update((sg) => sg && {
           ...sg, ranking: sg.ranking.map((x) => (x.ref === r.ref ? { ...x, source: 'library', track_id: track.id } : x)),
         });
-        this.setSound({ music_id: track.id, music_db: level });
+        this.setSound({ music_id: track.id, music_db: level, music_suggested: true });
       },
       error: (err) => {
         this.adding.set(null);
@@ -280,7 +285,29 @@ export class StoryboardPage {
     return this.music().find((m) => m.id === id)?.name ?? 'a track';
   }
 
-  protected setSound(patch: { music_id?: number | null; music_db?: number; effects?: boolean }): void {
+  protected lookName(look: InkLook): string {
+    return (INK_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
+  }
+
+  protected lookHint(look: InkLook): string {
+    const hint = INK_LOOKS.find((l) => l.value === look)?.hint ?? '';
+    return hint.charAt(0).toUpperCase() + hint.slice(1);
+  }
+
+  /** Draw the same plan another way. Previews change at once; the video needs a render. */
+  protected setLook(look: InkLook): void {
+    this.api.setLook(this.id, look).subscribe({
+      next: (board) => {
+        this.board.set(board);
+        this.version.set(Date.now());
+        this.toasts.ok(`${this.lookName(look).replace(/^./, (c) => c.toUpperCase())} look saved. Render again to see it in the video.`);
+      },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected setSound(patch: { music_id?: number | null; music_db?: number; effects?: boolean;
+                              music_suggested?: boolean }): void {
     this.api.soundSettings(this.id, patch).subscribe({
       next: (board) => {
         this.board.set(board);
@@ -398,7 +425,7 @@ export class StoryboardPage {
 
   protected nextPhoto(p: ArchivePhoto): void {
     this.swapping.set(p.id);
-    this.api.nextPhoto(p.id).subscribe({
+    this.api.nextPhoto(p.id, this.id).subscribe({
       next: () => {
         this.swapping.set(null);
         this.toasts.ok('Another picture chosen. Render again to see it in the video.');

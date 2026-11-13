@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AppSettings, Campaign, CampaignPatch, Clip, ClipListItem, ClipStatus, Idea, IdeaPatch, Job, JobEvent,
   MomentInput, NewVideo, Script, ScriptPatch, ScriptSection, ScriptSummary, VoiceOptions, VoiceTake, Asset, Chapters, MusicFound, MusicTrack, StoryScene, Storyboard, StoryboardListItem, StoryboardSummary,
-  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto,
+  UsageReport, MusicSuggestion, AiModels, CostOf, CostReport, ArchivePhoto, InkLook, PublishCheck,
   SettingsBundle, SubtitleMode, SystemStatus, VideoDetail, VideoSummary,
 } from './models';
 
@@ -197,8 +197,9 @@ export class Api {
 
   // Studio storyboards and props
   createStoryboard(scriptId: number, sectionKey: string | null, format: 'short' | 'long' = 'short',
-                   style: 'ink' | 'flat' = 'ink'): Observable<Storyboard> {
-    return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`, { format, section_key: sectionKey, style });
+                   style: 'ink' | 'flat' = 'ink', look: InkLook = 'ink'): Observable<Storyboard> {
+    return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`,
+                                      { format, section_key: sectionKey, style, look });
   }
   storyboards(scriptId: number): Observable<StoryboardSummary[]> {
     return this.http.get<StoryboardSummary[]>(`${BASE}/scripts/${scriptId}/storyboards`);
@@ -218,7 +219,17 @@ export class Api {
   reviewStoryboard(id: number, review: 'pending' | 'approved' | 'rejected'): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { review });
   }
-  soundSettings(id: number, patch: { music_id?: number | null; music_db?: number; effects?: boolean }): Observable<Storyboard> {
+  setLook(id: number, look: InkLook): Observable<Storyboard> {
+    return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { look });
+  }
+  publishCheck(id: number): Observable<PublishCheck> {
+    return this.http.get<PublishCheck>(`${BASE}/storyboards/${id}/publish-check`);
+  }
+  authorshipUrl(id: number): string {
+    return `${BASE}/storyboards/${id}/authorship.txt`;
+  }
+  soundSettings(id: number, patch: { music_id?: number | null; music_db?: number; effects?: boolean;
+                                     music_suggested?: boolean }): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, patch);
   }
   chapters(id: number): Observable<Chapters> {
@@ -265,8 +276,8 @@ export class Api {
   photoImageUrl(id: number, version: string | number, size = 320): string {
     return `${BASE}/photos/${id}/image?size=${size}&v=${version}`;
   }
-  nextPhoto(id: number): Observable<ArchivePhoto> {
-    return this.http.post<ArchivePhoto>(`${BASE}/photos/${id}/next`, {});
+  nextPhoto(id: number, storyboardId: number): Observable<ArchivePhoto> {
+    return this.http.post<ArchivePhoto>(`${BASE}/photos/${id}/next`, {}, { params: { storyboard_id: storyboardId } });
   }
   costs(of: CostOf): Observable<CostReport> {
     const params: Record<string, number | string> = {};

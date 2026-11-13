@@ -279,6 +279,31 @@ the description.
 every 3 seconds unless something would appear out of view. The lines' hand-drawn
 wobble is subtle by default (Settings, Ink style: off, subtle or strong).
 
+**Looks.** One plan, three ways to draw it, chosen when you start a video or
+later on the storyboard page (render again to see it; no new plan, no AI cost):
+ink sketch (the default), paper cut-out (props in their own colours, every
+piece cut from card with a pale edge and a shadow, popping on instead of being
+drawn, no wobble) and blueprint (white lines on a blue grid). Archive photos,
+flags and maps are pasted as they are in every look.
+
+**Before you publish.** Once a video is rendered, its page shows a checklist
+and four pieces of advice, all plain rules with every point shown. Nothing here
+approves or posts anything.
+
+- *Your part*: the authorship log records who did each step: you (edits to the
+  script and scenes, takes chosen, looks, music, picture swaps, review), the AI
+  (research, drafts, rewrites, plans, suggestions) or the app (renders). Keep
+  the text copy with the video; it is your record if the channel is reviewed
+  for inauthentic content.
+- *Like your recent videos?*: a 0 to 100 score against your 12 most recent
+  videos from other scripts: same look, same music, same AI voice, shared
+  props, title words and opening words. YouTube does not pay for uploads that
+  look mass-produced.
+- *Made for kids?*: reading grade (Flesch-Kincaid) and topic words. You answer
+  this in YouTube Studio for every upload.
+- *Altered or synthetic content*: drawn animation needs no label; a cloned
+  real voice does.
+
 Props come from the same library as the flat style: each is turned into ink
 lines and a wash by code, so no new drawing is needed. New props are drawn
 with a style guide that makes them work both as flat stickers and as ink line

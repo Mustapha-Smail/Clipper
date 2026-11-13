@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, VoiceTake, utcnow
-from ..studio import animate, art, beats, music_pick, music_search, sound
+from ..studio import animate, art, beats, compliance, music_pick, music_search, sound
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import voice as voice_mod
@@ -111,9 +111,12 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
                                  "script, or make a new take, so the video matches the words.")
     title = f"{script.title} · {section['heading']}" if section else script.title
     board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, style=body.style,
+                       look=body.look if body.style == "ink" else "ink",
                        section_key=body.section_key, title=title, start=start, end=end, words=words, scenes=[])
     db.add(board)
     db.flush()
+    compliance.record(db, script.id, "start", "you", f"Started a {'Short' if body.format == 'short' else 'long video'}"
+                      + (f" in the {board.look} look" if body.style == "ink" else ""), storyboard_id=board.id)
     job = _enqueue(db, board, "storyboard")
     log.info("storyboard queued", extra={"storyboard_id": board.id, "format": body.format})
     return board_out(board, job, db)
@@ -148,6 +151,10 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
         if dropped:
             raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
                                      + "; ".join(dropped[:3]))
+        changed = compliance.lines_changed(board.scenes or [], shots)
+        if changed:
+            compliance.record(db, board.script_id, "beats_edit", "you",
+                              f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})", changed, board.id)
         board.scenes = shots
     else:
         try:
@@ -198,10 +205,28 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
     if body.review is not None:
         if not board.video_path:
             raise HTTPException(409, "Render the video before reviewing it")
+        if body.review != board.review:
+            compliance.record(db, board.script_id, "review", "you",
+                              {"approved": "Watched and approved the video",
+                               "rejected": "Watched and rejected the video",
+                               "pending": "Took back the review"}[body.review], storyboard_id=board.id)
         board.review = body.review
+    if body.look is not None and body.look != board.look:
+        if board.style != "ink":
+            raise HTTPException(400, "Only ink storyboards have looks")
+        _idle(db, board)
+        compliance.record(db, board.script_id, "look", "you", f"Chose the {body.look} look", storyboard_id=board.id)
+        board.look = body.look
     if "music_id" in body.model_fields_set:
         if body.music_id is not None and db.get(StudioMusic, body.music_id) is None:
             raise HTTPException(404, "No such music track")
+        if body.music_id != board.music_id:
+            track = db.get(StudioMusic, body.music_id) if body.music_id else None
+            by = "ai" if body.music_suggested else "you"
+            what = f"'{track.name}'" if track else "no music"
+            compliance.record(db, board.script_id, "music", by,
+                              f"{'Took the suggested' if by == 'ai' else 'Chose'} music: {what}",
+                              storyboard_id=board.id)
         board.music_id = body.music_id
     if body.music_db is not None:
         board.music_db = body.music_db
@@ -329,7 +354,7 @@ def photo_image(photo_id: int, size: int = Query(320, ge=64, le=1200), db: Sessi
 
 
 @router.post("/photos/{photo_id}/next", response_model=s.PhotoOut)
-def next_photo(photo_id: int, db: Session = Depends(get_db)):
+def next_photo(photo_id: int, storyboard_id: int | None = None, db: Session = Depends(get_db)):
     """Use the next search result instead, in every video that asks for this search. Render again to see it."""
     from ..studio import photos as photos_mod
 
@@ -337,6 +362,10 @@ def next_photo(photo_id: int, db: Session = Depends(get_db)):
     if photo is None:
         raise HTTPException(404, "Picture not found")
     query, rank = photo.query, photo.rank
+    board = db.get(Storyboard, storyboard_id) if storyboard_id else None
+    if board is not None:
+        compliance.record(db, board.script_id, "photo", "you", f"Asked for another picture for '{query}'",
+                          storyboard_id=board.id)
     db.commit()       # release the row: find() writes it in its own session
     try:
         found = photos_mod.find(query, rank + 1) or photos_mod.find(query, 0)
@@ -345,6 +374,21 @@ def next_photo(photo_id: int, db: Session = Depends(get_db)):
     if found is None:
         raise HTTPException(404, "No other usable picture for this search: change its words in the beats")
     return found
+
+
+# --- before you publish ----------------------------------------------------------------------
+
+@router.get("/storyboards/{storyboard_id}/publish-check", response_model=s.PublishCheck)
+def publish_check(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Advice before uploading: your input on record, likeness to recent videos, kids and AI labels. Advises only."""
+    return compliance.before_publish(db, board)
+
+
+@router.get("/storyboards/{storyboard_id}/authorship.txt", response_class=PlainTextResponse)
+def authorship_log(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Who did what, as text to keep with the video."""
+    return PlainTextResponse(compliance.authorship_text(db, board), headers={
+        "Content-Disposition": f'attachment; filename="authorship-{board.id}.txt"'})
 
 
 # --- the library ------------------------------------------------------------------------------

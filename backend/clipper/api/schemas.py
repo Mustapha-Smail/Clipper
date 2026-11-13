@@ -566,6 +566,7 @@ class AiTakeCreate(BaseModel):
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
     style: Literal["ink", "flat"] = Field("ink", description="ink: beats on one page; flat: the first style, slides")
+    look: Literal["ink", "paper", "blueprint"] = Field("ink", description="Ink style: how it is drawn")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
 
@@ -576,6 +577,7 @@ class StoryboardSummary(Model):
     take_id: int | None
     format: Literal["short", "long"]
     style: Literal["ink", "flat"]
+    look: Literal["ink", "paper", "blueprint"] = "ink"
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -617,13 +619,23 @@ class StoryboardOut(StoryboardSummary):
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
 
 
+class PublishCheck(BaseModel):
+    checklist: list[dict]
+    authorship: dict
+    similarity: dict
+    kids: dict
+    disclosure: dict
+
+
 class StoryboardScenes(BaseModel):
     scenes: list[dict] = Field(min_length=1)
 
 
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
+    look: Literal["ink", "paper", "blueprint"] | None = Field(None, description="Ink style: render again to see it")
     music_id: int | None = None
+    music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")
     music_db: float | None = Field(None, ge=-40, le=-6)
     effects: bool | None = None
 

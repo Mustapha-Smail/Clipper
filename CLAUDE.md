@@ -87,6 +87,13 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   fps, the camera at 24. Keep the liveliness score (`beats.score`) arithmetic,
   every deduction in its lines. New actions go in the beat language and the
   stage, and in the planner prompt and the page's cheat sheet.
+- Looks (`studio/looks.py`): `storyboards.look` is ink, paper or blueprint and
+  changes only drawing (backgrounds, sprites dressed per sprite and cached,
+  pop-on, shadow), never the plan. Photos, flags and maps are never recoloured.
+- `studio/compliance.py` advises before publishing and never approves. User
+  steps are logged with `compliance.record` from the routes, finished jobs with
+  `compliance.record_job` in the worker (`studio_events`). The similarity and
+  kids scores are arithmetic with every point in their lines.
 - Flags, maps and timelines (`studio/geo.py`): flags from flag-icons (MIT) and
   country outlines from Natural Earth (public domain), packed by
   `backend/tools/geo_import.py` into `clipper/assets/*.json.gz`; keep their

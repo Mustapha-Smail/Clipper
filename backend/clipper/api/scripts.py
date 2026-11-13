@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .. import jobs, llm
 from ..db import get_db
 from ..db.models import Idea, Job, Script
+from ..studio import compliance
 from ..studio import script as script_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
@@ -129,13 +130,17 @@ def save_sections(body: s.ScriptSections, script: Script = Depends(get_script), 
                  "short": sec.short} for sec in body.sections]
     if script_mod.text_hash(sections) != script_mod.text_hash(script.sections):
         script.status = "draft"
+        before, after = compliance.sections_text(script.sections), compliance.sections_text(sections)
+        changed = compliance.words_changed(before, after)
+        if changed:
+            compliance.record(db, script.id, "script_edit", "you", f"Edited the script ({changed} words)", changed)
     script.sections = sections
     db.flush()
     return script_out(script, None)
 
 
 @router.post("/scripts/{script_id}/rewrite", response_model=s.SectionRewriteOut)
-def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script)):
+def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """A new version of one section, following your instruction. Not saved: you keep or discard it."""
     try:
         with llm.attribute(f"script:{script.id}"):
@@ -144,6 +149,9 @@ def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script)
         raise HTTPException(404, str(err)) from err
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
+    heading = next((x["heading"] for x in script.sections if x["key"] == body.key), body.key)
+    compliance.record(db, script.id, "rewrite", "ai",
+                      f"Rewrote '{heading}' on your instruction: {body.instruction.strip()[:200]}")
     return {"key": body.key, "text": text}
 
 
@@ -170,6 +178,7 @@ def undo_rewrite(script: Script = Depends(get_script), db: Session = Depends(get
         raise HTTPException(409, "There is no earlier version to go back to")
     script.sections, script.previous_sections = script.previous_sections, script.sections
     script.status = "draft"
+    compliance.record(db, script.id, "undo", "you", "Went back to the earlier version of the text")
     db.flush()
     return script_out(script, None)
 
