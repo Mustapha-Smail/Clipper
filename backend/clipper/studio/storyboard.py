@@ -16,6 +16,7 @@ kept for every later video; the ink style redraws them as ink lines and wash.
 import json
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
@@ -651,8 +652,12 @@ def draw_prop(name: str, description: str, instruction: str = "") -> str:
     raise RuntimeError(f"Could not draw {name}: {error}")
 
 
-def find_photos(storyboard_id: int, rep: Reporter) -> None:
-    """Find the archive pictures an ink or film storyboard asks for, on Wikimedia Commons; each search once."""
+def find_photos(storyboard_id: int, rep: Reporter, sleep=time.sleep) -> None:
+    """Find the archive pictures an ink or film storyboard asks for, on Wikimedia Commons; each search once.
+
+    When Commons limits requests (429) the search waits and asks again, a few times; if it is still
+    refused the remaining searches are left for the next render rather than refused one by one.
+    """
     from . import photos
 
     with session_scope() as db:
@@ -663,13 +668,26 @@ def find_photos(storyboard_id: int, rep: Reporter) -> None:
     if not todo:
         return
     rep.info(f"Finding {len(todo)} archive pictures on Wikimedia Commons (public domain, CC0 and CC BY only)")
-    missing = []
+    missing, later, waits = [], [], 0
     for n, query in enumerate(todo, 1):
-        try:
-            found = photos.find(query)
-        except RuntimeError as err:
-            rep.warn(f"{query}: {err}")
-            found = None
+        found = None
+        while True:
+            try:
+                found = photos.find(query)
+                waits = 0
+            except photos.Busy as err:
+                if waits < len(photos.WAITS):
+                    seconds = err.wait or photos.WAITS[waits]
+                    waits += 1
+                    rep.info(f"Wikimedia Commons asks to slow down: waiting {seconds:.0f} s, then \"{query}\" again")
+                    sleep(seconds)
+                    continue
+                later = todo[n - 1:]
+            except RuntimeError as err:
+                rep.warn(f"{query}: {err}")
+            break
+        if later:
+            break
         if found is None:
             missing.append(query)
         else:
@@ -678,6 +696,10 @@ def find_photos(storyboard_id: int, rep: Reporter) -> None:
     if missing:
         rep.warn(f"No usable picture for: {', '.join(missing)}. They show as paper cards with the search; "
                  "edit the search words in the beats and render again.")
+    if later:
+        rep.warn(f"Wikimedia Commons is still limiting requests, so {len(later)} pictures were not searched: "
+                 f"{', '.join(later)}. They show as paper cards for now; render again in a few minutes and only "
+                 "these are searched.")
 
 
 def draw_missing(storyboard_id: int, rep: Reporter) -> None:

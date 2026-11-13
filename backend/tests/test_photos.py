@@ -1,8 +1,10 @@
 """Archive photos: search filters, credits, storage, the language, the stage and the API."""
 
 import io
+import urllib.error
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from clipper.db import session_scope
@@ -11,6 +13,11 @@ from clipper.jobs import ConsoleReporter
 from clipper.settings import Settings
 from clipper.studio import beats, photos, stage
 from clipper.studio import storyboard as sb
+
+
+@pytest.fixture(autouse=True)
+def no_pacing(monkeypatch):
+    monkeypatch.setattr(photos, "GAP", 0)
 
 
 def page(index, pageid, title, license_name, width=1600, height=1200, mime="image/jpeg", desc=""):
@@ -142,3 +149,101 @@ def test_a_name_said_twice_is_credited_once():
     line = photos.credit({"title": "Nicaea icon", "creator": "Unknown author Unknown author",
                           "license": "Public domain", "license_url": "", "landing_url": "https://commons.wikimedia.org/x"})
     assert "by Unknown author, public domain" in line
+
+
+
+def refused(retry_after=None):
+    headers = {"Retry-After": retry_after} if retry_after else {}
+
+    def urlopen(request, timeout=0):
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", headers, None)
+    return urlopen
+
+
+def test_requests_are_spaced_and_a_429_says_how_long_to_wait(monkeypatch):
+    slept = []
+    monkeypatch.setattr(photos, "GAP", 1.0)
+    monkeypatch.setattr(photos, "_last", photos.time.monotonic())
+    monkeypatch.setattr(photos.time, "sleep", slept.append)
+    monkeypatch.setattr(photos.urllib.request, "urlopen", refused("7"))
+    with pytest.raises(photos.Busy) as busy:
+        photos._get({"action": "query"})
+    assert busy.value.wait == 7 and len(slept) == 1 and 0 < slept[0] <= 1.0
+    monkeypatch.setattr(photos.urllib.request, "urlopen", refused("900"))
+    with pytest.raises(photos.Busy) as busy:
+        photos._get({"action": "query"})
+    assert busy.value.wait == photos.MAX_WAIT
+    monkeypatch.setattr(photos.urllib.request, "urlopen", refused())
+    with pytest.raises(photos.Busy) as busy:
+        photos._get({"action": "query"})
+    assert busy.value.wait is None
+
+
+def test_a_refused_download_does_not_move_on_to_the_next_result(app_env, monkeypatch):
+    monkeypatch.setattr(photos, "_get", lambda params: ANSWER)
+    monkeypatch.setattr(photos.urllib.request, "urlopen", refused())
+    with pytest.raises(photos.Busy):
+        photos.find("Pope Gregory XIII portrait")
+    with session_scope() as db:
+        assert db.query(StudioPhoto).count() == 0
+
+
+def board_asking_for(*queries) -> int:
+    plan = "0 shot \"x\"\n" + "\n".join(f'{n} photo "{q}" right' for n, q in enumerate(queries, 1))
+    with session_scope() as db:
+        script = Script(title="Ordeals", sections=[{"key": "a", "heading": "A", "text": "x", "short": False}])
+        db.add(script)
+        db.flush()
+        board = Storyboard(script_id=script.id, format="long", style="ink", title="Ordeals",
+                           words=[{"w": "w", "s": i * 0.5, "e": i * 0.5 + 0.4, "section": "a"} for i in range(10)],
+                           scenes=beats.parse_plan(plan, 10), start=0, end=5)
+        db.add(board)
+        db.flush()
+        return board.id
+
+
+class Log(ConsoleReporter):
+    def __init__(self):
+        self.lines = []
+
+    def info(self, message):
+        self.lines.append(message)
+
+    def warn(self, message):
+        self.lines.append(message)
+
+
+def test_a_limited_search_waits_and_asks_again(app_env, monkeypatch):
+    board_id = board_asking_for("Hot iron ordeal", "Donkey portrait")
+    asked, slept = [], []
+
+    def find(query, rank=0):
+        asked.append(query)
+        if asked.count(query) == 1:
+            raise photos.Busy(12 if query == "Hot iron ordeal" else None)
+        with session_scope() as db:
+            db.add(StudioPhoto(query=query, rank=0, key=str(len(asked)), title="Found", creator="x",
+                               license="Public domain", landing_url="https://commons/1", credit="c", path=""))
+        return StudioPhoto(title="Found", license="Public domain")
+    monkeypatch.setattr(photos, "find", find)
+    rep = Log()
+    sb.find_photos(board_id, rep, sleep=slept.append)
+    assert asked == ["Hot iron ordeal", "Hot iron ordeal", "Donkey portrait", "Donkey portrait"]
+    assert slept == [12, photos.WAITS[0]]                          # the delay Commons named, else our own
+    assert not any("not searched" in line or "No usable picture" in line for line in rep.lines)
+
+
+def test_a_search_still_limited_leaves_the_rest_for_the_next_render(app_env, monkeypatch):
+    board_id = board_asking_for("Hot iron ordeal", "Donkey portrait", "Rice grains")
+    asked, slept = [], []
+
+    def find(query, rank=0):
+        asked.append(query)
+        raise photos.Busy()
+    monkeypatch.setattr(photos, "find", find)
+    rep = Log()
+    sb.find_photos(board_id, rep, sleep=slept.append)
+    assert asked == ["Hot iron ordeal"] * (len(photos.WAITS) + 1)   # the others are not even asked
+    assert slept == list(photos.WAITS)
+    assert "3 pictures were not searched: Hot iron ordeal, Donkey portrait, Rice grains" in rep.lines[-1]
+    assert not any("No usable picture" in line for line in rep.lines)

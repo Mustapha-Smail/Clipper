@@ -148,7 +148,9 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   licences public domain, CC0 and CC BY only (`photos.allowed`), results must
   share most of the search's words (`photos.relevance`). One `studio_photos`
   row per search, used by every video that asks for it; credits are kept and
-  shown. Found in the storyboard job's draw step.
+  shown. Found in the storyboard job's draw step. Requests are spaced
+  (`photos.GAP`); a 429 raises `photos.Busy`, the draw step waits and asks
+  again, then leaves the rest for the next render. Never retry in a tight loop.
 - Settings `feature_clipping` (off by default) and `feature_studio` (on) only
   decide what the UI shows; at least one stays on. `/system/status` reports them.
 - Recorded moves (`clipper/assets/moves.json`) come from CMU motion capture via

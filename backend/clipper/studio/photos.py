@@ -11,12 +11,16 @@ once and kept in `studio_photos`, so every video that asks for it shows the
 same picture and its credit is always at hand. "Try another" takes the next
 result. On the page a photo is an aged print taped to the paper, or fills the
 frame, and moves slowly (a Ken Burns move).
+
+Requests to Wikimedia are spaced out (`GAP`), and a 429 is raised as `Busy`
+so the caller can stand back instead of asking again at once.
 """
 
 import io
 import json
 import math
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,6 +37,9 @@ from . import ink
 
 API = "https://commons.wikimedia.org/w/api.php"
 HEADERS = {"User-Agent": "ClipperStudio/1.0 (self-hosted video tool)"}
+GAP = 1.0                        # seconds between two requests to Wikimedia, search or file
+WAITS = (5, 15, 30)              # how long to stand back after a 429 that names no delay
+MAX_WAIT = 60                    # a longer Retry-After is cut to this
 MAX_BYTES = 25 * 1024 * 1024
 MIN_SIDE = 500                   # smaller files look soft on a 1080p frame
 STORE_SIDE = 1800                # what is kept on disk
@@ -56,12 +63,44 @@ def _text(meta: dict, key: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(raw))).strip()
 
 
-def _get(params: dict) -> dict:
-    url = API + "?" + urllib.parse.urlencode({**params, "format": "json", "formatversion": 2})
+class Busy(RuntimeError):
+    """Wikimedia asked to slow down (429). `wait` is the delay it named in seconds, None when it named none."""
+
+    def __init__(self, wait: float | None = None):
+        super().__init__("Wikimedia Commons is limiting requests from this machine. Wait a minute and try again.")
+        self.wait = wait
+
+
+def _asked(headers) -> float | None:
+    value = ((headers.get("Retry-After") if headers else "") or "").strip()
+    return min(float(value), MAX_WAIT) if value.isdigit() else None
+
+
+_last = 0.0                      # when the last request to Wikimedia ended
+
+
+def _fetch(url: str, timeout: int, limit: int = -1) -> bytes:
+    """One request to Wikimedia, never closer than GAP seconds to the one before; a 429 raises Busy."""
+    global _last
+    early = _last + GAP - time.monotonic()
+    if early > 0:
+        time.sleep(early)
     request = urllib.request.Request(url, headers=HEADERS)
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            return json.load(response)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read(limit)
+    except urllib.error.HTTPError as err:
+        if err.code == 429 or (err.code == 503 and _asked(err.headers) is not None):
+            raise Busy(_asked(err.headers)) from err
+        raise
+    finally:
+        _last = time.monotonic()
+
+
+def _get(params: dict) -> dict:
+    url = API + "?" + urllib.parse.urlencode({**params, "format": "json", "formatversion": 2})
+    try:
+        return json.loads(_fetch(url, 25))
     except urllib.error.HTTPError as err:
         raise RuntimeError(f"Wikimedia Commons error ({err.code})") from err
     except (urllib.error.URLError, TimeoutError) as err:
@@ -137,10 +176,8 @@ def credit(photo: dict) -> str:
 
 
 def _download(url: str, target: Path) -> tuple[int, int]:
-    request = urllib.request.Request(url, headers=HEADERS)
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = response.read(MAX_BYTES + 1)
+        data = _fetch(url, 60, MAX_BYTES + 1)
     except (urllib.error.URLError, TimeoutError) as err:
         raise RuntimeError("Could not download the picture. Try another one.") from err
     if len(data) > MAX_BYTES:
@@ -152,7 +189,10 @@ def _download(url: str, target: Path) -> tuple[int, int]:
 
 
 def find(query: str, rank: int = 0) -> StudioPhoto | None:
-    """Resolve a search to a picture (the `rank`-th usable result), download it and remember it."""
+    """Resolve a search to a picture (the `rank`-th usable result), download it and remember it.
+
+    Raises Busy when Wikimedia limits requests: the next result would be refused too.
+    """
     query = query.strip()[:200]
     results = search(query)
     if not results:              # too specific: the first words carry the name ("Graz", "Bede Historia")
@@ -163,6 +203,8 @@ def find(query: str, rank: int = 0) -> StudioPhoto | None:
         target = folder() / f"commons-{candidate['key']}.jpg"
         try:
             size = _download(candidate["image_url"], target) if not target.is_file() else Image.open(target).size
+        except Busy:
+            raise
         except (RuntimeError, OSError):
             rank += 1
             continue
