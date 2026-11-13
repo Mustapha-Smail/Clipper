@@ -367,6 +367,13 @@ export class Api {
   cancelJob(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/jobs/${id}/cancel`, {});
   }
+  /** A failed or cancelled job; for a clipping video with no clip yet, the video and its files too. */
+  deleteJob(id: number): Observable<void> {
+    return this.http.delete<void>(`${BASE}/jobs/${id}`);
+  }
+  readCampaignAgain(id: number): Observable<Campaign> {
+    return this.http.post<Campaign>(`${BASE}/campaigns/${id}/read`, {});
+  }
   retryJob(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/jobs/${id}/retry`, {});
   }

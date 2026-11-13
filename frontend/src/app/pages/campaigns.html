@@ -68,6 +68,11 @@
                 </p>
               </div>
               <div class="row">
+                @if (c.read_by === 'waiting') {
+                  <span class="pill cancelled" title="The AI was unavailable when it was added">waiting for AI</span>
+                  <button class="sm" (click)="readAgain(c)" [disabled]="rereading() === c.id">
+                    {{ rereading() === c.id ? 'Reading…' : 'Read again' }}</button>
+                }
                 @if (c.decision !== 'new') { <span class="pill" [class.approved]="c.decision === 'joined'">{{ c.decision }}</span> }
                 <span class="pill" [class.succeeded]="c.listing_status === 'open'" [class.cancelled]="c.listing_status === 'paused'"
                       [class.failed]="c.listing_status === 'ended'">{{ c.listing_status }}</span>

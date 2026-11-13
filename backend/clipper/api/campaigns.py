@@ -60,6 +60,20 @@ def ingest_campaign(body: s.CampaignIngest, db: Session = Depends(get_db)):
     return campaign_out(campaign, settings)
 
 
+@router.post("/{campaign_id}/read", response_model=s.CampaignOut)
+def read_campaign(campaign: Campaign = Depends(get_campaign), db: Session = Depends(get_db)):
+    """Read the stored listing text with the AI again: for one that waited for it, or to refresh."""
+    if not campaign.raw_text.strip():
+        raise HTTPException(409, "There is no listing text to read: paste the page again")
+    settings = settings_mod.load()
+    try:
+        campaigns_mod.read_again(db, campaign, settings)
+    except RuntimeError as err:
+        raise HTTPException(502, str(err)) from err
+    count = db.scalar(select(func.count()).where(Video.campaign_id == campaign.id)) or 0
+    return campaign_out(campaign, settings, count)
+
+
 @router.post("/scout", response_model=s.JobOut, status_code=202)
 def start_scout(db: Session = Depends(get_db)):
     """Queue the scout job: it reads public listings and adds them here (see scout.py)."""

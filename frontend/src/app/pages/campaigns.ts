@@ -98,7 +98,11 @@ export class CampaignsPage {
         this.url.set('');
         this.text.set('');
         fold.open = false;
-        this.toasts.ok(`Read "${campaign.title}"`);
+        if (campaign.read_by === 'waiting') {
+          this.toasts.ok(`Saved "${campaign.title}" without reading it: the AI is unavailable. Press Read again later.`);
+        } else {
+          this.toasts.ok(`Read "${campaign.title}"`);
+        }
         this.tab.set(this.bucket(campaign));
         this.load();
       },
@@ -116,6 +120,24 @@ export class CampaignsPage {
         this.load();
       },
       error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected readonly rereading = signal<number | null>(null);
+
+  /** A listing added while the AI was unavailable: read its stored text now. */
+  protected readAgain(campaign: Campaign): void {
+    this.rereading.set(campaign.id);
+    this.api.readCampaignAgain(campaign.id).subscribe({
+      next: (updated) => {
+        this.rereading.set(null);
+        this.load();
+        this.toasts.ok(`Read: ${updated.title}`);
+      },
+      error: (err) => {
+        this.rereading.set(null);
+        this.toasts.error(err);
+      },
     });
   }
 

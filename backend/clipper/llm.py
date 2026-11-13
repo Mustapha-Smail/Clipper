@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from pydantic import BaseModel
 
 from . import claude, config, openai_compat
+from .ai_errors import AiUnavailable  # noqa: F401 - features catch it as llm.AiUnavailable
 from .db import session_scope
 from .db.models import AiUsage
 
@@ -139,17 +140,62 @@ def estimate(model: str, usage: dict) -> float | None:
     return round(tokens + usage.get("searches", 0) * SEARCH_PRICE, 5)
 
 
-def _record(task: str, tier: str, provider: str, model: str, usage: dict, started: float,
-            error: str | None = None) -> None:
+_last_id: contextvars.ContextVar[int | None] = contextvars.ContextVar("ai_last_id", default=None)
+
+
+def tag_last(ref: str) -> None:
+    """Attribute the call just made to `ref`, once its subject exists (a campaign read before it was saved)."""
+    row_id = _last_id.get()
+    if row_id is None:
+        return
     try:
         with session_scope() as db:
-            db.add(AiUsage(task=task, tier=tier, provider=provider, model=model,
+            row = db.get(AiUsage, row_id)
+            if row is not None and row.ref is None:
+                row.ref = ref
+    except Exception:  # noqa: BLE001 - bookkeeping must never break the feature
+        log.warning("could not tag AI usage", exc_info=True)
+
+
+def health(within_hours: float = 24) -> dict:
+    """Whether AI looks available: the latest call decides. Unknown (no recent call) counts as fine."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from .db.models import as_utc
+
+    try:
+        with session_scope() as db:
+            last = db.scalar(select(AiUsage).order_by(AiUsage.id.desc()).limit(1))
+            if last is None or as_utc(last.created_at) < datetime.now(UTC) - timedelta(hours=within_hours):
+                return {"ok": True, "message": "", "since": None}
+            if last.ok or not last.outage:
+                return {"ok": True, "message": "", "since": None}
+            first = last
+            for row in db.scalars(select(AiUsage).where(AiUsage.id < last.id).order_by(AiUsage.id.desc()).limit(200)):
+                if row.ok or not row.outage:
+                    break
+                first = row
+            return {"ok": False, "message": last.error, "since": as_utc(first.created_at).isoformat()}
+    except Exception:  # noqa: BLE001 - a status check must never fail
+        return {"ok": True, "message": "", "since": None}
+
+
+def _record(task: str, tier: str, provider: str, model: str, usage: dict, started: float,
+            error: str | None = None, outage: bool = False) -> None:
+    try:
+        with session_scope() as db:
+            row = AiUsage(task=task, tier=tier, provider=provider, model=model,
                            input_tokens=usage.get("input", 0) + usage.get("cache_write", 0),
                            output_tokens=usage.get("output", 0),
                            cache_read_tokens=usage.get("cache_read", 0), searches=usage.get("searches", 0),
                            cost_usd=estimate(model, usage) if not error else None, ok=error is None,
                            error=(error or "")[:500], duration_s=round(time.monotonic() - started, 2),
-                           ref=current_ref()))
+                           ref=current_ref(), outage=outage)
+            db.add(row)
+            db.flush()
+            _last_id.set(row.id)
     except Exception:  # noqa: BLE001 - the log must never break the call it describes
         log.warning("could not record AI usage", exc_info=True)
 
@@ -166,7 +212,8 @@ def ask(task: str, system: str, content, output_format: type[BaseModel], effort:
     try:
         parsed, usage = PROVIDERS[provider].ask_model(model, system, content, output_format, effort, cache=cache)
     except Exception as err:
-        _record(task, tier, provider, model, {}, started, str(err) or err.__class__.__name__)
+        _record(task, tier, provider, model, {}, started, str(err) or err.__class__.__name__,
+                outage=isinstance(err, AiUnavailable))
         raise
     _record(task, tier, provider, model, usage, started)
     return parsed
@@ -221,7 +268,8 @@ def search(task: str, system: str, prompt: str, max_searches: int = 8, effort: s
     try:
         pieces, searches, usage = PROVIDERS[provider].search_model(model, system, prompt, max_searches, effort)
     except Exception as err:
-        _record(task, tier, provider, model, {}, started, str(err) or err.__class__.__name__)
+        _record(task, tier, provider, model, {}, started, str(err) or err.__class__.__name__,
+                outage=isinstance(err, AiUnavailable))
         raise
     _record(task, tier, provider, model, usage, started)
     sources = sources or Sources()

@@ -182,6 +182,15 @@ import { Toasts } from '../core/toast';
                 <span>Check each clip against the campaign brief after rendering
                   <small>Only runs for videos that have a brief. You can always run the check by hand.</small></span>
               </label>
+              <label class="field wide"><span>When the AI is unavailable</span>
+                <select [(ngModel)]="f.ai_fallback">
+                  <option value="rules">Use plain rules instead (marked as such)</option>
+                  <option value="fail">Stop the job with the error</option>
+                </select>
+                <small>No credit, no key, or the service down. Rules pick moments from the transcript's wording,
+                  pace and length, and check the brief's length, hashtags and banned words; every pick shows its
+                  points, and you still review every clip. Campaign listings wait and are read when the AI is back.</small>
+              </label>
             </div>
           </section>
 

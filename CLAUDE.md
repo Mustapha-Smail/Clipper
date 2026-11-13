@@ -44,6 +44,12 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   compatible servers). Every call is logged in `ai_usage`. New AI work needs a
   task in `llm.TASKS`, never a direct SDK call.
 - `moments.py`: the model answers with transcript line numbers, never timestamps.
+- AI outages: providers raise `ai_errors.AiUnavailable` (no key, credit, rate
+  limit, 5xx, unreachable); `ai_usage.outage` records it and `llm.health()` feeds
+  the status banner. Clipping falls back to `rules.py` (moments and brief checks,
+  explainable points, marked "Picked by rules") when `ai_fallback` is "rules";
+  pasted listings are stored with `read_by` "waiting". Never fall back silently:
+  report it through the Reporter.
 - `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
   subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.
 - `subtitles.py`: burned-in captions are detected as a band of changing text,

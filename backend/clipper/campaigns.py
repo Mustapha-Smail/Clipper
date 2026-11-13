@@ -94,9 +94,36 @@ def ingest(db: Session, url: str | None, text: str, settings: Settings) -> tuple
     """Read one listing and store it: (campaign, whether it is new).
 
     A URL already known refreshes that campaign and keeps the user's decision
-    and notes. Raises RuntimeError when the model cannot read the text.
+    and notes. Raises RuntimeError when the model cannot read the text. When the
+    AI is unavailable, the listing is kept as it is, marked "waiting", to be read
+    again later (`read_again`) instead of being lost.
     """
-    return store(db, url, extract(text, settings.theme), text)
+    try:
+        terms, read_by = extract(text, settings.theme), "ai"
+    except llm.AiUnavailable:
+        known = db.scalar(select(Campaign).where(Campaign.url == url.strip())) if url and url.strip() else None
+        if known is not None and known.read_by == "ai":
+            raise                     # keep the good reading rather than replace it with nothing
+        terms, read_by = {"title": waiting_title(url, text)}, "waiting"
+    campaign, created = store(db, url, terms, text, read_by)
+    if read_by == "ai":
+        llm.tag_last(f"campaign:{campaign.id}")
+    return campaign, created
+
+
+def waiting_title(url: str | None, text: str) -> str:
+    """A name for a listing nobody has read yet: its first line of text, or its address."""
+    first = next((line.strip() for line in text.splitlines() if len(line.strip()) > 3), "")
+    return (first or (url or "Pasted listing"))[:120]
+
+
+def read_again(db: Session, campaign: Campaign, settings: Settings) -> Campaign:
+    """Read a stored listing's text with the AI (one waiting for it, or to refresh the reading)."""
+    with llm.attribute(f"campaign:{campaign.id}"):
+        terms = extract(campaign.raw_text, settings.theme)
+    apply_terms(campaign, terms, campaign.raw_text, "ai")
+    db.flush()
+    return campaign
 
 
 def store(db: Session, url: str | None, terms: Terms | dict, text: str,
@@ -174,6 +201,9 @@ def assess(c: Campaign, settings: Settings) -> dict:
 
     if c.theme_fit is not None:
         parts.append((f"Theme fit {c.theme_fit}/10", c.theme_fit / 10 * 25))
+    elif c.read_by == "waiting":
+        parts.append(("Not read yet: the AI was unavailable", 0.0))
+        flags.append("Waiting for the AI: its terms are not read yet. Press Read again once the AI is back")
     elif c.read_by == "page":
         # Not judged: the same 40% an unknown budget gets, so it neither leads nor sinks the list.
         parts.append(("Theme fit not judged: read without AI", 10.0))

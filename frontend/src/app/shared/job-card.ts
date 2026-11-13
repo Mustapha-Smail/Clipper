@@ -4,6 +4,7 @@ import { Api } from '../core/api';
 import { ClockPipe, KIND_NAMES, STAGE_NAMES, elapsed } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { Job, JobEvent } from '../core/models';
+import { Confirm } from '../core/confirm';
 import { Toasts } from '../core/toast';
 
 /** One job: what it is, how far along, its live log, and cancel or retry. */
@@ -50,6 +51,7 @@ import { Toasts } from '../core/toast';
         }
         @if (job().state === 'failed' || job().state === 'cancelled') {
           <button class="sm" (click)="retry()">Retry</button>
+          <button class="sm quiet danger" (click)="remove()" [disabled]="removing()">Delete</button>
         }
         @if (showLink() && job().video_id && job().state === 'succeeded') {
           <a class="btn sm" [routerLink]="['/videos', job().video_id]">Open the video</a>
@@ -163,6 +165,8 @@ export class JobCard {
   private readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
+  protected readonly removing = signal(false);
 
   readonly job = input.required<Job>();
   /** Offer a link to the video once the job has succeeded. */
@@ -248,6 +252,29 @@ export class JobCard {
     this.api.cancelJob(this.job().id).subscribe({
       next: () => this.store.refresh(),
       error: (err) => this.toasts.error(err),
+    });
+  }
+
+  /** Forget the job. A clipping video that never got a clip goes with it, files included. */
+  protected async remove(): Promise<void> {
+    const job = this.job();
+    const clipping = !!job.video_id;
+    if (!(await this.confirm.ask({
+      title: 'Delete this job?',
+      message: clipping ? 'If this video has no clip yet, it is deleted too, with its downloaded file and transcript.'
+        : 'Its log is deleted. What it already made is kept.',
+      confirm: 'Delete', danger: true }))) return;
+    this.removing.set(true);
+    this.api.deleteJob(job.id).subscribe({
+      next: () => {
+        this.removing.set(false);
+        this.toasts.ok('Deleted');
+        this.store.refresh();
+      },
+      error: (err) => {
+        this.removing.set(false);
+        this.toasts.error(err);
+      },
     });
   }
 

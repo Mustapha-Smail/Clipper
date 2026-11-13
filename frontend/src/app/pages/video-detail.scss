@@ -59,3 +59,15 @@
     padding: 0;
   }
 }
+
+.rules-note {
+  color: var(--muted);
+
+  .pill.tiny {
+    font-size: 10.5px;
+    padding: 0 7px;
+    margin-right: 4px;
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+}

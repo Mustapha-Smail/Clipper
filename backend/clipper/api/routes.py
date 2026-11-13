@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import config, jobs, llm, pipeline
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Worker, as_utc, utcnow
+from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Video, Worker, as_utc, utcnow
 from . import schemas as s
 from .videos import clip_out
 
@@ -111,6 +111,22 @@ def cancel_job(job: Job = Depends(get_job), db: Session = Depends(get_db)):
         raise HTTPException(409, "This job has already finished")
     jobs.request_cancel(db, job)
     return job
+
+
+@jobs_router.delete("/{job_id}", status_code=204)
+def delete_job(job: Job = Depends(get_job), db: Session = Depends(get_db)):
+    """Forget a failed or cancelled job. For a clipping video that never got a clip, delete the video too."""
+    if job.state not in ("failed", "cancelled"):
+        raise HTTPException(409, "Only failed or cancelled jobs can be deleted")
+    video = db.get(Video, job.video_id) if job.video_id else None
+    if video is not None and not video.clips and not jobs.has_active(db, video.id):
+        from .. import pipeline
+
+        for other in db.scalars(select(Job).where(Job.video_id == video.id, Job.id != job.id,
+                                                  Job.state.in_(("failed", "cancelled")))):
+            db.delete(other)
+        pipeline.delete_video(db, video)
+    db.delete(job)
 
 
 @jobs_router.post("/{job_id}/retry", response_model=s.JobOut, status_code=202)
@@ -253,6 +269,7 @@ def status(db: Session = Depends(get_db)):
         "queued": counts.get("queued", 0),
         "running": counts.get("running", 0),
         "features": {"clipping": settings.feature_clipping, "studio": settings.feature_studio},
+        "ai": llm.health(),
     }
 
 
@@ -279,7 +296,9 @@ def costs(script_id: int | None = None, storyboard_id: int | None = None, video_
                  ("Script", [f"script:{script.id}"]),
                  ("Videos", [f"storyboard:{b.id}" for b in script.storyboards])]
     elif video_id is not None:
-        steps = [("Clips", [f"video:{video_id}"])]
+        video = db.get(Video, video_id)
+        steps = [("Campaign", [f"campaign:{video.campaign_id}"])] if video and video.campaign_id else []
+        steps.append(("This video", [f"video:{video_id}"]))
     else:
         raise HTTPException(400, "Say which: script_id, storyboard_id or video_id")
     return {**llm.costs(steps), "note": COST_NOTE}

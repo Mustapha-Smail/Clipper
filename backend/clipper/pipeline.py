@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import select as sql_select
 
-from . import compliance, llm, subtitles
+from . import compliance, llm, rules, subtitles
 from . import ingest as ingest_mod
 from . import moments as moments_mod
 from . import transcribe as transcribe_mod
@@ -118,8 +118,14 @@ def select(video_id: str, settings: Settings, rep: Reporter, n: int | None = Non
     wanted = f"{n} moment{'s' if n != 1 else ''} of {min_len}-{max_len}s"
     rep.info(f"Asking {llm.route('moments')[2]} for up to {wanted}"
              + (" with the campaign brief" if brief.strip() else ""))
-    picks = moments_mod.ask_claude(lines, title, n, min_len, max_len, brief.strip() or None)
-    found, warnings = moments_mod.picks_to_moments(picks, lines, duration, n, min_len, max_len, taken=kept)
+    try:
+        picks = moments_mod.ask_claude(lines, title, n, min_len, max_len, brief.strip() or None)
+        found, warnings = moments_mod.picks_to_moments(picks, lines, duration, n, min_len, max_len, taken=kept)
+    except llm.AiUnavailable as err:
+        if settings.ai_fallback != "rules":
+            raise
+        rep.warn(f"The AI is unavailable ({err}). Choosing moments by rules instead: check them closely.")
+        found, warnings = rules.pick_moments(lines, words, title, duration, n, min_len, max_len, taken=kept)
     for warning in warnings:
         rep.warn(warning)
 
@@ -229,8 +235,16 @@ def check(video_id: str, settings: Settings, rep: Reporter, clip_ids: list[int] 
     for done, clip in enumerate(todo):
         rep.progress(done / len(todo), f"Checking clip {done + 1} of {len(todo)}")
         spoken = " ".join(w["w"] for w in words if clip["start"] - 0.05 <= w["s"] and w["e"] <= clip["end"] + 0.3)
-        result = compliance.check_clip(Path(clip["path"]), clip, spoken, brief,
-                                       clip["captions_burned"], settings.hook_seconds)
+        try:
+            result = compliance.check_clip(Path(clip["path"]), clip, spoken, brief,
+                                           clip["captions_burned"], settings.hook_seconds)
+        except llm.AiUnavailable as err:
+            if settings.ai_fallback != "rules":
+                raise
+            if done == 0:
+                rep.warn(f"The AI is unavailable ({err}). Checking the brief by rules: length, hashtags and "
+                         "banned words; the rest is left to you.")
+            result = rules.check_clip(clip, spoken, brief)
         with session_scope() as db:
             row = db.get(Clip, clip["id"])
             if row is not None:

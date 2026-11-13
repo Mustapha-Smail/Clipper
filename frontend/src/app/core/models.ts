@@ -108,6 +108,10 @@ export interface VideoSummary {
   approved_count: number;
   has_file: boolean;
   busy: boolean;
+  /** Its latest job failed and it has no clip yet: it can be deleted from the list. */
+  failed?: boolean;
+  error?: string;
+  failed_job_id?: number | null;
 }
 
 export type CampaignDecision = 'new' | 'interested' | 'joined' | 'skipped';
@@ -140,6 +144,8 @@ export interface Campaign {
   theme_fit: number | null;
   theme_reason: string;
   decision: CampaignDecision;
+  /** ai, page (read by the scout without AI) or waiting (for the AI to read it). */
+  read_by?: 'ai' | 'page' | 'waiting';
   notes: string;
   first_seen: string;
   last_seen: string;
@@ -197,6 +203,7 @@ export interface AppSettings {
   /** Days an unapproved Studio render is kept before it is deleted; 0 = forever. */
   unapproved_keep_days: number;
   clips_per_video: number;
+  ai_fallback: 'rules' | 'fail';
   min_len: number;
   max_len: number;
   ai_writing_provider: AiProvider;
@@ -233,6 +240,8 @@ export interface SettingsBundle {
 
 export interface SystemStatus {
   features?: { clipping: boolean; studio: boolean };
+  /** The latest AI call failed because the AI is unavailable (no credit, no key, down). */
+  ai?: { ok: boolean; message: string; since: string | null };
   version: string;
   api_key: boolean;
   youtube_key: boolean;

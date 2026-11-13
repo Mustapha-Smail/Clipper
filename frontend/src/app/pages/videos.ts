@@ -5,6 +5,7 @@ import { Api } from '../core/api';
 import { AgoPipe, LengthPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { Campaign, VideoSummary } from '../core/models';
+import { Confirm } from '../core/confirm';
 import { Toasts } from '../core/toast';
 import { JobCard } from '../shared/job-card';
 
@@ -85,9 +86,16 @@ const RECENT_MS = 15 * 60 * 1000;
                 <div class="small muted">
                   @if (video.uploader) { {{ video.uploader }} · }{{ video.duration | length }} · added {{ video.created_at | ago }}
                 </div>
+                @if (video.failed && video.error) {
+                  <div class="small error-line">{{ video.error }}</div>
+                }
               </div>
               @if (video.busy) {
                 <span class="pill running">Working</span>
+              } @else if (video.failed) {
+                <span class="pill failed" [title]="video.error ?? ''">Failed</span>
+                <button class="sm quiet danger" (click)="$event.preventDefault(); $event.stopPropagation(); removeFailed(video)"
+                        [attr.aria-label]="'Delete ' + video.title">Delete</button>
               }
               <div class="counts small num">
                 <div>{{ video.clip_count }} {{ video.clip_count === 1 ? 'clip' : 'clips' }}</div>
@@ -131,12 +139,25 @@ const RECENT_MS = 15 * 60 * 1000;
       text-align: right;
       white-space: nowrap;
     }
+    .error-line {
+      color: var(--bad);
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @media (max-width: 600px) {
+      .item { flex-wrap: wrap; }
+      .item .grow { flex-basis: 100%; }
+      .counts { margin-left: auto; }
+    }
   `,
 })
 export class VideosPage {
   private readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
 
   protected readonly videos = signal<VideoSummary[] | null>(null);
   protected readonly src = signal('');
@@ -180,6 +201,24 @@ export class VideosPage {
         untracked(() => this.load());
       }
     });
+  }
+
+  /** A project that failed before any clip was made: delete it, its files and its failed jobs. */
+  protected async removeFailed(video: VideoSummary): Promise<void> {
+    if (!(await this.confirm.ask({
+      title: 'Delete this failed video?',
+      message: 'Its downloaded file, transcript and failed jobs are deleted. No clip was made from it.',
+      confirm: 'Delete', danger: true }))) return;
+    const done = {
+      next: () => {
+        this.toasts.ok('Deleted');
+        this.store.refresh();
+        this.load();
+      },
+      error: (err: unknown) => this.toasts.error(err),
+    };
+    if (video.failed_job_id) this.api.deleteJob(video.failed_job_id).subscribe(done);
+    else this.api.deleteVideo(video.id).subscribe(done);
   }
 
   private load(): void {

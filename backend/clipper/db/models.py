@@ -360,6 +360,7 @@ class AiUsage(Base):
     searches: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float | None] = mapped_column(Float)              # estimate; NULL = model not priced
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    outage: Mapped[bool] = mapped_column(Boolean, default=False)      # failed because the AI was unavailable
     error: Mapped[str] = mapped_column(Text, default="")
     duration_s: Mapped[float] = mapped_column(Float, default=0.0)
     # what the call was for: "idea:3", "script:4", "storyboard:8", "video:12"; NULL before this existed

@@ -63,6 +63,9 @@ class Settings(BaseModel):
     ai_research_provider: Literal["anthropic", "openai"] = "anthropic"
     ai_research_model: str = Field("claude-sonnet-5-5", pattern=r"^[\w.:/-]{2,80}$")
     auto_compliance: bool = True              # check clips against the brief after rendering
+    # When the AI is unavailable (no credit, no key, down): choose moments and check briefs with plain
+    # rules (marked as such, still reviewed by you), or stop the job with the error.
+    ai_fallback: Literal["rules", "fail"] = "rules"
 
     # Transcription
     language: str = Field("en", pattern=r"^[a-z]{2}$")

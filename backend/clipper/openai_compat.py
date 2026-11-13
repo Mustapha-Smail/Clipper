@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pydantic import BaseModel, ValidationError
 
 from . import config
+from .ai_errors import AiUnavailable
 from .claude import Pieces
 
 EFFORTS = {"low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "high"}
@@ -25,7 +26,7 @@ def _client():
     key = config.openai_api_key()
     base = config.openai_base_url()
     if not key and not base:
-        raise RuntimeError("No OpenAI key. Put OPENAI_API_KEY in .env and restart, or pick Claude for this tier.")
+        raise AiUnavailable("No OpenAI key. Put OPENAI_API_KEY in .env and restart, or pick Claude for this tier.")
     return openai.OpenAI(api_key=key or "not-needed", base_url=base or None, timeout=600)
 
 
@@ -36,15 +37,19 @@ def _api_errors():
     try:
         yield
     except openai.AuthenticationError as err:
-        raise RuntimeError("The OpenAI-compatible API rejected the key in OPENAI_API_KEY.") from err
+        raise AiUnavailable("The OpenAI-compatible API rejected the key in OPENAI_API_KEY.") from err
     except openai.RateLimitError as err:
         if "insufficient_quota" in str(err):
-            raise RuntimeError("Your OpenAI quota is used up. Add credit in the OpenAI dashboard, then retry.") from err
-        raise RuntimeError("OpenAI rate limit reached. Wait a minute and retry.") from err
+            raise AiUnavailable("Your OpenAI quota is used up. Add credit in the OpenAI dashboard, then retry.") \
+                from err
+        raise AiUnavailable("OpenAI rate limit reached. Wait a minute and retry.") from err
     except openai.APIStatusError as err:
+        if err.status_code >= 500:
+            raise AiUnavailable(f"The OpenAI-compatible API is unavailable ({err.status_code}): {err.message}") \
+                from err
         raise RuntimeError(f"OpenAI API error ({err.status_code}): {err.message}") from err
     except openai.APIConnectionError as err:
-        raise RuntimeError("Could not reach the OpenAI-compatible API. Check the base URL and your connection.") \
+        raise AiUnavailable("Could not reach the OpenAI-compatible API. Check the base URL and your connection.") \
             from err
 
 

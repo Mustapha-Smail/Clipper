@@ -38,7 +38,8 @@ def clip_out(clip: Clip) -> s.ClipOut:
     return out
 
 
-def _summary(video: Video, busy: set[str]) -> dict:
+def _summary(video: Video, busy: set[str], failures: dict[str, dict] | None = None) -> dict:
+    failure = (failures or {}).get(video.id) if not video.clips else None
     return {
         "id": video.id, "url": video.url, "title": video.title, "uploader": video.uploader,
         "duration": video.duration, "width": video.width, "height": video.height,
@@ -48,7 +49,19 @@ def _summary(video: Video, busy: set[str]) -> dict:
         "approved_count": sum(1 for c in video.clips if c.status == "approved"),
         "has_file": ingest_mod.find_video(ingest_mod.source_dir(video.id)) is not None,
         "busy": video.id in busy,
+        "failed": failure is not None and video.id not in busy,
+        "error": (failure or {}).get("error") or "",
+        "failed_job_id": (failure or {}).get("id"),
     }
+
+
+def _failures(db: Session) -> dict[str, dict]:
+    """For each video, its latest job if that job failed: {video_id: {id, error}}."""
+    latest: dict[str, Job] = {}
+    for job in db.scalars(select(Job).where(Job.video_id.is_not(None)).order_by(Job.id)):
+        latest[job.video_id] = job
+    return {vid: {"id": job.id, "error": job.error or job.message} for vid, job in latest.items()
+            if job.state == "failed"}
 
 
 def _busy_ids(db: Session) -> set[str]:
@@ -66,7 +79,7 @@ def _detail(video: Video, db: Session) -> s.VideoDetail:
         for m in video.moments
     ]
     return s.VideoDetail(
-        **_summary(video, _busy_ids(db)),
+        **_summary(video, _busy_ids(db), _failures(db)),
         brief=video.brief,
         file_mb=round(file.stat().st_size / 1e6) if file else 0,
         has_transcript=transcribe_mod.transcript_path(src_dir).exists(),
@@ -96,8 +109,8 @@ def list_videos(db: Session = Depends(get_db)):
         select(Video).options(selectinload(Video.moments), selectinload(Video.clips))
         .order_by(Video.created_at.desc())
     ).all()
-    busy = _busy_ids(db)
-    return [_summary(video, busy) for video in videos]
+    busy, failures = _busy_ids(db), _failures(db)
+    return [_summary(video, busy, failures) for video in videos]
 
 
 @router.post("", response_model=s.JobOut, status_code=202)

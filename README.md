@@ -469,9 +469,29 @@ research does not cover, ideas are checked only when you ask.
 script, a storyboard or a clipped video). The script page shows what its idea,
 the script and all its videos cost so far; a storyboard page shows the cost of
 that video from idea to render, step by step (planning again adds to it;
-rendering is free); a clipped video's page shows what its moments and brief
-checks cost. Calls made before tagging existed were matched to the jobs that
+rendering is free); a clipped video's page shows what its campaign listing
+cost to read and what its moments and brief checks cost, step by step. Calls made before tagging existed were matched to the jobs that
 were running at the time; idea checks from back then cannot be traced.
+
+**When the AI is unavailable** (no credit, no key, rate limited, the service
+down): a banner says so until a call works again, and nothing is lost.
+
+- Clip moments are chosen by plain rules instead (Settings, Moments and brief
+  checks, "When the AI is unavailable": rules or stop). Each run of transcript
+  lines that fits the length range scores points for its opening (a question,
+  "you", a number, a curious turn; minus for starting mid-thought or on
+  filler), its body (numbers, an explanation, strong words), its ending (a full
+  sentence) and its delivery (pace, long silences). The best that do not
+  overlap are kept, each marked "picked by rules" with every point shown. You
+  review them as always.
+- Brief checks by rules: length limits, hashtags and @mentions the brief asks
+  for or bans, and quoted words it bans; the rest is left to you.
+- A pasted campaign listing is saved unread, "waiting for AI", with a Read again
+  button. The scout already reads listings from the page layout when the AI is
+  down, and reads them again with AI on its next run.
+
+A failed clipping job can be deleted from its card or from the Videos list; a
+video that never got a clip goes with it, files included.
 
 ## Seeing what is happening
 

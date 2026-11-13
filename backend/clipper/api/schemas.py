@@ -159,6 +159,7 @@ class CampaignOut(Model):
     theme_reason: str
     decision: Literal["new", "interested", "joined", "skipped"]
     notes: str
+    read_by: str = "ai"                          # ai | page (the scout, without AI) | waiting (for the AI)
     first_seen: UtcDatetime
     last_seen: UtcDatetime
     # Computed for the current settings:
@@ -314,6 +315,9 @@ class VideoSummary(Model):
     approved_count: int
     has_file: bool
     busy: bool
+    failed: bool = False               # its latest job failed and it has no clip yet
+    error: str = ""
+    failed_job_id: int | None = None
 
 
 class VideoDetail(VideoSummary):
@@ -398,6 +402,7 @@ class SystemStatus(BaseModel):
     queued: int
     running: int
     features: dict[str, bool] = {}
+    ai: dict = {}                    # {ok, message, since}: the latest AI call failed because the AI is unavailable
 
 
 # --- studio scripts ------------------------------------------------------------------

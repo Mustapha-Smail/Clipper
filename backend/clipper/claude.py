@@ -10,6 +10,8 @@ from contextlib import contextmanager
 
 from pydantic import BaseModel
 
+from .ai_errors import AiUnavailable
+
 # The basic search tool on purpose. The newer one (web_search_20260209) filters
 # results in a code sandbox, and its answers came back with no citations, so the
 # facts could not be tied to their sources (checked 2026-11-12 on Opus 5.5).
@@ -33,20 +35,22 @@ def _api_errors():
     try:
         yield
     except anthropic.AuthenticationError as err:
-        raise RuntimeError("Claude rejected the API key. Put a valid ANTHROPIC_API_KEY in .env.") from err
+        raise AiUnavailable("Claude rejected the API key. Put a valid ANTHROPIC_API_KEY in .env.") from err
     except TypeError as err:  # the SDK raises this when no credentials are configured
         if "api_key" not in str(err) and "authentication" not in str(err).lower():
             raise
-        raise RuntimeError("No Claude API key found. Put ANTHROPIC_API_KEY in .env.") from err
+        raise AiUnavailable("No Claude API key found. Put ANTHROPIC_API_KEY in .env.") from err
     except anthropic.RateLimitError as err:
-        raise RuntimeError("Claude rate limit reached. Wait a minute and retry.") from err
+        raise AiUnavailable("Claude rate limit reached. Wait a minute and retry.") from err
     except anthropic.APIStatusError as err:
         if "credit balance is too low" in str(err.message).lower():
-            raise RuntimeError("Your Anthropic credit balance is too low. Add credit in the Claude Console "
-                               "(Plans & Billing), then retry.") from err
+            raise AiUnavailable("Your Anthropic credit balance is too low. Add credit in the Claude Console "
+                                "(Plans & Billing), then retry.") from err
+        if err.status_code >= 500 or err.status_code == 403:
+            raise AiUnavailable(f"Claude is unavailable right now ({err.status_code}): {err.message}") from err
         raise RuntimeError(f"Claude API error ({err.status_code}): {err.message}") from err
     except anthropic.APIConnectionError as err:
-        raise RuntimeError("Could not reach the Claude API. Check your connection.") from err
+        raise AiUnavailable("Could not reach the Claude API. Check your connection.") from err
 
 
 def _usage(response) -> dict:

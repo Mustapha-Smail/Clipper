@@ -14,7 +14,7 @@
           @if (v.uploader) { {{ v.uploader }} · }{{ v.duration | length }} · {{ v.width }}×{{ v.height }}
           @if (v.url) { · <a [href]="v.url" target="_blank" rel="noopener">Open source</a> }
         </p>
-        <app-cost-report [of]="{ video: v.id }" label="AI cost of these clips" />
+        <app-cost-report [of]="{ video: v.id }" label="AI cost of this video, campaign reading included" />
       </div>
       <div class="row">
         @if (v.has_file) {
@@ -152,7 +152,11 @@
             <label class="field"><span>Post caption</span><textarea [(ngModel)]="draft.caption"></textarea></label>
 
             @if (draft.moment?.reason; as reason) {
-              <p class="small muted">{{ reason }}</p>
+              @if (reason.startsWith('Picked by rules')) {
+                <p class="small rules-note"><span class="pill tiny">picked by rules</span> {{ reason.split(': ').slice(1).join(': ') }}</p>
+              } @else {
+                <p class="small muted">{{ reason }}</p>
+              }
             }
 
             @if (draft.moment?.clip; as clip) {

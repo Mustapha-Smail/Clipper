@@ -66,6 +66,10 @@ export class App {
     const list: string[] = [];
     if (!status.worker_online) list.push('No worker is running, so queued jobs will not start.');
     if (!status.api_key) list.push('No Claude API key: set ANTHROPIC_API_KEY in .env and restart.');
+    else if (status.ai && !status.ai.ok) {
+      list.push(`The AI is unavailable: ${status.ai.message} Until it is back, clips are picked and checked by `
+        + 'plain rules (if Settings say so) and pasted campaign listings wait to be read.');
+    }
     if (!status.tools['ffmpeg']) list.push('ffmpeg is not installed on the server.');
     if (this.features().clipping && !status.tools['yt-dlp']) list.push('yt-dlp is not installed on the server.');
     return list;
