@@ -314,7 +314,10 @@ It moves slowly (a Ken Burns move), and ink marks can be drawn over it. Each
 search is resolved once and reused; the storyboard page lists the pictures
 with their licence and source, "Try another" moves to the next result, and the
 For YouTube box gathers every credit line (pictures and music) to paste into
-the description.
+the description. Wikimedia allows 10 searches a minute to an app that names no
+contact, so a video with many pictures takes a few minutes to find them; put a
+URL or email of yours in `WIKIMEDIA_CONTACT` in `.env` (it is sent to Wikimedia
+only, in the User-Agent) and it allows 200 a minute.
 
 **Editing.** Shots glide from one to the next across the page, or cut hard
 (`cut` on the shot line); the planner mixes both. The camera reframes at most

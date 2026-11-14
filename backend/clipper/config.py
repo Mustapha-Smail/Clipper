@@ -13,9 +13,12 @@ the database). This module only knows what is decided when a process starts.
   ELEVENLABS_API_KEY     ElevenLabs key, for the paid AI voice (Kokoro, the free one, needs none)
   OPENAI_API_KEY         OpenAI key, when a tier in Settings uses OpenAI
   OPENAI_BASE_URL        any OpenAI-compatible server instead (OpenRouter, Ollama...); empty = OpenAI
+  WIKIMEDIA_CONTACT      a URL or email sent to Wikimedia in the User-Agent of archive photo searches;
+                         with it Wikimedia allows 200 searches a minute, without it 10
 """
 
 import os
+import re
 from pathlib import Path
 
 VERSION = "1.0.0"
@@ -81,6 +84,11 @@ def openai_api_key() -> str:
 
 def openai_base_url() -> str:
     return (os.environ.get("OPENAI_BASE_URL") or "").strip()
+
+
+def wikimedia_contact() -> str:
+    """Sent to Wikimedia and nowhere else; empty unless the owner chose one. Kept to plain header characters."""
+    return re.sub(r"[^\x21-\x7e]", "", os.environ.get("WIKIMEDIA_CONTACT") or "")[:200]
 
 
 def studio_dir() -> Path:

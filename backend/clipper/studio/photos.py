@@ -12,8 +12,12 @@ same picture and its credit is always at hand. "Try another" takes the next
 result. On the page a photo is an aged print taped to the paper, or fills the
 frame, and moves slowly (a Ken Burns move).
 
-Requests to Wikimedia are spaced out (`GAP`), and a 429 is raised as `Busy`
-so the caller can stand back instead of asking again at once.
+Wikimedia allows 10 API requests a minute to a client whose User-Agent names
+no contact, and 200 to one that does (mediawiki.org/wiki/Wikimedia_APIs/Rate_limits).
+The contact is the owner's choice (`WIKIMEDIA_CONTACT` in .env, sent to
+Wikimedia only); searches are spaced for whichever limit applies (`api_gap`).
+A 429 is raised as `Busy` so the caller can stand back instead of asking again
+at once.
 """
 
 import io
@@ -36,8 +40,9 @@ from ..db.models import StudioPhoto, utcnow
 from . import ink
 
 API = "https://commons.wikimedia.org/w/api.php"
-HEADERS = {"User-Agent": "ClipperStudio/1.0 (self-hosted video tool)"}
-GAP = 1.0                        # seconds between two requests to Wikimedia, search or file
+API_GAP = 6.5                    # seconds between two searches with no contact: 10 a minute, the 11th is refused
+KNOWN_GAP = 1.0                  # with a contact in the User-Agent: 200 a minute are allowed, 60 is plenty
+GAP = 1.0                        # seconds between two file downloads (not counted in that limit)
 WAITS = (5, 15, 30)              # how long to stand back after a 429 that names no delay
 MAX_WAIT = 60                    # a longer Retry-After is cut to this
 MAX_BYTES = 25 * 1024 * 1024
@@ -63,6 +68,16 @@ def _text(meta: dict, key: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(raw))).strip()
 
 
+def headers() -> dict:
+    contact = config.wikimedia_contact()
+    return {"User-Agent": f"ClipperStudio/1.0 (self-hosted video tool{'; ' + contact if contact else ''})"}
+
+
+def api_gap() -> float:
+    """Seconds between two searches, for the limit Wikimedia applies to this User-Agent."""
+    return KNOWN_GAP if config.wikimedia_contact() else API_GAP
+
+
 class Busy(RuntimeError):
     """Wikimedia asked to slow down (429). `wait` is the delay it named in seconds, None when it named none."""
 
@@ -76,31 +91,36 @@ def _asked(headers) -> float | None:
     return min(float(value), MAX_WAIT) if value.isdigit() else None
 
 
-_last = 0.0                      # when the last request to Wikimedia ended
+_last = {"search": 0.0, "file": 0.0}     # when the last request of each kind ended
 
 
-def _fetch(url: str, timeout: int, limit: int = -1) -> bytes:
-    """One request to Wikimedia, never closer than GAP seconds to the one before; a 429 raises Busy."""
-    global _last
-    early = _last + GAP - time.monotonic()
+def _fetch(url: str, timeout: int, limit: int | None = None, kind: str = "file") -> bytes:
+    """One request to Wikimedia, never too close to the one before of its kind; a 429 raises Busy."""
+    early = _last[kind] + (api_gap() if kind == "search" else GAP) - time.monotonic()
     if early > 0:
         time.sleep(early)
-    request = urllib.request.Request(url, headers=HEADERS)
+    request = urllib.request.Request(url, headers=headers())
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read(limit)
+            # never read(-1): on a chunked answer http.client then returns the chunk framing too
+            return response.read() if limit is None else response.read(limit)
     except urllib.error.HTTPError as err:
         if err.code == 429 or (err.code == 503 and _asked(err.headers) is not None):
             raise Busy(_asked(err.headers)) from err
         raise
     finally:
-        _last = time.monotonic()
+        _last[kind] = time.monotonic()
 
 
 def _get(params: dict) -> dict:
     url = API + "?" + urllib.parse.urlencode({**params, "format": "json", "formatversion": 2})
     try:
-        return json.loads(_fetch(url, 25))
+        data = json.loads(_fetch(url, 25, kind="search"))
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        return data
+    except ValueError as err:
+        raise RuntimeError("Wikimedia Commons sent an answer that could not be read") from err
     except urllib.error.HTTPError as err:
         raise RuntimeError(f"Wikimedia Commons error ({err.code})") from err
     except (urllib.error.URLError, TimeoutError) as err:

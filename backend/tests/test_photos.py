@@ -1,6 +1,7 @@
 """Archive photos: search filters, credits, storage, the language, the stage and the API."""
 
 import io
+import json
 import urllib.error
 
 import numpy as np
@@ -18,6 +19,9 @@ from clipper.studio import storyboard as sb
 @pytest.fixture(autouse=True)
 def no_pacing(monkeypatch):
     monkeypatch.setattr(photos, "GAP", 0)
+    monkeypatch.setattr(photos, "API_GAP", 0)
+    monkeypatch.setattr(photos, "KNOWN_GAP", 0)
+    monkeypatch.delenv("WIKIMEDIA_CONTACT", raising=False)
 
 
 def page(index, pageid, title, license_name, width=1600, height=1200, mime="image/jpeg", desc=""):
@@ -162,13 +166,13 @@ def refused(retry_after=None):
 
 def test_requests_are_spaced_and_a_429_says_how_long_to_wait(monkeypatch):
     slept = []
-    monkeypatch.setattr(photos, "GAP", 1.0)
-    monkeypatch.setattr(photos, "_last", photos.time.monotonic())
+    monkeypatch.setattr(photos, "API_GAP", 6.5)
+    monkeypatch.setattr(photos, "_last", {"search": photos.time.monotonic(), "file": 0.0})
     monkeypatch.setattr(photos.time, "sleep", slept.append)
     monkeypatch.setattr(photos.urllib.request, "urlopen", refused("7"))
     with pytest.raises(photos.Busy) as busy:
         photos._get({"action": "query"})
-    assert busy.value.wait == 7 and len(slept) == 1 and 0 < slept[0] <= 1.0
+    assert busy.value.wait == 7 and len(slept) == 1 and 6 < slept[0] <= 6.5      # searches: 10 a minute
     monkeypatch.setattr(photos.urllib.request, "urlopen", refused("900"))
     with pytest.raises(photos.Busy) as busy:
         photos._get({"action": "query"})
@@ -177,6 +181,35 @@ def test_requests_are_spaced_and_a_429_says_how_long_to_wait(monkeypatch):
     with pytest.raises(photos.Busy) as busy:
         photos._get({"action": "query"})
     assert busy.value.wait is None
+
+
+def test_a_contact_is_sent_only_when_the_owner_set_one_and_allows_a_faster_pace(monkeypatch):
+    monkeypatch.setattr(photos, "API_GAP", 6.5)
+    monkeypatch.setattr(photos, "KNOWN_GAP", 1.0)
+    assert photos.headers() == {"User-Agent": "ClipperStudio/1.0 (self-hosted video tool)"} and photos.api_gap() == 6.5
+    monkeypatch.setenv("WIKIMEDIA_CONTACT", " https://example.org/clipper\r\nX-Other: 1 ")
+    assert photos.headers() == {"User-Agent": "ClipperStudio/1.0 (self-hosted video tool; "
+                                              "https://example.org/clipperX-Other:1)"}
+    assert photos.api_gap() == 1.0
+
+
+def test_answers_are_read_whole_and_a_broken_one_is_an_error(monkeypatch):
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, *amt):
+            assert amt != (-1,), "read(-1) returns the chunk framing of a chunked answer"
+            return super().read(*amt)
+    body = json.dumps(ANSWER).encode()
+    monkeypatch.setattr(photos.urllib.request, "urlopen", lambda request, timeout=0: Response(body))
+    assert photos._get({"action": "query"}) == ANSWER
+    monkeypatch.setattr(photos.urllib.request, "urlopen", lambda request, timeout=0: Response(b"<html>oops</html>"))
+    with pytest.raises(RuntimeError, match="could not be read"):
+        photos._get({"action": "query"})
 
 
 def test_a_refused_download_does_not_move_on_to_the_next_result(app_env, monkeypatch):

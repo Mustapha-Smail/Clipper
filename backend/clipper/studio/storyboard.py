@@ -23,7 +23,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import llm
+from .. import config, llm
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
@@ -667,7 +667,11 @@ def find_photos(storyboard_id: int, rep: Reporter, sleep=time.sleep) -> None:
     todo = [q for q in queries if q not in known]
     if not todo:
         return
-    rep.info(f"Finding {len(todo)} archive pictures on Wikimedia Commons (public domain, CC0 and CC BY only)")
+    minutes = round(len(todo) * photos.api_gap() / 60)
+    slow = "" if config.wikimedia_contact() else (": Commons allows 10 searches a minute without "
+                                                  "WIKIMEDIA_CONTACT in .env")
+    rep.info(f"Finding {len(todo)} archive pictures on Wikimedia Commons (public domain, CC0 and CC BY only)"
+             + (f". About {minutes} min{slow}" if minutes else ""))
     missing, later, waits = [], [], 0
     for n, query in enumerate(todo, 1):
         found = None
