@@ -626,6 +626,7 @@ export interface Asset {
   description: string;
   drawn: boolean;
   origin: string;
+  created_at: string;
   updated_at: string;
   used_in: number;
 }

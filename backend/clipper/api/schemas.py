@@ -783,6 +783,7 @@ class AssetOut(Model):
     description: str
     drawn: bool
     origin: str
+    created_at: UtcDatetime
     updated_at: UtcDatetime
     used_in: int
 

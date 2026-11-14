@@ -6,6 +6,7 @@ import { AgoPipe } from '../core/format';
 import { Asset, MusicFound, MusicTrack } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
+import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
 import { CAST, EXPRESSIONS, POSES } from './storyboard';
 import { PlacesLibrary } from '../shared/places-library';
 
@@ -38,7 +39,12 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
       <div class="row tab-head">
         <p class="muted small grow">Single objects drawn once in the house style. Claude draws new props when a storyboard
           needs them; redraw any you do not like.</p>
-        <input type="search" class="find-prop" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(0)" aria-label="Find a prop" />
+        <div class="row list-tools">
+          <input type="search" class="find-prop" placeholder="Find a prop" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(0)" aria-label="Find a prop" />
+          <select class="sort" [ngModel]="sort()" (ngModelChange)="sort.set($event); page.set(0)" aria-label="Sort props">
+            @for (o of sorts; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+          </select>
+        </div>
       </div>
 
       @if (assets(); as list) {
@@ -49,7 +55,7 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
               <div class="name">{{ a.name }}</div>
               <div class="small muted">{{ a.description }}</div>
               <div class="small muted">{{ a.drawn ? 'drawn ' + (a.updated_at | ago) : 'not drawn yet' }} ·
-                used in {{ a.used_in }} {{ a.used_in === 1 ? 'storyboard' : 'storyboards' }}</div>
+                added {{ a.created_at | ago }} · used in {{ a.used_in }} {{ a.used_in === 1 ? 'storyboard' : 'storyboards' }}</div>
               @if (editing() === a.name) {
                 <input type="text" #how placeholder="What to change: rounder, add a cord, more yellow…" (keydown.enter)="redraw(a, how.value)" />
                 <div class="row">
@@ -169,6 +175,7 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
     .tab-head { margin-bottom: 12px; align-items: flex-end; }
     .tab-head p { margin: 0; }
     .find-prop { max-width: 240px; }
+    .sort { width: auto; }
     .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 14px 0 6px; }
     .find { margin-bottom: 12px; display: grid; gap: 10px; }
     .find select { width: auto; }
@@ -296,9 +303,22 @@ export class PropsPage {
     const page = Math.min(this.page(), this.pages() - 1);
     return this.shown().slice(page * this.perPage, (page + 1) * this.perPage);
   });
+  protected readonly sorts: SortOption<Asset>[] = [
+    { value: 'used', label: 'Most used', compare: (a, b) => b.used_in - a.used_in || byText(a.name, b.name) },
+    { value: 'unused', label: 'Least used', compare: (a, b) => a.used_in - b.used_in || byText(a.name, b.name) },
+    { value: 'new', label: 'Newest', compare: (a, b) => byDate(a.created_at, b.created_at) },
+    { value: 'old', label: 'Oldest', compare: (a, b) => byDate(a.created_at, b.created_at, false) },
+    { value: 'drawn', label: 'Recently drawn', compare: (a, b) => Number(b.drawn) - Number(a.drawn) || byDate(a.updated_at, b.updated_at) },
+    { value: 'undrawn', label: 'Not drawn first', compare: (a, b) => Number(a.drawn) - Number(b.drawn) || byText(a.name, b.name) },
+    { value: 'yours', label: 'Yours first', compare: (a, b) => Number(b.origin === 'you') - Number(a.origin === 'you') || byText(a.name, b.name) },
+    { value: 'az', label: 'A to Z', compare: (a, b) => byText(a.name, b.name) },
+    { value: 'za', label: 'Z to A', compare: (a, b) => byText(b.name, a.name) },
+  ];
+  protected readonly sort = rememberedSort('clipper.props.sort', this.sorts);
   protected readonly shown = computed(() => {
     const q = this.query().trim().toLowerCase();
-    return (this.assets() ?? []).filter((a) => !q || a.name.includes(q) || a.description.toLowerCase().includes(q));
+    const found = (this.assets() ?? []).filter((a) => !q || a.name.includes(q) || a.description.toLowerCase().includes(q));
+    return sortBy(found, this.sorts, this.sort());
   });
 
   constructor() {

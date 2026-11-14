@@ -5,6 +5,7 @@ import { AgoPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { StoryboardListItem } from '../core/models';
 import { Toasts } from '../core/toast';
+import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
 
 type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
 
@@ -20,6 +21,7 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
           <p class="muted">Every Short and long video made from your scripts. Watch each one before you post it: the app
             never posts for you.</p>
         </div>
+        <div class="head-tools">
         <div class="tabs" role="tablist">
           @for (t of tabs; track t.value) {
             <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="tab.set(t.value)">
@@ -30,6 +32,10 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
                 <span class="muted num">{{ counts()[t.value] }}</span>
               }</button>
           }
+        </div>
+        <select class="sort" [value]="sort()" (change)="sort.set($any($event.target).value)" aria-label="Sort animations">
+          @for (o of sorts; track o.value) { <option [value]="o.value" [selected]="o.value === sort()">{{ o.label }}</option> }
+        </select>
         </div>
       </div>
 
@@ -66,6 +72,8 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
     </div>
   `,
   styles: `
+    .head-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .sort { width: auto; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
@@ -112,7 +120,20 @@ export class AnimationsPage {
     return b.review === 'pending' ? 'review' : b.review;
   }
 
-  protected readonly shown = computed(() => (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()));
+  protected readonly sorts: SortOption<StoryboardListItem>[] = [
+    { value: 'new', label: 'Newest', compare: (a, b) => byDate(a.created_at, b.created_at) },
+    { value: 'old', label: 'Oldest', compare: (a, b) => byDate(a.created_at, b.created_at, false) },
+    { value: 'rendered', label: 'Recently rendered', compare: (a, b) => byDate(a.rendered_at, b.rendered_at) },
+    { value: 'expiring', label: 'Deleted soonest', compare: (a, b) => byDate(a.expires_at, b.expires_at, false) },
+    { value: 'title', label: 'Title, A to Z', compare: (a, b) => byText(a.title, b.title) },
+    { value: 'script', label: 'Script, A to Z', compare: (a, b) => byText(a.script_title, b.script_title) || byText(a.title, b.title) },
+    { value: 'long', label: 'Longest', compare: (a, b) => b.duration - a.duration },
+    { value: 'short', label: 'Shortest', compare: (a, b) => a.duration - b.duration },
+    { value: 'format', label: 'Shorts first', compare: (a, b) => byText(b.format, a.format) || byDate(a.created_at, b.created_at) },
+  ];
+  protected readonly sort = rememberedSort('clipper.animations.sort', this.sorts);
+  protected readonly shown = computed(() => sortBy(
+    (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()), this.sorts, this.sort()));
   protected readonly counts = computed(() => {
     const counts: Record<Tab, number> = { review: 0, approved: 0, rejected: 0, unrendered: 0 };
     for (const b of this.boards() ?? []) counts[this.bucket(b)]++;

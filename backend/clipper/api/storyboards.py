@@ -488,7 +488,8 @@ def _usage(db: Session) -> dict[str, int]:
 
 def asset_out(asset: StudioAsset, used: int) -> s.AssetOut:
     return s.AssetOut(name=asset.name, description=asset.description, drawn=asset.svg is not None,
-                      origin=asset.origin, updated_at=asset.updated_at, used_in=used)
+                      origin=asset.origin, created_at=asset.created_at, updated_at=asset.updated_at,
+                      used_in=used)
 
 
 @router.get("/assets", response_model=list[s.AssetOut])
