@@ -53,7 +53,8 @@
       </div>
       @if (engine() === 'chatterbox') {
         <p class="small muted">Claude chooses how each sentence is said (dramatic, surprised, whispering…, now and then a
-          sigh or a gasp), then Chatterbox speaks it on this machine: about 3 minutes for a Short, 30 for a long video.
+          sigh or a gasp), then Chatterbox speaks it on this machine. It is slow: measured on this Mac, about 6 times real
+          time when the app runs natively and about 18 times in Docker, so a long video can take hours.
           No samples to compare: try a take. A Kokoro name gives Chatterbox that voice's timbre.
           @if (!o.chatterbox_ready) { The first take installs it once (about 2.5 GB into the data folder). }</p>
       } @else {

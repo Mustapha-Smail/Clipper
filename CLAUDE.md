@@ -88,11 +88,25 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   words with times). Alignment is difflib over normalised words; differences
   shorter than 3 words are ignored as transcription noise. Kokoro is loaded per
   job and released; its model downloads to `data/cache/kokoro` on first use.
+- Chatterbox (`studio/chatterbox.py`): Turbo in its own uv environment under
+  `data/cache/chatterbox/<platform>` (its pins clash with the app's; the data
+  folder is shared by the Mac app and Docker), run with `python -I` in a child
+  process (`chatterbox_runner.py`, which imports nothing from the app). CPU
+  only: the Mac GPU was slower. Claude directs each sentence (`llm` task
+  `delivery`, quick tier: mood tags and rare sounds, spacing enforced in code);
+  if the AI fails, plain narration, said in the log. Voices: its own, or a
+  Kokoro clip as the timbre reference. Our pauses and room tone, as for Kokoro.
 - `studio/storyboard.py`, `studio/animate.py`, `studio/art.py`: Claude plans
   scenes by word number (never timestamps) in a fixed vocabulary that the
   renderer knows; `storyboard.clean()` makes any plan or user edit safe. Props
   are SVG in `studio_assets`, checked by `art.check_prop_svg` (no text, scripts,
-  styles, links or images) and rasterised with resvg. The renderer's layout
+  styles, links or images) and rasterised with resvg. They are illustrations
+  (`storyboard.DRAW`: shading as unoutlined shapes in `art.SHADES` tones, two
+  outline weights) drawn on the writing tier at `Settings.prop_drawing`
+  effort, looked at once by the quick tier (`look_at_prop`, task `prop_check`)
+  and redrawn once on a weak verdict. `art.STYLE_MARK` marks the current
+  style: older AI props are hidden from the planner (`storyboard.library`) and
+  redrawn when used; `origin == "you"` props are never redrawn. The renderer's layout
   pass (`animate.separate`) keeps elements inside the stage and apart; keep it
   when adding element kinds. Captions reuse `captions.py`.
 - Storyboards have a `style`: `ink` (default) or `flat`. Ink storyboards are

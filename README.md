@@ -199,8 +199,24 @@ can run Docker out of memory. A take whose timing failed says why and offers
   out the loudness.
 - **Upload a recording:** any audio file, or a video with sound.
 - **AI voice:** Kokoro runs locally for free (22 English voices; the model,
-  205 MB, downloads once into `data/cache/kokoro`), or ElevenLabs with
+  205 MB, downloads once into `data/cache/kokoro`); Chatterbox runs locally for
+  free too and is expressive (see below); or ElevenLabs with
   `ELEVENLABS_API_KEY` in `.env` (your account's voices appear in the list).
+
+**Chatterbox, the expressive free voice.** Resemble AI's Chatterbox Turbo (MIT
+licence) understands moods and sounds. Before it speaks, Claude (the quick
+model, a fraction of a cent) directs every sentence: most stay plain
+narration, reveals become dramatic, surprises surprised, myths sarcastic,
+asides whispered, and now and then a sigh, gasp or chuckle (at most one every
+five sentences). The job log lists the moods it chose. The voice is its own,
+or the timbre of any Kokoro voice (a Kokoro clip is the reference it copies).
+It runs on the CPU in a child process with its own Python packages, so its
+memory (about 2.5 GB) is freed afterwards; the first take installs it into
+`data/cache/chatterbox/<platform>` (about 1 GB) and downloads the model (about
+1.5 GB) into `data/cache/huggingface`. It is much slower than real time: see the
+timings below. There are no samples to compare: make a take. Its audio carries
+Resemble's inaudible watermark marking it as AI-made. If the AI cannot be
+reached, it still speaks, every sentence as plain narration, and says so.
 
 **Sounding human.** Scripts are written for the ear (contractions, questions to
 the viewer, varied rhythm, signposts like "So." and "Here's the thing:", beats
@@ -211,8 +227,8 @@ time: short punchy lines a touch slower with room to land, long ones a little
 quicker, longer pauses after questions, ellipses and paragraphs, quiet room tone
 instead of digital silence. "Pauses" (tight, natural, relaxed) sets how much
 room it leaves; natural pauses make a video about 15 to 20 percent longer than
-tight ones. Kokoro still has no breaths or emotion: your own recording, or
-ElevenLabs, sounds more human.
+tight ones. Kokoro still has no breaths or emotion: Chatterbox, your own
+recording, or ElevenLabs sound more human. Chatterbox uses the same pauses.
 
 To compare AI voices before making a take, open "Compare voices": each Kokoro
 voice reads the start of your script (free, cached after the first play); each
@@ -227,7 +243,10 @@ against the current script" re-times a take without re-recording.
 
 Timing on this Mac: a 6-minute script takes about 2 minutes to speak with
 Kokoro in Docker and about 3 minutes to time with Whisper on the CPU (faster
-natively, where Whisper uses the GPU).
+natively, where Whisper uses the GPU). Chatterbox, measured: natively, 29
+seconds of speech in about 3 minutes; in Docker, 18 seconds of speech in about
+5.5 minutes, model loading included. Run the app natively (`make run`) for
+Chatterbox takes when you can.
 
 ## Studio videos (animated Shorts)
 
@@ -395,9 +414,9 @@ approves or posts anything.
   real voice does.
 
 Props come from the same library as the flat style: each is turned into ink
-lines and a wash by code, so no new drawing is needed. New props are drawn
-with a style guide that makes them work both as flat stickers and as ink line
-drawings. The pen scribbles when
+lines and a wash by code, so no new drawing is needed. New props are drawn as
+shaded illustrations whose outlined parts become the ink lines and whose
+colours and shading become the wash. The pen scribbles when
 something draws itself on, the camera whooshes between shots, an eraser rubs
 things out.
 
@@ -452,10 +471,19 @@ their licences in `backend/clipper/assets/fonts/film/`).
    move and up to four elements placed in named slots: cast members (pose,
    expression, talking or not), props, big text, numbers and arrows. Elements
    can appear on the word that introduces them.
-2. **Draw:** any prop the library lacks is drawn by Claude as SVG in the house
-   style (thick black outlines, a fixed palette, no text), checked, and kept for
-   every later video. The Props page shows the library; redraw any prop with an
-   instruction.
+2. **Draw:** any prop the library lacks is drawn by Claude (the writing model)
+   as an SVG illustration: true proportions and the details the planner asked
+   for, each part shaded with a shadow and a light tone of the channel's
+   palette, outlines in two weights, no text. The quick model then looks at the
+   rendered picture; if it is not clearly the object, or looks crude, the prop
+   is drawn once more with that critique. Props are kept for every later
+   video, but the planner reuses one only when it is exactly the object needed
+   (otherwise it asks for a more specific one, such as `roman_denarius` rather
+   than `coin`). Flat props from before this style are not offered to the
+   planner and are redrawn when a video uses them; props you made yourself are
+   never touched. Settings > Studio drawings: careful (more detail, about $0.20
+   a new prop) or quick (plainer, about $0.06). The Props page shows the
+   library; redraw any prop with an instruction.
 3. **Edit:** the storyboard page shows a preview frame per scene; every
    element is editable, scenes can be split or removed.
 4. **Render:** every frame is drawn with Pillow (pop-ins, motion, camera,
