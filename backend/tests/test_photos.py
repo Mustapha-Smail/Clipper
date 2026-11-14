@@ -280,3 +280,17 @@ def test_a_search_still_limited_leaves_the_rest_for_the_next_render(app_env, mon
     assert slept == list(photos.WAITS)
     assert "3 pictures were not searched: Hot iron ordeal, Donkey portrait, Rice grains" in rep.lines[-1]
     assert not any("No usable picture" in line for line in rep.lines)
+
+
+def test_photos_are_kept_to_a_budget_and_marks_on_the_dropped_ones_go_too():
+    from clipper.studio import film
+    assert sb.photo_budget("film", 50) == 1 and sb.photo_budget("film", 95) == 3 and sb.photo_budget("ink", 20) == 1
+    shots = [{"start_word": 0, "lines": ['0 photo "Hagia Sophia" as hagia', '3 big "537" as year',
+                                         '5 photo "Human brain" as brain', '7 stamp "MINE" on brain',
+                                         '9 string year brain', '11 circle year']}]
+    assert sb.limit_photos(shots, 1, film.parse_line) == 1
+    assert shots[0]["lines"] == ['0 photo "Hagia Sophia" as hagia', '3 big "537" as year', '11 circle year']
+    ink = [{"start_word": 0, "lines": ['0 photo "Pope portrait" right', '2 photo "Gutenberg Bible" left as bible',
+                                       '4 circle bible', '6 draw gavel center']}]
+    assert sb.limit_photos(ink, 1, beats.parse_line) == 1
+    assert ink[0]["lines"] == ['0 photo "Pope portrait" right', '6 draw gavel center']

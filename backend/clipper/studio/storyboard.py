@@ -282,11 +282,13 @@ under them. Define each person once, with the same ID all video long. Never stan
 anonymous figure in for a named person.
 - Years, dates, a period or an order of events: a timeline (have an actor point at \
 it, or circle it).
-- A real thing that exists in paintings, engravings or old photographs (a famous \
-portrait, a building, a manuscript, a machine, an event): a photo from the archives, \
-taped to the page, or full to fill the frame for a moment. Mark it in ink: circle a \
-detail, point at it, write a label next to it. About one every 30 to 60 seconds in a \
-history video, fewer elsewhere.
+- A specific, named, real thing whose real look matters to the story (a famous \
+portrait, a named building, a manuscript, a named machine, a famous event): a photo from \
+the archives, taped to the page, or full to fill the frame for a moment. Mark it in ink: \
+circle a detail, point at it, write a label next to it. Photos are rare seasoning: the \
+drawings carry the video. Everyday and generic things (a brain, a hand, a glove, a \
+machine in general, an experiment, a room, food) are always drawn, never a photo. Stay \
+within the photo budget given with the length; none is fine.
 These are where a viewer's eye goes; use them whenever the narration names one.
 
 The beat language. Each line starts with the number of the narration word on which it \
@@ -410,6 +412,46 @@ def ink_system(fmt: str, props: str) -> str:
             + f"\n\n<setting_library>\n{places_mod.listing()}\n</setting_library>")
 
 
+PHOTO_EVERY = {"ink": 40, "film": 30}      # at most one archive photo per this many seconds of narration
+
+
+def photo_budget(style: str, seconds: float) -> int:
+    """How many archive photos a stretch of narration may have: drawings and cards carry the rest."""
+    return max(1, int(seconds // PHOTO_EVERY[style]))
+
+
+def _seconds(words: list[dict], offset: int, size: int) -> float:
+    return words[offset + size - 1]["e"] - words[offset]["s"]
+
+
+def limit_photos(shots: list[dict], budget: int, parse) -> int:
+    """Keep the first `budget` photo lines of a chapter, and drop the marks made on the others.
+
+    Returns how many photos were left out."""
+    kept, cut, gone = 0, 0, set()
+    for shot in shots:
+        lines = []
+        for raw in shot.get("lines", []):
+            line = parse(raw)
+            if line is not None and line.verb == "photo":
+                if kept >= budget:
+                    gone.add(line.id)
+                    cut += 1
+                    continue
+                kept += 1
+            elif line is not None and gone & {getattr(line, k, "") for k in ("who", "target", "target2")}:
+                continue
+            lines.append(raw)
+        shot["lines"] = lines
+    return cut
+
+
+def _report_photo_cut(cut: int, style: str, rep: Reporter) -> None:
+    if cut:
+        rep.info(f"{cut} archive photos over the budget (one per {PHOTO_EVERY[style]} s of narration) were left "
+                 f"out; {'the drawings' if style == 'ink' else 'cards and type'} carry those moments")
+
+
 def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter) -> None:
     """Plan an ink storyboard: one call per chapter, the shared instructions cached between them."""
     known = library()
@@ -427,7 +469,8 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         prompt = (f"<video_title>{title}</video_title>\n\n{chapter_line}"
                   f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / BEAT_SECONDS[fmt]))} beat "
                   f"lines in all, including about {max(1, round(seconds / 25))} ACTION lines and "
-                  f"{max(1, round(seconds / 30))} move lines for actors</length>\n\n"
+                  f"{max(1, round(seconds / 30))} move lines for actors; at most {photo_budget('ink', seconds)} "
+                  f"photo lines</length>\n\n"
                   f"<narration>\n{numbered_words(part)}\n</narration>")
         # Medium effort: at high, most of the answer was the model thinking (about 85% of the tokens)
         # for a plan of the same quality.
@@ -442,17 +485,19 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
                 results.append(result)
                 rep.progress(len(results) / len(chunks), f"Planned {len(results)} of {len(chunks)} chapters")
 
-    shots, descriptions, settings = [], {}, {}
+    shots, descriptions, settings, cut = [], {}, {}, 0
     for n, (offset, size, result) in enumerate(results):
         part = beats.parse_plan(result.beats, offset + size, offset, check=False)
         if not part:
             rep.warn(f"Chapter {n + 1} came back with no usable shots")
             continue
+        cut += limit_photos(part, photo_budget("ink", _seconds(words, offset, size)), beats.parse_line)
         part[0]["start_word"] = offset          # every chapter starts its own shot...
         part[0]["page"] = n > 0                 # ...on a new row of the page
         shots.extend(part)
         descriptions.update({p.name: p.description for p in result.new_props})
         settings.update({beats._name(p.name): p.description for p in result.new_settings})
+    _report_photo_cut(cut, "ink", rep)
     shots, dropped = beats.clean(shots, len(words))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "
@@ -516,10 +561,14 @@ Something new every 2 to 3 seconds; never more than 4 seconds without a beat.
 - A new shot every 2 to 4 sentences, when the story moves to a new idea, person or time. \
 2 to 6 things per shot. The camera follows a red string from one shot to the next; add \
 cut to a shot line for a hard jump instead (a surprise, a turn).
-- Real people, places, buildings, documents, machines and events: a photo, with 2 to 5 \
-plain words that would be in a museum or Wikimedia file title, the name first ("Pope \
-Gregory XIII portrait", "Hagia Sophia", "Gutenberg Bible"); give people a label with \
-their name. Nothing abstract ("confusion", "time passing").
+- A specific, named, real person, place, building, document, machine or event whose real \
+look matters: a photo, with 2 to 5 plain words that would be in a museum or Wikimedia \
+file title, the name first ("Pope Gregory XIII portrait", "Hagia Sophia", "Gutenberg \
+Bible"); give people a label with their name. Photos are the strongest hits on the wall, \
+so keep them for the moments that need a real face or place: big type, counts and cards \
+carry the rest. Never a photo of a generic or everyday thing (a brain, a hand, a glove, \
+an experiment, a lab, food) or anything abstract ("confusion", "time passing"): use a \
+card or big type. Stay within the photo budget given with the length; none is fine.
 - Numbers the viewer should feel (money, counts, distances, durations): count. Years and \
 titles: big. One big with bar per shot at most.
 - Rules, steps, lists, comparisons, two dates side by side: cards. Keep card lines short \
@@ -580,7 +629,8 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
         seconds = part[-1]["e"] - part[0]["s"]
         prompt = (f"<video_title>{title}</video_title>\n\n{chapter_line}"
                   f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / FILM_SECONDS[fmt]))} "
-                  f"beat lines in all</length>\n\n<narration>\n{numbered_words(part)}\n</narration>")
+                  f"beat lines in all, at most {photo_budget('film', seconds)} photo lines</length>\n\n"
+                  f"<narration>\n{numbered_words(part)}\n</narration>")
         return offset, len(part), llm.ask("storyboard", system, prompt, FilmPlan, effort="medium", cache=True)
 
     results = [run(chunks[0])]
@@ -591,13 +641,16 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
                 results.append(result)
                 rep.progress(len(results) / len(chunks), f"Planned {len(results)} of {len(chunks)} chapters")
     shots: list[dict] = []
+    cut = 0
     for n, (offset, size, result) in enumerate(results):
         part = film.parse_plan(result.beats, offset + size, offset)
         if not part:
             rep.warn(f"Chapter {n + 1} came back with no usable shots")
             continue
+        cut += limit_photos(part, photo_budget("film", _seconds(words, offset, size)), film.parse_line)
         part[0]["start_word"] = offset
         shots.extend(part)
+    _report_photo_cut(cut, "film", rep)
     shots, dropped = film.clean(shots, len(words))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "

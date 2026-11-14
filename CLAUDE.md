@@ -153,6 +153,9 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   set `WIKIMEDIA_CONTACT` in `.env` (sent in the User-Agent, to Wikimedia only);
   a 429 raises `photos.Busy`, the draw step waits and asks
   again, then leaves the rest for the next render. Never retry in a tight loop.
+  Photos are seasoning, not the picture: the planners get a budget
+  (`storyboard.photo_budget`, one per 40 s ink, 30 s film) and `limit_photos`
+  drops the extras and the marks on them, announced in the log.
 - Settings `feature_clipping` (off by default) and `feature_studio` (on) only
   decide what the UI shows; at least one stays on. `/system/status` reports them.
 - Recorded moves (`clipper/assets/moves.json`) come from CMU motion capture via
