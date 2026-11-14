@@ -77,6 +77,7 @@ class ClipOut(Model):
     tracked_share: float
     captions_burned: bool
     subtitle_fix: str | None
+    format: Literal["vertical", "horizontal"] = "vertical"
     compliance: Compliance | None
     rendered_at: UtcDatetime
     file_exists: bool = True
@@ -327,6 +328,8 @@ class VideoDetail(VideoSummary):
     subtitles: SubtitleResult | None
     subtitle_mode: str | None
     effective_subtitle_mode: str
+    clip_format: str | None
+    effective_clip_format: str
     campaign: CampaignRef | None
     moments: list[MomentOut]
 
@@ -338,6 +341,8 @@ class VideoCreate(BaseModel):
     max_len: int | None = Field(None, ge=10, le=900)
     brief: str = ""
     campaign_id: int | None = Field(None, description="Clip this video for a campaign; its rules become the brief")
+    clip_format: Literal["vertical", "horizontal"] | None = Field(
+        None, description="Shape of this video's clips; leave out to use the setting")
 
 
 class VideoPatch(BaseModel):
@@ -347,6 +352,7 @@ class VideoPatch(BaseModel):
     use_campaign_brief: bool = False
     # "default" clears the per-video choice.
     subtitle_mode: Literal["default", "cover", "crop", "keep", "ignore"] | None = None
+    clip_format: Literal["default", "vertical", "horizontal"] | None = None
 
 
 class SelectRequest(BaseModel):

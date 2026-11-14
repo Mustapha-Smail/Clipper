@@ -86,6 +86,8 @@ def _detail(video: Video, db: Session) -> s.VideoDetail:
         subtitles=video.subtitles,
         subtitle_mode=video.subtitle_mode,
         effective_subtitle_mode=pipeline.effective_subtitle_mode(video, settings),
+        clip_format=video.clip_format,
+        effective_clip_format=pipeline.effective_clip_format(video, settings),
         campaign=video.campaign,
         moments=moments,
     )
@@ -163,6 +165,8 @@ def update_video(body: s.VideoPatch, video: Video = Depends(get_video), db: Sess
             video.brief = campaigns_mod.brief_for(campaign)
     if body.subtitle_mode is not None:
         video.subtitle_mode = None if body.subtitle_mode == "default" else body.subtitle_mode
+    if body.clip_format is not None:
+        video.clip_format = None if body.clip_format == "default" else body.clip_format
     db.flush()
     return _detail(video, db)
 

@@ -34,11 +34,11 @@ type Filter = 'all' | ClipStatus;
       @if (clips(); as all) {
         <div class="grid">
           @for (clip of shown(); track clip.id) {
-            <article class="card clip">
+            <article class="card clip" [class.landscape]="clip.format === 'horizontal'">
               @if (clip.file_exists) {
-                <div class="player"><video controls preload="metadata" playsinline [src]="api.clipUrl(clip)"></video></div>
+                <div class="player" [class.wide]="clip.format === 'horizontal'"><video controls preload="metadata" playsinline [src]="api.clipUrl(clip)"></video></div>
               } @else {
-                <div class="player none">The clip file is missing from disk.</div>
+                <div class="player none" [class.wide]="clip.format === 'horizontal'">The clip file is missing from disk.</div>
               }
               <div class="body">
                 <div class="row spread">
@@ -95,6 +95,10 @@ type Filter = 'all' | ClipStatus;
     .clip {
       align-items: start;
     }
+    /* A horizontal clip sits above its text: beside it, it would be too small to judge. */
+    .clip.landscape {
+      grid-template-columns: minmax(0, 1fr);
+    }
     .body {
       display: grid;
       gap: 8px;
@@ -114,7 +118,7 @@ type Filter = 'all' | ClipStatus;
       .grid {
         grid-template-columns: 1fr;
       }
-      .clip {
+      .clip:not(.landscape) {
         grid-template-columns: 110px minmax(0, 1fr);
       }
     }

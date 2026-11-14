@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import select as sql_select
 
-from . import compliance, llm, rules, subtitles
+from . import compliance, config, llm, rules, subtitles
 from . import ingest as ingest_mod
 from . import moments as moments_mod
 from . import transcribe as transcribe_mod
@@ -20,6 +20,7 @@ from .jobs import Reporter
 from .settings import Settings, clips_dir, resolve_whisper_engine
 
 SUBTITLE_MODES = ("cover", "crop", "keep", "ignore")
+FORMAT_NAMES = {"vertical": "vertical 9:16", "horizontal": "horizontal 16:9"}
 
 
 def _video(db, video_id: str) -> Video:
@@ -45,10 +46,16 @@ def effective_subtitle_mode(video: Video, settings: Settings) -> str:
     return "ignore"
 
 
+def effective_clip_format(video: Video, settings: Settings) -> str:
+    """The shape a render will give the clips: the video's own choice, else the default."""
+    return video.clip_format if video.clip_format in config.FORMATS else settings.clip_format
+
+
 # --- stages -------------------------------------------------------------------
 
 def ingest(src: str, settings: Settings, rep: Reporter, move: bool = False,
-           brief: str | None = None, campaign_id: int | None = None) -> str:
+           brief: str | None = None, campaign_id: int | None = None,
+           clip_format: str | None = None) -> str:
     meta = ingest_mod.ingest(src, settings, progress=rep.progress, info=rep.info, move=move)
     with session_scope() as db:
         video = db.get(Video, meta["id"])
@@ -62,6 +69,8 @@ def ingest(src: str, settings: Settings, rep: Reporter, move: bool = False,
             video.brief = brief.strip()
         if campaign_id is not None and db.get(Campaign, campaign_id) is not None:
             video.campaign_id = campaign_id
+        if clip_format in config.FORMATS:
+            video.clip_format = clip_format
     rep.set_video(meta["id"], meta["title"])
     rep.info(f"{meta['title']} ({meta['duration'] / 60:.1f} min, {meta['width']}x{meta['height']})")
     return meta["id"]
@@ -162,6 +171,7 @@ def render(video_id: str, settings: Settings, rep: Reporter,
                  "hook": m.hook, "caption": m.caption}
                 for m in video.moments if not moment_ids or m.id in moment_ids]
         mode = effective_subtitle_mode(video, settings)
+        clip_format = effective_clip_format(video, settings)
         detected = bool(video.subtitles and video.subtitles.get("detected"))
         band = tuple(video.subtitles["band"]) if detected else None
     if not todo:
@@ -170,10 +180,12 @@ def render(video_id: str, settings: Settings, rep: Reporter,
     src_dir = ingest_mod.source_dir(video_id)
     source = ingest_mod.source_video(src_dir)
     words = transcribe_mod.load_transcript(src_dir)["words"]
-    opts = RenderOptions.from_settings(settings, mode, band)
+    opts = RenderOptions.from_settings(settings, mode, band, clip_format)
     out_dir = clips_dir(settings) / video_id
     fix = opts.subtitle_fix()
-    rep.info(f"Encoder: {opts.encoder} at {opts.bitrate_mbps} Mbps; source subtitles: "
+    width, height = config.FORMATS[clip_format]
+    rep.info(f"Format: {FORMAT_NAMES[clip_format]} ({width}x{height}); "
+             f"encoder: {opts.encoder} at {opts.bitrate_mbps} Mbps; source subtitles: "
              + ("keep original" if mode == "keep" else fix.mode if fix else "none to handle"))
 
     clip_ids = []
@@ -202,10 +214,14 @@ def render(video_id: str, settings: Settings, rep: Reporter,
             clip.seconds, clip.size_bytes = stats["seconds"], out_path.stat().st_size
             clip.tracked_share = stats["tracked_share"]
             clip.captions_burned, clip.subtitle_fix = stats["captions_burned"], stats["subtitle_fix"]
+            clip.format = stats["format"]
             db.flush()
             clip_ids.append(clip.id)
+        # A horizontal clip of a landscape source shows the whole picture: there is no face to follow.
+        framing = (f"face-tracked {stats['tracked_share']:.0%} of the time"
+                   if clip_format == "vertical" or stats["tracked_share"] else "whole picture kept")
         rep.info(f"Rendered '{moment['title']}': {stats['seconds']:.0f}s, "
-                 f"{out_path.stat().st_size / 1e6:.0f} MB, face-tracked {stats['tracked_share']:.0%} of the time")
+                 f"{out_path.stat().st_size / 1e6:.0f} MB, {framing}")
 
     if settings.delete_source_after_render and not moment_ids:
         source.unlink(missing_ok=True)
@@ -221,7 +237,7 @@ def check(video_id: str, settings: Settings, rep: Reporter, clip_ids: list[int] 
         brief = video.brief.strip()
         todo = [{"id": c.id, "path": c.path, "seconds": c.seconds, "title": c.moment.title,
                  "hook": c.moment.hook, "caption": c.moment.caption, "start": c.moment.start_s,
-                 "end": c.moment.end_s, "captions_burned": c.captions_burned}
+                 "end": c.moment.end_s, "captions_burned": c.captions_burned, "format": c.format}
                 for c in video.clips if not clip_ids or c.id in clip_ids]
     if not brief:
         if skip_without_brief:

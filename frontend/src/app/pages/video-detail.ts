@@ -5,7 +5,7 @@ import { Observable, switchMap, tap } from 'rxjs';
 import { Api, errorMessage } from '../core/api';
 import { LengthPipe, MegabytesPipe, formatTime, parseTime } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { AppSettings, Campaign, ClipStatus, Moment, MomentInput, SubtitleMode, VideoDetail } from '../core/models';
+import { AppSettings, Campaign, ClipFormat, ClipStatus, Moment, MomentInput, SubtitleMode, VideoDetail } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { BriefCheck } from '../shared/brief-check';
@@ -29,6 +29,11 @@ const MODE_LABELS: Record<SubtitleMode, string> = {
   crop: 'Crop the frame above them',
   keep: 'Keep them and add no captions',
   ignore: 'Leave them as they are',
+};
+
+const FORMAT_LABELS: Record<ClipFormat, string> = {
+  vertical: 'Vertical 9:16',
+  horizontal: 'Horizontal 16:9',
 };
 
 @Component({
@@ -57,6 +62,8 @@ export class VideoDetailPage {
   protected readonly minLen = signal(20);
   protected readonly maxLen = signal(60);
   protected readonly modes = Object.entries(MODE_LABELS) as [SubtitleMode, string][];
+  protected readonly formatLabels = FORMAT_LABELS;
+  protected readonly formats = Object.entries(FORMAT_LABELS) as [ClipFormat, string][];
   private nextKey = 1;
 
   protected readonly busy = computed(() => this.store.isBusy(this.id()));
@@ -75,6 +82,16 @@ export class VideoDetailPage {
     const mode = this.settings()?.subtitle_mode;
     return mode ? MODE_LABELS[mode].toLowerCase() : '';
   });
+
+  protected readonly defaultFormatLabel = computed(() => {
+    const format = this.settings()?.clip_format;
+    return format ? FORMAT_LABELS[format].toLowerCase() : '';
+  });
+
+  /** A card is laid out for the clip it holds, or for the shape the next render will have. */
+  protected wide(draft: Draft): boolean {
+    return (draft.moment?.clip?.format ?? this.video()?.effective_clip_format) === 'horizontal';
+  }
 
   constructor() {
     this.api.settings().subscribe((bundle) => {
@@ -255,6 +272,16 @@ export class VideoDetailPage {
 
   protected setSubtitleMode(value: string): void {
     this.api.updateVideo(this.id(), { subtitle_mode: value as SubtitleMode | 'default' }).subscribe({
+      next: (video) => {
+        this.video.set(video);
+        this.toasts.ok('Saved. It applies the next time you render.');
+      },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected setClipFormat(value: string): void {
+    this.api.updateVideo(this.id(), { clip_format: value as ClipFormat | 'default' }).subscribe({
       next: (video) => {
         this.video.set(video);
         this.toasts.ok('Saved. It applies the next time you render.');

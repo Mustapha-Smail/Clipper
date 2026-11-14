@@ -112,6 +112,16 @@
     <div class="row spread" style="margin-top:36px">
       <h2 style="margin:0">Clips</h2>
       <div class="row">
+        <label class="format small">
+          <span class="muted">Format</span>
+          <select [ngModel]="v.clip_format ?? 'default'" (ngModelChange)="setClipFormat($event)" [disabled]="busy()"
+                  title="The shape of this video's clips. Applies the next time you render.">
+            <option value="default">Default: {{ defaultFormatLabel() }}</option>
+            @for (format of formats; track format[0]) {
+              <option [value]="format[0]">{{ format[1] }}</option>
+            }
+          </select>
+        </label>
         <button class="sm" (click)="addMoment()">Add a moment</button>
         <button class="sm" (click)="save()" [disabled]="busy()">Save edits</button>
         <button class="sm" (click)="renderAll()" [disabled]="busy() || !v.has_file || !drafts().length">Save and render all</button>
@@ -120,16 +130,19 @@
 
     <div class="stack" style="margin-top:12px">
       @for (draft of drafts(); track draft.key; let i = $index) {
-        <article class="card moment">
+        <article class="card moment" [class.landscape]="wide(draft)">
           <div>
             @if (draft.moment?.clip; as clip) {
               @if (clip.file_exists) {
-                <div class="player"><video controls preload="metadata" playsinline [src]="api.clipUrl(clip)"></video></div>
+                <div class="player" [class.wide]="wide(draft)"><video controls preload="metadata" playsinline [src]="api.clipUrl(clip)"></video></div>
               } @else {
-                <div class="player none">The clip file is missing from disk. Render it again.</div>
+                <div class="player none" [class.wide]="wide(draft)">The clip file is missing from disk. Render it again.</div>
+              }
+              @if (clip.format !== v.effective_clip_format) {
+                <p class="small muted" style="margin-top:8px">Rendered as {{ formatLabels[clip.format].toLowerCase() }}. Re-render to make it {{ formatLabels[v.effective_clip_format].toLowerCase() }}.</p>
               }
             } @else {
-              <div class="player none">Not rendered yet</div>
+              <div class="player none" [class.wide]="wide(draft)">Not rendered yet</div>
             }
           </div>
 

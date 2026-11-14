@@ -29,8 +29,10 @@ ASSETS = PACKAGE / "assets"
 MODELS = ASSETS / "models"
 FONTS = ASSETS / "fonts"
 
-# Output format shared by TikTok, Reels and Shorts.
-OUT_W, OUT_H, FPS = 1080, 1920, 30
+# Clip formats, as (width, height). Vertical is what TikTok, Reels and Shorts show full
+# screen; horizontal keeps a landscape source as it is, for X, Facebook and YouTube.
+FORMATS = {"vertical": (1080, 1920), "horizontal": (1920, 1080)}
+FPS = 30
 
 FACE_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
 FACE_MODEL_URL = (

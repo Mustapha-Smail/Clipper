@@ -546,6 +546,11 @@ details.fold {
     display: block;
   }
 
+  // A horizontal (16:9) clip.
+  &.wide {
+    aspect-ratio: 16 / 9;
+  }
+
   &.none {
     background: var(--sunken);
     color: var(--muted);

@@ -40,6 +40,8 @@ class Video(Base):
     brief: Mapped[str] = mapped_column(Text, default="")
     # Per-video override of the "source subtitles" setting; NULL = use the default.
     subtitle_mode: Mapped[str | None] = mapped_column(String(16))
+    # Per-video override of the "clip format" setting (vertical|horizontal); NULL = use the default.
+    clip_format: Mapped[str | None] = mapped_column(String(12))
     # Result of subtitle detection; NULL = not analysed yet.
     subtitles: Mapped[dict | None] = mapped_column(JSON)
     # The campaign this video is being clipped for, if any.
@@ -400,6 +402,8 @@ class Clip(Base):
     tracked_share: Mapped[float] = mapped_column(Float, default=0.0)
     captions_burned: Mapped[bool] = mapped_column(Boolean, default=True)
     subtitle_fix: Mapped[str | None] = mapped_column(String(16))
+    # The shape it was rendered in: vertical (1080x1920) or horizontal (1920x1080).
+    format: Mapped[str] = mapped_column(String(12), default="vertical", server_default="vertical")
     # Result of the campaign-brief check; NULL = not checked since the last render.
     compliance: Mapped[dict | None] = mapped_column(JSON)
     rendered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

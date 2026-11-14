@@ -60,8 +60,8 @@ class Picks(BaseModel):
 
 
 SYSTEM = """\
-You choose moments from long-form video transcripts to be cut into short vertical \
-clips for TikTok, Reels and Shorts. The clips are posted for paid campaigns that pay \
+You choose moments from long-form video transcripts to be cut into short clips for \
+social feeds (TikTok, Reels, Shorts, X). The clips are posted for paid campaigns that pay \
 per view, so the only thing that matters is whether a stranger scrolling a feed, who \
 has never seen the source video, stops and watches to the end.
 

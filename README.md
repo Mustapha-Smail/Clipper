@@ -1,8 +1,16 @@
 # Clipper
 
-Turns a long video into captioned vertical clips. Paste a link or pick a file,
+Turns a long video into captioned clips. Paste a link or pick a file,
 Claude chooses the moments, and you review, edit and approve each clip in the
 browser before anything is posted.
+
+Clips come in two formats. **Vertical** (9:16, 1080x1920) is for TikTok, Reels
+and Shorts: the frame follows the speaker's face inside a landscape video.
+**Horizontal** (16:9, 1920x1080) is for X, Facebook and YouTube: a landscape
+video keeps its whole picture, with captions in the lower third. The default is
+in Settings ("Clip format"); each video can choose its own when you add it or on
+its page, and `clipper run --format horizontal` does the same from the command
+line. A new choice applies the next time a clip is rendered.
 
 ## How it is built
 

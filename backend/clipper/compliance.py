@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from . import llm
+from .config import FORMATS, FPS
 from .ffutil import require
 
 
@@ -29,7 +30,7 @@ class Review(BaseModel):
 
 
 SYSTEM = """\
-You review a short vertical clip against a campaign brief before it is posted for a \
+You review a short clip against a campaign brief before it is posted for a \
 paid clipping campaign. A submission that breaks a stated requirement is rejected and \
 earns nothing, so the person posting needs to know exactly which requirements are met, \
 which are broken, and which they have to verify themselves.
@@ -65,9 +66,11 @@ def check_clip(video: Path, clip: dict, spoken: str, brief: str,
     """Return {verdict, summary, checks, checked_at}. verdict: pass | review | fail."""
     seconds = float(clip.get("seconds") or (clip["end"] - clip["start"]))
     hook = (clip.get("hook") or "").strip()
+    shape = clip.get("format") if clip.get("format") in FORMATS else "vertical"
+    width, height = FORMATS[shape]
     facts = "\n".join([
         f"Length: {seconds:.1f} seconds",
-        "Format: 1080x1920 vertical, 30 fps, mp4",
+        f"Format: {width}x{height} {shape} ({'9:16' if shape == 'vertical' else '16:9'}), {FPS} fps, mp4",
         (f"Hook text on screen for the first {hook_seconds:g} seconds: \"{hook}\""
          if hook and hook_seconds > 0 else "Hook text on screen: none"),
         f"Burned-in captions of the speech: {'yes' if captions_burned else 'no'}",

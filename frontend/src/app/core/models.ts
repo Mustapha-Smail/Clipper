@@ -1,6 +1,8 @@
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type ClipStatus = 'pending' | 'approved' | 'rejected';
 export type SubtitleMode = 'cover' | 'crop' | 'keep' | 'ignore';
+/** The shape of a clip: vertical is 9:16 (1080×1920), horizontal is 16:9 (1920×1080). */
+export type ClipFormat = 'vertical' | 'horizontal';
 
 export interface Job {
   id: number;
@@ -60,6 +62,7 @@ export interface Clip {
   tracked_share: number;
   captions_burned: boolean;
   subtitle_fix: string | null;
+  format: ClipFormat;
   compliance: Compliance | null;
   rendered_at: string;
   file_exists: boolean;
@@ -172,6 +175,8 @@ export interface VideoDetail extends VideoSummary {
   subtitles: SubtitleResult | null;
   subtitle_mode: SubtitleMode | null;
   effective_subtitle_mode: SubtitleMode;
+  clip_format: ClipFormat | null;
+  effective_clip_format: ClipFormat;
   moments: Moment[];
 }
 
@@ -233,6 +238,7 @@ export interface AppSettings {
   highlight_color: string;
   hook_seconds: number;
   subtitle_mode: SubtitleMode;
+  clip_format: ClipFormat;
 }
 
 export interface SettingsBundle {
@@ -273,6 +279,7 @@ export interface NewVideo {
   max_len?: number;
   brief?: string;
   campaign_id?: number | null;
+  clip_format?: ClipFormat;
 }
 
 export type IdeaStatus = 'inbox' | 'new' | 'approved' | 'parked' | 'skipped';

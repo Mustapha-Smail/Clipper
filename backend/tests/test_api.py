@@ -1,3 +1,7 @@
+from clipper.db import session_scope
+from clipper.db.models import Job
+
+
 def test_health_and_status(client):
     assert client.get("/healthz").json() == {"status": "ok"}
     status = client.get("/api/v1/system/status").json()
@@ -68,6 +72,25 @@ def test_brief_and_subtitle_choice_are_saved(client, video):
     assert patched["brief"] == "Use #tag" and patched["effective_subtitle_mode"] == "keep"
     reset = client.patch(f"/api/v1/videos/{video}", json={"subtitle_mode": "default"}).json()
     assert reset["subtitle_mode"] is None and reset["effective_subtitle_mode"] == "ignore"
+
+
+def test_clip_format_follows_the_setting_unless_the_video_chooses(client, video):
+    detail = client.get(f"/api/v1/videos/{video}").json()
+    assert detail["clip_format"] is None and detail["effective_clip_format"] == "vertical"
+    chosen = client.patch(f"/api/v1/videos/{video}", json={"clip_format": "horizontal"}).json()
+    assert chosen["clip_format"] == "horizontal" and chosen["effective_clip_format"] == "horizontal"
+    assert chosen["brief"] == detail["brief"]              # nothing else moved
+    reset = client.patch(f"/api/v1/videos/{video}", json={"clip_format": "default"}).json()
+    assert reset["clip_format"] is None and reset["effective_clip_format"] == "vertical"
+    assert client.patch(f"/api/v1/videos/{video}", json={"clip_format": "square"}).status_code == 422
+
+    settings = client.get("/api/v1/settings").json()["settings"]
+    assert client.put("/api/v1/settings", json={**settings, "clip_format": "horizontal"}).status_code == 200
+    assert client.get(f"/api/v1/videos/{video}").json()["effective_clip_format"] == "horizontal"
+
+    job = client.post("/api/v1/videos", json={"src": "https://example.com/v", "clip_format": "horizontal"}).json()
+    with session_scope() as db:
+        assert db.get(Job, job["id"]).params["clip_format"] == "horizontal"
 
 
 def test_actions_are_refused_while_a_job_is_active(client, video):

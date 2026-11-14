@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from . import config, db
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
-                  help="Turn long videos into captioned vertical clips.")
+                  help="Turn long videos into captioned clips, vertical or horizontal.")
 db_app = typer.Typer(no_args_is_help=True, help="Database maintenance.")
 app.add_typer(db_app, name="db")
 
@@ -98,7 +98,9 @@ def run(src: Annotated[str, typer.Argument(help="Video URL or local file path")]
         n: Annotated[int | None, typer.Option(help="How many clips to make")] = None,
         min_len: Annotated[int | None, typer.Option(help="Shortest clip, seconds")] = None,
         max_len: Annotated[int | None, typer.Option(help="Longest clip, seconds")] = None,
-        brief: Annotated[str | None, typer.Option(help="Path to a campaign brief text file")] = None):
+        brief: Annotated[str | None, typer.Option(help="Path to a campaign brief text file")] = None,
+        clip_format: Annotated[str | None, typer.Option(
+            "--format", help="Shape of the clips: vertical (9:16) or horizontal (16:9). Default: the setting")] = None):
     """Process one video in the foreground: fetch, transcribe, select, render, check."""
     from pathlib import Path
 
@@ -110,10 +112,12 @@ def run(src: Annotated[str, typer.Argument(help="Video URL or local file path")]
     db.upgrade()
     rep = ConsoleReporter()
     try:
+        if clip_format is not None and clip_format not in config.FORMATS:
+            raise ValueError(f"--format must be one of: {', '.join(config.FORMATS)}")
         settings = settings_mod.load()
         brief_text = Path(brief).read_text() if brief else None
         rep.stage("download")
-        video_id = pipeline.ingest(src, settings, rep, brief=brief_text)
+        video_id = pipeline.ingest(src, settings, rep, brief=brief_text, clip_format=clip_format)
         rep.stage("transcribe")
         pipeline.transcribe(video_id, settings, rep)
         rep.stage("subtitles")

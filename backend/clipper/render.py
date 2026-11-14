@@ -1,4 +1,4 @@
-"""Stage 4: render one moment into a captioned vertical clip.
+"""Stage 4: render one moment into a captioned clip, vertical (9:16) or horizontal (16:9).
 
 ffmpeg decodes the source segment to raw frames, Python reframes each frame and
 draws the text, and a second ffmpeg encodes the result with the original audio.
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from .captions import CaptionRenderer, group_words, hook_overlay
-from .config import FPS, OUT_H, OUT_W
+from .config import FORMATS, FPS
 from .ffutil import ToolError, probe, require
 from .reframe import SubtitleFix, analyze, compose, usable_height
 from .settings import Settings, hex_to_rgb, resolve_encoder, resolve_font
@@ -30,6 +30,7 @@ class RenderOptions:
     hook_seconds: float
     subtitle_mode: str = "ignore"            # cover | crop | keep | ignore
     band: tuple[float, float] | None = None  # where the source subtitles sit, if known
+    format: str = "vertical"                 # a key of config.FORMATS
 
     def subtitle_fix(self) -> SubtitleFix | None:
         if self.band is None or self.subtitle_mode not in ("cover", "crop"):
@@ -41,10 +42,12 @@ class RenderOptions:
 
     @classmethod
     def from_settings(cls, settings: Settings, subtitle_mode: str = "ignore",
-                      band: tuple[float, float] | None = None) -> "RenderOptions":
+                      band: tuple[float, float] | None = None,
+                      clip_format: str | None = None) -> "RenderOptions":
         return cls(
             subtitle_mode=subtitle_mode,
             band=band,
+            format=clip_format or settings.clip_format,
             encoder=resolve_encoder(settings),
             bitrate_mbps=settings.bitrate_mbps,
             font_path=resolve_font(settings),
@@ -84,15 +87,18 @@ def render_clip(source: Path, moment: dict, words: list[dict], out_path: Path,
 
     fix = opts.subtitle_fix()
     keep_original = opts.subtitle_mode == "keep"
+    size = FORMATS[opts.format]
     plan = analyze(source, start, duration, info.width, info.height,
-                   crop_height=usable_height(info.height, fix))
+                   crop_height=usable_height(info.height, fix), size=size)
     if keep_original:
         plan.track[:] = False   # always show the whole frame so the subtitles stay readable
     captions = None
     if opts.captions_enabled and not keep_original:
         captions = CaptionRenderer(group_words(words, start, start + duration),
-                                   opts.font_path, opts.highlight)
-    hook = hook_overlay(moment.get("hook", ""), opts.font_path) if opts.hook_seconds > 0 else None
+                                   opts.font_path, opts.highlight, opts.format)
+    hook = None
+    if opts.hook_seconds > 0:
+        hook = hook_overlay(moment.get("hook", ""), opts.font_path, opts.format)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Encode to a temporary name so a half-written file never looks like a finished clip.
@@ -106,7 +112,7 @@ def render_clip(source: Path, moment: dict, words: list[dict], out_path: Path,
     with tempfile.TemporaryFile() as encoder_log:
         encoder = subprocess.Popen(
             [ffmpeg, "-y", "-loglevel", "error",
-             "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(FPS),
+             "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{size[0]}x{size[1]}", "-r", str(FPS),
              "-i", "-", *seek,
              "-map", "0:v", "-map", "1:a?",
              *opts.encoder_args(), "-pix_fmt", "yuv420p",
@@ -125,7 +131,7 @@ def render_clip(source: Path, moment: dict, words: list[dict], out_path: Path,
                     break
                 frame = np.frombuffer(buf, np.uint8).reshape(info.height, info.width, 3)
                 is_track, cx = plan.at(written)
-                out = compose(frame, is_track, cx, fix)
+                out = compose(frame, is_track, cx, fix, size)
                 t = written / FPS
                 if captions is not None:
                     captions.draw(out, t)
@@ -154,6 +160,7 @@ def render_clip(source: Path, moment: dict, words: list[dict], out_path: Path,
     partial.replace(out_path)
     tracked = float(plan.track.mean()) if len(plan.track) else 0.0
     return {"frames": written, "seconds": round(written / FPS, 2), "tracked_share": round(tracked, 2),
+            "format": opts.format, "width": size[0], "height": size[1],
             "captions_burned": captions is not None,
             "subtitle_fix": "keep" if keep_original else (fix.mode if fix else None)}
 

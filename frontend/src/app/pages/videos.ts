@@ -4,7 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe, LengthPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Campaign, VideoSummary } from '../core/models';
+import { Campaign, ClipFormat, VideoSummary } from '../core/models';
 import { Confirm } from '../core/confirm';
 import { Toasts } from '../core/toast';
 import { JobCard } from '../shared/job-card';
@@ -59,6 +59,12 @@ const RECENT_MS = 15 * 60 * 1000;
               <label class="field"><span>Longest (s)</span>
                 <input type="number" name="max" min="10" max="900" [(ngModel)]="maxLen" /></label>
             </div>
+            <label class="field"><span>Clip format</span>
+              <select name="format" [(ngModel)]="format">
+                <option value="vertical">Vertical 9:16, for TikTok, Reels and Shorts</option>
+                <option value="horizontal">Horizontal 16:9, the whole picture of a landscape video</option>
+              </select>
+            </label>
             <label class="field"><span>Campaign brief</span>
               <textarea name="brief" [(ngModel)]="brief"
                         placeholder="Optional. Paste the campaign's rules: required hashtags, banned topics, length limits, tone."></textarea>
@@ -164,6 +170,7 @@ export class VideosPage {
   protected readonly count = signal(5);
   protected readonly minLen = signal(20);
   protected readonly maxLen = signal(60);
+  protected readonly format = signal<ClipFormat>('vertical');
   protected readonly brief = signal('');
   protected readonly sending = signal(false);
   protected readonly uploading = signal<number | null>(null);
@@ -186,6 +193,7 @@ export class VideosPage {
       this.count.set(bundle.settings.clips_per_video);
       this.minLen.set(bundle.settings.min_len);
       this.maxLen.set(bundle.settings.max_len);
+      this.format.set(bundle.settings.clip_format);
     });
     this.api.campaigns().subscribe((list) => {
       this.campaigns.set(list.filter((c) => c.decision !== 'skipped'));
@@ -239,7 +247,7 @@ export class VideosPage {
     }
     this.sending.set(true);
     this.api.addVideo({ src, n: this.count(), min_len: this.minLen(), max_len: this.maxLen(), brief: this.brief(),
-                        campaign_id: this.campaignId() })
+                        campaign_id: this.campaignId(), clip_format: this.format() })
       .subscribe({
         next: () => {
           this.src.set('');

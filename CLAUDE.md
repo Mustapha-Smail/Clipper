@@ -1,7 +1,7 @@
 # Clipping pipeline
 
-Semi-automatic tool that turns long videos into captioned vertical clips for
-paid clipping campaigns (English market, operated from France). PLAN.md has the
+Semi-automatic tool that turns long videos into captioned clips (vertical 9:16
+or horizontal 16:9) for paid clipping campaigns (English market, operated from France). PLAN.md has the
 roadmap and the owner's setup checklist; README.md has run and ops instructions.
 
 ## Layout
@@ -50,6 +50,13 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   explainable points, marked "Picked by rules") when `ai_fallback` is "rules";
   pasted listings are stored with `read_by` "waiting". Never fall back silently:
   report it through the Reporter.
+- Clip formats: `config.FORMATS` (vertical 1080x1920, horizontal 1920x1080).
+  `Settings.clip_format` is the default, `videos.clip_format` the per-video
+  choice (`pipeline.effective_clip_format`), and each clip row keeps the
+  `format` it was rendered in. `reframe.compose` and `analyze` take the size;
+  the text sizes and positions of each format are in `captions.LAYOUTS`. A
+  source that already has the clip's shape fills the frame and skips the face
+  scan. A new format needs an entry in both tables and in the UI's labels.
 - `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
   subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.
 - `subtitles.py`: burned-in captions are detected as a band of changing text,

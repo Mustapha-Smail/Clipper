@@ -16,6 +16,23 @@
   gap: 24px;
 }
 
+// A horizontal clip gets a wider column: at 220px it would be too small to judge.
+.moment.landscape {
+  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+}
+
+.format {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  select {
+    width: auto;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
 .fields {
   display: grid;
   gap: 12px;
@@ -42,11 +59,12 @@
 
 @media (max-width: 760px) {
   .context,
-  .moment {
+  .moment,
+  .moment.landscape {
     grid-template-columns: 1fr;
   }
 
-  .moment .player {
+  .moment .player:not(.wide) {
     max-width: 220px;
   }
 

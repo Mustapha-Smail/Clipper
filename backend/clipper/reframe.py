@@ -1,8 +1,11 @@
-"""Decide, frame by frame, how a landscape source is fitted into a vertical clip.
+"""Decide, frame by frame, how a source is fitted into the clip's frame.
 
 Two layouts:
-  TRACK  crop a 9:16 window centred on the speaker's face
+  TRACK  crop a window of the clip's shape, centred on the speaker's face
   FIT    show the whole frame over a blurred copy of itself
+
+A source that already has the clip's shape (a 16:9 video cut into horizontal
+clips) fills the frame as it is: there is nothing to decide and nothing to scan.
 
 The clip is split into shots at hard cuts. Each shot gets one layout: TRACK when
 one face clearly dominates (or several faces fit inside the crop together), FIT
@@ -21,7 +24,7 @@ os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")  # must be set before cv2 loa
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
-from .config import FACE_MODEL, FACE_MODEL_URL, FPS, OUT_H, OUT_W
+from .config import FACE_MODEL, FACE_MODEL_URL, FORMATS, FPS
 from .ffutil import require
 
 ANALYSIS_W = 640
@@ -31,6 +34,8 @@ MIN_SHOT_FRAMES = FPS // 2
 MIN_FACE_W = 0.05         # ignore faces narrower than 5% of the frame (background people)
 SAME_FACE_DX = 0.12       # detections this close horizontally belong to the same person
 STATIC_RANGE = 0.06       # a face that moves less than this gets a locked-off crop
+KEEP = 0.8                # a source narrower than the clip is cropped if this much of it stays, else FIT
+VERTICAL = FORMATS["vertical"]
 
 
 @dataclass
@@ -51,9 +56,9 @@ class FramePlan:
         return bool(self.track[i]), float(self.cx[i])
 
 
-def crop_fraction(width: int, height: int) -> float:
-    """Width of the 9:16 crop window as a fraction of the source width."""
-    return min(1.0, (height * OUT_W / OUT_H) / width)
+def crop_fraction(width: int, height: int, size: tuple[int, int] = VERTICAL) -> float:
+    """Width of the crop window (the shape of a `size` clip) as a fraction of the source width."""
+    return min(1.0, (height * size[0] / size[1]) / width)
 
 
 def _detector(width: int, height: int):
@@ -121,12 +126,17 @@ def _plan_shot(samples: list[tuple[int, list[tuple[float, float]]]], n_frames: i
 
 
 def analyze(src, start: float, duration: float, width: int, height: int,
-            crop_height: int | None = None) -> FramePlan:
+            crop_height: int | None = None, size: tuple[int, int] = VERTICAL) -> FramePlan:
     """Scan the clip at low resolution and return the per-frame layout plan.
 
     `crop_height` is the usable source height when the bottom is cut off to
     remove subtitles; it narrows the crop window the face has to fit in.
+    `size` is the clip's (width, height). When the crop window is as wide as the
+    source there is no side to choose, so the scan is skipped and the plan is empty.
     """
+    crop_frac = crop_fraction(width, crop_height or height, size)
+    if crop_frac >= 1.0:
+        return FramePlan(track=np.zeros(0, dtype=bool), cx=np.zeros(0))
     aw = ANALYSIS_W
     ah = max(2, int(round(aw * height / width / 2)) * 2)
     detector = _detector(aw, ah)
@@ -167,7 +177,6 @@ def analyze(src, start: float, duration: float, width: int, height: int,
     n_total = i
     track = np.zeros(n_total, dtype=bool)
     cx = np.full(n_total, 0.5)
-    crop_frac = crop_fraction(width, crop_height or height)
     bounds = cuts + [n_total]
     for first, last in zip(bounds[:-1], bounds[1:], strict=False):
         if last <= first:
@@ -188,45 +197,49 @@ def usable_height(height: int, fix: SubtitleFix | None) -> int:
 
 def _blur_rows(out: np.ndarray, top: int, bottom: int) -> None:
     """Smear a horizontal strip of the output so text in it becomes unreadable."""
-    top, bottom = max(0, top), min(OUT_H, bottom)
+    out_h, out_w = out.shape[:2]
+    top, bottom = max(0, top), min(out_h, bottom)
     if bottom - top < 4:
         return
     strip = out[top:bottom]
-    small = cv2.resize(strip, (OUT_W // 16, max(1, (bottom - top) // 16)), interpolation=cv2.INTER_AREA)
+    small = cv2.resize(strip, (out_w // 16, max(1, (bottom - top) // 16)), interpolation=cv2.INTER_AREA)
     small = cv2.GaussianBlur(small, (0, 0), 3)
-    smooth = cv2.resize(small, (OUT_W, bottom - top), interpolation=cv2.INTER_LINEAR)
+    smooth = cv2.resize(small, (out_w, bottom - top), interpolation=cv2.INTER_LINEAR)
     out[top:bottom] = (smooth * 0.8).astype(np.uint8)
 
 
 def compose(frame: np.ndarray, is_track: bool, cx: float,
-            fix: SubtitleFix | None = None) -> np.ndarray:
-    """Build one 1080x1920 output frame from a source frame."""
+            fix: SubtitleFix | None = None, size: tuple[int, int] = VERTICAL) -> np.ndarray:
+    """Build one output frame of `size` (width, height) from a source frame."""
+    out_w, out_h = size
     full_height = frame.shape[0]
     frame = frame[:usable_height(full_height, fix)]
     height, width = frame.shape[:2]
-    crop_w = min(width, int(round(height * OUT_W / OUT_H)))
-    crop_h = min(height, int(round(crop_w * OUT_H / OUT_W)))
+    crop_w = min(width, int(round(height * out_w / out_h)))
+    crop_h = min(height, int(round(crop_w * out_h / out_w)))
     y0 = (height - crop_h) // 2
 
-    # A source that is already vertical needs no layout decision.
-    if is_track or crop_w == width:
+    # A source that already has the clip's shape, or nearly, needs no layout decision.
+    if is_track or (crop_w == width and crop_h >= KEEP * height):
         x0 = int(round(cx * width - crop_w / 2))
         x0 = max(0, min(width - crop_w, x0))
         crop = frame[y0:y0 + crop_h, x0:x0 + crop_w]
-        out = cv2.resize(crop, (OUT_W, OUT_H), interpolation=cv2.INTER_CUBIC)
-        scale, shift = OUT_H / crop_h, -y0 * OUT_H / crop_h
+        out = cv2.resize(crop, (out_w, out_h), interpolation=cv2.INTER_CUBIC)
+        scale, shift = out_h / crop_h, -y0 * out_h / crop_h
     else:
         # FIT: blurred, darkened copy in the background, whole frame in the middle.
         x0 = (width - crop_w) // 2
-        background = cv2.resize(frame[y0:y0 + crop_h, x0:x0 + crop_w], (OUT_W // 4, OUT_H // 4),
+        background = cv2.resize(frame[y0:y0 + crop_h, x0:x0 + crop_w], (out_w // 4, out_h // 4),
                                 interpolation=cv2.INTER_AREA)
         background = cv2.GaussianBlur(background, (0, 0), 10)
-        out = cv2.resize(background, (OUT_W, OUT_H), interpolation=cv2.INTER_LINEAR)
+        out = cv2.resize(background, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
         out = (out * 0.55).astype(np.uint8)
 
-        fit_h = min(OUT_H, int(round(OUT_W * height / width / 2)) * 2)
-        top = (OUT_H - fit_h) // 2
-        out[top:top + fit_h] = cv2.resize(frame, (OUT_W, fit_h), interpolation=cv2.INTER_CUBIC)
+        fit = min(out_w / width, out_h / height)
+        fit_w = min(out_w, int(round(width * fit / 2)) * 2)
+        fit_h = min(out_h, int(round(height * fit / 2)) * 2)
+        left, top = (out_w - fit_w) // 2, (out_h - fit_h) // 2
+        out[top:top + fit_h, left:left + fit_w] = cv2.resize(frame, (fit_w, fit_h), interpolation=cv2.INTER_CUBIC)
         scale, shift = fit_h / height, top
 
     if fix and fix.mode == "cover":

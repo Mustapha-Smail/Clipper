@@ -92,6 +92,9 @@ class Settings(BaseModel):
     cookies_file: str = ""                    # optional yt-dlp cookies.txt
 
     # Render
+    # The shape of the clips: vertical (9:16, 1080x1920) for TikTok, Reels and Shorts, or
+    # horizontal (16:9, 1920x1080), which keeps a landscape source whole. Each video can override it.
+    clip_format: Literal["vertical", "horizontal"] = "vertical"
     encoder: Literal["auto", "videotoolbox", "x264"] = "auto"
     bitrate_mbps: int = Field(8, ge=2, le=20)
     captions_enabled: bool = True

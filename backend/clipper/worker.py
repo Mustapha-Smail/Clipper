@@ -54,7 +54,8 @@ def run_job(job_id: int) -> None:
                     rep.info("The video file is already on disk; skipping the download")
                 else:
                     video_id = pipeline.ingest(params["src"], settings, rep, move=params.get("move", False),
-                                               brief=params.get("brief"), campaign_id=params.get("campaign_id"))
+                                               brief=params.get("brief"), campaign_id=params.get("campaign_id"),
+                                               clip_format=params.get("clip_format"))
             elif stage == "transcribe":
                 pipeline.transcribe(video_id, settings, rep, isolate=True)
             elif stage == "subtitles":

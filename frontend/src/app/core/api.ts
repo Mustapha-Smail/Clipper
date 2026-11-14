@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
-  ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
+  ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewVideo, Place, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
   SystemStatus, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
@@ -66,7 +66,8 @@ export class Api {
     });
   }
   updateVideo(id: string, patch: {
-    brief?: string; subtitle_mode?: SubtitleMode | 'default'; campaign_id?: number | null; use_campaign_brief?: boolean;
+    brief?: string; subtitle_mode?: SubtitleMode | 'default'; clip_format?: ClipFormat | 'default';
+    campaign_id?: number | null; use_campaign_brief?: boolean;
   }): Observable<VideoDetail> {
     return this.http.patch<VideoDetail>(`${BASE}/videos/${encodeURIComponent(id)}`, patch);
   }

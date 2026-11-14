@@ -198,6 +198,14 @@ import { Toasts } from '../core/toast';
                 <input type="number" min="5" max="600" [(ngModel)]="f.min_len" /></label>
               <label class="field"><span>Longest clip (seconds)</span>
                 <input type="number" min="10" max="900" [(ngModel)]="f.max_len" /></label>
+              <label class="field wide"><span>Clip format</span>
+                <select [(ngModel)]="f.clip_format">
+                  <option value="vertical">Vertical 9:16 (1080×1920): TikTok, Reels, Shorts</option>
+                  <option value="horizontal">Horizontal 16:9 (1920×1080): X, Facebook, YouTube</option>
+                </select>
+                <small>Vertical follows the speaker's face inside a landscape video. Horizontal keeps the whole
+                  picture of a landscape video, with captions in the lower third. Each video can override this.</small>
+              </label>
               <label class="check wide"><input type="checkbox" [(ngModel)]="f.auto_compliance" />
                 <span>Check each clip against the campaign brief after rendering
                   <small>Only runs for videos that have a brief. You can always run the check by hand.</small></span>
