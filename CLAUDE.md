@@ -189,6 +189,17 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
 - nginx re-resolves the API through Docker DNS, so the api container can be
   restarted alone.
 
+## Versions and releases
+
+Semantic versioning, one version for the whole project, kept in five places:
+`backend/pyproject.toml`, `backend/uv.lock` (the `clipper` package),
+`backend/clipper/config.py` (`VERSION`, shown by the API), and
+`frontend/package.json` with `frontend/package-lock.json`. A release is a
+commit "Release X.Y.Z" that bumps them, a tag `vX.Y.Z`, and a GitHub release
+(`gh release create`) whose notes list what changed since the previous tag.
+Minor for new features, patch for fixes only, major for breaking changes
+(a migration that cannot be undone, a removed setting or route).
+
 ## Two runtimes, one codebase
 
 | | Mac (native) | Docker / Linux |
@@ -208,8 +219,9 @@ Test a pipeline change in both runtimes.
 - The app's dev-server preview cannot read the Desktop folder; start servers
   from the shell and open the URL instead.
 - `data/` is gitignored and disposable.
-- The code is in a local git repository (branch `main`, no remote yet). Never commit `.env`
-  (API keys) or anything under `data/`.
+- The code is on GitHub (`origin`, Mustapha-Smail/Clipper, public), branch `main`.
+  Never commit `.env` (API keys, the Wikimedia contact) or anything under `data/`,
+  and keep personal details out of tracked files such as `.env.example`.
 - Every clip must pass human review before it is posted. Do not add auto-posting
   without that gate. The brief check advises; it never approves.
 - Clip only from sources a campaign authorises.
