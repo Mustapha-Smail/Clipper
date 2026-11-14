@@ -383,3 +383,56 @@ def test_online_candidates_skip_known_tracks_and_use_the_cache(app_env, monkeypa
     assert len(measured) == 2 and items[0]["features"] == {"words": ["slow"]}
     music_search.candidates(["ukulele"], {"known"})
     assert len(measured) == 2                               # measured once, then cached
+
+
+def test_a_prop_is_looked_at_and_drawn_again_when_it_misses(monkeypatch):
+    asked = []
+
+    def fake_ask(task, system, content, output_format, effort="high", cache=False):
+        asked.append(task)
+        if task == "props":
+            return sb.Drawing(svg=SVG.replace('r="180"', f'r="{150 + 10 * asked.count("props")}"'))
+        assert task == "prop_check" and content[1]["type"] == "image"
+        return sb.Look(matches=False, quality=4, fix="It needs the handle.")
+    monkeypatch.setattr(llm, "ask", fake_ask)
+    svg = sb.draw_prop("frying_pan", "a cast iron pan")
+    assert asked == ["props", "prop_check", "props"]          # one critique, then the redraw is kept
+    assert 'r="170"' in svg and art.current_style(svg)
+
+
+def test_old_flat_props_are_not_offered_to_the_planner_and_get_redrawn(app_env, monkeypatch):
+    from clipper.db.models import Storyboard, StudioAsset
+    with session_scope() as db:
+        db.add(StudioAsset(name="old_coin", description="a coin", svg=SVG, origin="ai"))
+        db.add(StudioAsset(name="new_coin", description="a coin", svg=art.mark_style(SVG), origin="ai"))
+        db.add(StudioAsset(name="my_coin", description="a coin", svg=SVG, origin="you"))
+        script = Script(title="x", sections=[])
+        db.add(script)
+        db.flush()
+        board = Storyboard(script_id=script.id, format="short", style="ink", title="x", words=[], scenes=[],
+                           start=0, end=1)
+        db.add(board)
+        db.flush()
+        board_id = board.id
+    assert set(sb.library()) == {"new_coin", "my_coin"}
+    drawn = []
+    monkeypatch.setattr(sb, "draw_prop", lambda name, desc, instruction="": drawn.append(name) or art.mark_style(SVG))
+    monkeypatch.setattr(sb, "prop_names", lambda style, scenes: ["old_coin", "new_coin", "my_coin"])
+    monkeypatch.setattr(sb, "find_photos", lambda board_id, rep: None)
+    monkeypatch.setattr(sb.places_mod, "prepare", lambda board_id, rep: None)
+    sb.draw_missing(board_id, ConsoleReporter())
+    assert drawn == ["old_coin"]                    # yours are never redrawn
+    with session_scope() as db:
+        assert art.current_style(db.get(StudioAsset, "old_coin").svg)
+        assert not art.current_style(db.get(StudioAsset, "my_coin").svg)
+
+
+def test_shading_without_an_outline_is_only_a_wash_in_the_ink_look():
+    from clipper.studio import ink
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+           '<rect x="56" y="56" width="400" height="400" fill="#4a90d9" stroke="#1b1b1b" stroke-width="12"/>'
+           '<rect x="56" y="300" width="400" height="156" fill="#35679c"/></svg>')
+    prop = ink.ink_prop(svg)
+    fills = [el.get("fill") for el, *_ in prop.shapes]
+    assert fills == [ink.PAPER, "none"]            # the shadow no longer paints paper over the lines
+    assert prop.wash.count("fill=") >= 2

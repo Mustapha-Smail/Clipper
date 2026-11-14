@@ -215,3 +215,57 @@ def test_kokoro_reads_sentence_by_sentence_with_pauses(app_env, monkeypatch):
         lengths[pauses] = voice.duration_of(out)
     assert [t for t, _ in spoken[:4]] == ["One idea here.", "Blue.", "A new paragraph.", "Next section."]
     assert lengths["relaxed"] > lengths["tight"] + 0.8      # four pauses, each 30% longer or shorter
+
+
+def test_claude_directs_each_sentence_and_sounds_stay_rare(monkeypatch):
+    from clipper.studio import chatterbox
+
+    said = ["One.", "Two!", "Three?", "Four.", "Five.", "Six.", "Seven."]
+
+    def ask(task, system, content, fmt, effort="high", cache=False):
+        assert task == "delivery" and "6. Seven." in content
+        return fmt(marks=[{"n": 0, "mood": "narration", "sound": "gasp"},         # no sound on the first line
+                          {"n": 1, "mood": "surprised", "sound": "gasp"},
+                          {"n": 2, "mood": "sarcastic", "sound": "chuckle"},       # too soon after the gasp
+                          {"n": 6, "mood": "whispering", "sound": "chuckle"}])
+    monkeypatch.setattr(chatterbox.llm, "ask", ask)
+    assert chatterbox.direct(said, ConsoleReporter()) == [
+        "One.", "[gasp] [surprised] Two!", "[sarcastic] Three?", "Four.", "Five.", "Six.",
+        "[whispering] Seven. [chuckle]"]
+
+    def down(*args, **kwargs):
+        raise RuntimeError("no credit")
+    monkeypatch.setattr(chatterbox.llm, "ask", down)
+    assert chatterbox.direct(said, ConsoleReporter()) == said        # plain narration, and said so in the log
+
+
+def test_a_chatterbox_take_is_assembled_with_our_pauses(client, script, fake_whisper, monkeypatch):
+    from clipper.studio import chatterbox
+
+    spoken = []
+
+    def speak(texts, reference, out, rep, start, span):
+        spoken.append((texts, reference))
+        out.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for n in range(len(texts)):          # each sentence: silence, half a second of voice, silence
+            path = out / f"{n:03d}.wav"
+            voice._write_wav(path, np.concatenate([np.zeros(4800), tone(0.5, 24000), np.zeros(4800)]), 24000)
+            paths.append(path)
+        return paths
+    monkeypatch.setattr(chatterbox, "speak", speak)
+    monkeypatch.setattr(chatterbox, "direct", lambda sentences, rep: [f"[dramatic] {s}" for s in sentences])
+    monkeypatch.setattr(voice, "sample_kokoro", lambda v, speed, text: voice.config.data_dir() / "ref.wav")
+
+    assert client.post(f"/api/v1/scripts/{script}/takes/ai",
+                       json={"engine": "chatterbox", "voice": "nobody"}).status_code == 400
+    take = client.post(f"/api/v1/scripts/{script}/takes/ai",
+                       json={"engine": "chatterbox", "voice": "bf_emma", "pauses": "tight"}).json()
+    assert take["source"] == "chatterbox" and take["pauses"] == "tight"
+    run_job(take["job"]["id"])
+    texts, reference = spoken[0]
+    assert all(t.startswith("[dramatic] ") for t in texts) and reference.name == "ref.wav"
+    done = client.get(f"/api/v1/scripts/{script}/takes").json()[0]
+    # the model's own silences are trimmed: about half a second per sentence plus our pauses
+    assert done["ready"] and 0.5 * len(texts) < done["duration"] < 0.5 * len(texts) + 1.0 * len(texts)
+    assert not (voice.take_dir(script, take["id"]) / "chatterbox-parts").exists()

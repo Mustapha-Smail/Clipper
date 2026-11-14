@@ -41,15 +41,19 @@ class Settings(BaseModel):
 
     # Studio: the animated channel. Ideas are generated and judged against this theme.
     studio_theme: str = Field("How everyday things secretly work", max_length=300)
+    # How carefully Claude draws a new prop: careful (more detail, about $0.20 each) or quick (about $0.06).
+    prop_drawing: Literal["careful", "quick"] = "careful"
     # Who the videos are for: ideas, research and scripts are written for them (see studio/plain.py).
     audience: Literal["everyone", "curious", "enthusiasts"] = "everyone"
-    # AI voice. Kokoro runs on this machine for free; ElevenLabs is paid and needs ELEVENLABS_API_KEY.
-    voice_engine: Literal["kokoro", "elevenlabs"] = "kokoro"
+    # AI voice. Kokoro and Chatterbox run on this machine for free (Chatterbox is expressive and slower);
+    # ElevenLabs is paid and needs ELEVENLABS_API_KEY.
+    voice_engine: Literal["kokoro", "chatterbox", "elevenlabs"] = "kokoro"
     kokoro_voice: str = Field("am_michael", pattern=r"^[a-z]{2}_[a-z]+$")
+    chatterbox_voice: str = Field("default", pattern=r"^(default|[a-z]{2}_[a-z]+)$")   # its own, or a Kokoro timbre
     elevenlabs_voice: str = Field("", max_length=64)       # a voice_id from your ElevenLabs account
     elevenlabs_model: Literal["eleven_multilingual_v2", "eleven_v3", "eleven_flash_v2_5"] = "eleven_multilingual_v2"
     voice_speed: float = Field(1.0, ge=0.7, le=1.3)
-    # Kokoro reads one sentence at a time; this sets how long it pauses between them.
+    # Kokoro and Chatterbox read one sentence at a time; this sets how long they pause between them.
     voice_pauses: Literal["tight", "natural", "relaxed"] = "natural"
 
     # Moment selection and brief checks

@@ -19,8 +19,30 @@ PALETTE = {
     "ink": INK, "paper": PAPER, "white": "#ffffff", "yellow": "#ffd400", "blue": "#4a90d9",
     "light_blue": "#cfe8ff", "red": "#e4572e", "green": "#5bb36a", "orange": "#f29e4c",
     "purple": "#8e6cc6", "pink": "#f4a7b9", "brown": "#9a6b4f", "grey": "#9aa0a6", "light_grey": "#e3e1dc",
+    "skin": "#f0c8a0", "beige": "#e6d5b0",
 }
 STROKE = 12          # outline width in a 512-unit drawing
+DETAIL_STROKE = 6    # inner details of an illustrated prop
+
+
+def _mix(colour: str, other: tuple[int, int, int], amount: float) -> str:
+    rgb = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+    mixed = (round(c * (1 - amount) + o * amount) for c, o in zip(rgb, other, strict=True))
+    return "#{:02x}{:02x}{:02x}".format(*mixed)
+
+
+# Props are shaded: each colour with a shadow tone and a light tone, so drawings keep the channel's colours.
+SHADES = {name: (_mix(c, (27, 27, 27), 0.28), _mix(c, (255, 255, 255), 0.45))
+          for name, c in PALETTE.items() if name not in ("ink", "paper", "white")}
+STYLE_MARK = 'data-clipper-style="2"'     # props drawn as illustrations; older ones were flat icons
+
+
+def mark_style(svg: str) -> str:
+    return svg if STYLE_MARK in svg else svg.replace("<svg", f"<svg {STYLE_MARK}", 1)
+
+
+def current_style(svg: str | None) -> bool:
+    return bool(svg) and STYLE_MARK in svg
 
 POSES = ("stand", "point_left", "point_right", "shrug", "arms_up", "think", "wave", "facepalm")
 EXPRESSIONS = ("neutral", "happy", "surprised", "worried", "smug", "deadpan", "angry", "sad")
@@ -52,7 +74,7 @@ def rasterize(svg: str, height: int) -> Image.Image:
 SVG_FORBIDDEN = re.compile(r"<\s*(script|image|foreignObject|text|style|use)\b|href\s*=|on\w+\s*=|url\(", re.I)
 
 
-def check_prop_svg(svg: str, limit: int = 40_000) -> str:
+def check_prop_svg(svg: str, limit: int = 90_000) -> str:
     """Raise ValueError unless the SVG is a self-contained drawing we can render. Returns it trimmed."""
     svg = svg.strip()
     start = svg.find("<svg")

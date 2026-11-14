@@ -38,12 +38,27 @@ import { Toasts } from '../core/toast';
           <h2 class="group-title">Studio</h2>
 
           <section class="card">
+            <h3>Studio drawings</h3>
+            <p class="small muted">New props are drawn by Claude (the writing model) as shaded illustrations, then looked at
+              and drawn once more if they miss the brief. Props are kept and reused by later videos.</p>
+            <div class="form-grid">
+              <label class="field"><span>Prop drawing</span>
+                <select [(ngModel)]="f.prop_drawing">
+                  <option value="careful">Careful · more detail, about $0.20 a new prop</option>
+                  <option value="quick">Quick · plainer, about $0.06 a new prop</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
             <h3>Studio voice</h3>
             <p class="small muted">Defaults for AI voices on the script page. You can still record your own voice.</p>
             <div class="form-grid">
               <label class="field"><span>Engine</span>
                 <select [(ngModel)]="f.voice_engine">
-                  <option value="kokoro">Kokoro (free, runs here)</option>
+                  <option value="kokoro">Kokoro (free, runs here, flat)</option>
+                  <option value="chatterbox">Chatterbox (free, runs here, expressive, slow)</option>
                   <option value="elevenlabs">ElevenLabs (paid)</option>
                 </select>
               </label>
@@ -51,6 +66,11 @@ import { Toasts } from '../core/toast';
                 <label class="field"><span>Kokoro voice</span>
                   <select [(ngModel)]="f.kokoro_voice">
                     @for (c of v.kokoro; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
+                  </select>
+                </label>
+                <label class="field"><span>Chatterbox voice</span>
+                  <select [(ngModel)]="f.chatterbox_voice">
+                    @for (c of v.chatterbox; track c.id) { <option [value]="c.id">{{ c.label }}</option> }
                   </select>
                 </label>
                 <label class="field"><span>ElevenLabs voice</span>
@@ -76,7 +96,7 @@ import { Toasts } from '../core/toast';
                 <input type="number" min="0.7" max="1.3" step="0.05" [(ngModel)]="f.voice_speed" />
                 <small>1 is the voice's natural pace.</small>
               </label>
-              <label class="field"><span>Pauses (Kokoro)</span>
+              <label class="field"><span>Pauses (Kokoro, Chatterbox)</span>
                 <select [(ngModel)]="f.voice_pauses">
                   <option value="tight">Tight (brisk)</option>
                   <option value="natural">Natural</option>

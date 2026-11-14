@@ -27,13 +27,14 @@ def test_tasks_follow_their_tier_and_calls_are_logged_with_cost(app_env, monkeyp
 
     monkeypatch.setattr(openai_compat, "ask_model", fake_openai)
     monkeypatch.setattr(llm.claude, "ask_model", fake_claude)
-    assert llm.ask("props", "sys", "draw", Answer).word == "hi"
+    assert llm.ask("prop_check", "sys", "draw", Answer).word == "hi"
     with pytest.raises(RuntimeError, match="credit"):
         llm.ask("script_write", "sys", "write", Answer)
     assert calls == [("openai", "gpt-6-luna"), ("anthropic", "claude-opus-5-5")]
     with session_scope() as db:
         rows = db.query(AiUsage).order_by(AiUsage.id).all()
-        assert [(r.task, r.tier, r.ok) for r in rows] == [("props", "quick", True), ("script_write", "writing", False)]
+        assert [(r.task, r.tier, r.ok) for r in rows] == [("prop_check", "quick", True),
+                                                          ("script_write", "writing", False)]
         assert rows[0].cost_usd == pytest.approx((1000 * 0.10 + 200 * 0.50) / 1e6)
         assert rows[1].cost_usd is None and "credit" in rows[1].error
 
@@ -133,19 +134,19 @@ def test_missing_openai_key_is_a_clear_error(monkeypatch):
 def test_usage_report_groups_by_task_and_model(client):
     from clipper.db.models import AiUsage
     with session_scope() as db:
-        db.add(AiUsage(task="props", tier="quick", provider="anthropic", model="claude-sonnet-5-5",
+        db.add(AiUsage(task="prop_check", tier="quick", provider="anthropic", model="claude-sonnet-5-5",
                        input_tokens=1000, output_tokens=100, cost_usd=0.003))
-        db.add(AiUsage(task="props", tier="quick", provider="openai", model="local-llama", input_tokens=50,
+        db.add(AiUsage(task="prop_check", tier="quick", provider="openai", model="local-llama", input_tokens=50,
                        output_tokens=5, cost_usd=None))
         db.add(AiUsage(task="research", tier="research", provider="anthropic", model="claude-sonnet-5-5",
                        searches=4, cost_usd=0.05, ok=True))
     report = client.get("/api/v1/system/ai-usage", params={"days": 7}).json()
     assert report["calls"] == 3 and report["cost_usd"] == pytest.approx(0.053)
     tasks = {line["key"]: line for line in report["by_task"]}
-    assert tasks["props"]["calls"] == 2 and tasks["props"]["unpriced_calls"] == 1
+    assert tasks["prop_check"]["calls"] == 2 and tasks["prop_check"]["unpriced_calls"] == 1
     assert tasks["research"]["label"] == "Researching scripts" and tasks["research"]["searches"] == 4
     assert report["tiers"]["quick"]["model"] == "claude-haiku-5-5"
-    assert "Drawing props" in report["tiers"]["quick"]["tasks"]
+    assert "Looking at drawn props" in report["tiers"]["quick"]["tasks"]
 
 
 OPENVERSE_ITEM = {"id": "5f7af4b0-3629-4345-83ae-9ca5bca2e9d9", "title": "Intro", "creator": "zero-project",

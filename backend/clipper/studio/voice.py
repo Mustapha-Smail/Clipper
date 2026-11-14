@@ -5,7 +5,9 @@ in its own folder, plus `timeline.json`: each script word with the time it is
 spoken, which the storyboard and renderer will follow.
 
   speak    AI voice. Kokoro runs on this machine (free, about five times faster
-           than real time on an M1); ElevenLabs is a paid cloud service.
+           than real time on an M1, flat); Chatterbox runs here too (free,
+           expressive, directed by Claude, slower than real time; see
+           chatterbox.py); ElevenLabs is a paid cloud service.
   prepare  Your recording: any audio or video file, converted and normalised.
   align    Whisper transcribes the take; the words are matched to the script,
            so the app knows when each section starts and which lines were
@@ -223,14 +225,7 @@ def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep:
     engine = Kokoro(str(kokoro_dir() / "kokoro-v1.0.fp16.onnx"), str(kokoro_dir() / "voices-v1.0.bin"))
     rng = np.random.default_rng(len(sections) * 7919 + len(voice))
     scale = PAUSE_SCALE.get(pauses, 1.0)
-    lines = []   # (sentence, last in its paragraph, last in its section)
-    for i, section in enumerate(sections):
-        paragraphs = [p for p in re.split(r"\n\s*\n", section["text"]) if p.strip()] or [section["text"]]
-        for pi, paragraph in enumerate(paragraphs):
-            parts = sentences(paragraph)
-            for si, sentence in enumerate(parts):
-                lines.append((sentence, si == len(parts) - 1, si == len(parts) - 1 and pi == len(paragraphs) - 1
-                              and i < len(sections) - 1))
+    lines = _lines(sections)
     audio, rate = [], 24_000
     for n, (sentence, paragraph_end, section_end) in enumerate(lines):
         factor, pause = delivery(sentence, paragraph_end, rng)
@@ -241,11 +236,94 @@ def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep:
         audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
         rep.progress(0.3 + 0.7 * (n + 1) / len(lines), f"Speaking: {n + 1} of {len(lines)} sentences")
     del engine
-    track = np.concatenate(audio)
-    # Room tone: very quiet filtered noise, so a pause sounds like a room, not like a switch.
+    _write_wav(out, _room_tone(np.concatenate(audio), rng), rate)
+
+
+def _lines(sections: list[dict]) -> list[tuple[str, bool, bool]]:
+    """(sentence, last in its paragraph, last in its section but not the last section) for every sentence."""
+    lines = []
+    for i, section in enumerate(sections):
+        paragraphs = [p for p in re.split(r"\n\s*\n", section["text"]) if p.strip()] or [section["text"]]
+        for pi, paragraph in enumerate(paragraphs):
+            parts = sentences(paragraph)
+            for si, sentence in enumerate(parts):
+                lines.append((sentence, si == len(parts) - 1, si == len(parts) - 1 and pi == len(paragraphs) - 1
+                              and i < len(sections) - 1))
+    return lines
+
+
+def _room_tone(track: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Very quiet filtered noise under the voice, so a pause sounds like a room, not like a switch."""
     noise = np.convolve(rng.standard_normal(len(track)), np.ones(40) / 40, mode="same").astype(np.float32)
-    track += noise * (10 ** (ROOM_TONE_DB / 20)) / (noise.std() + 1e-9)
-    _write_wav(out, track, rate)
+    return track + noise * (10 ** (ROOM_TONE_DB / 20)) / (noise.std() + 1e-9)
+
+
+CHATTERBOX_REFERENCE = ("Picture a hand made of rubber, lying on the table in front of you. Now watch what happens "
+                        "when someone strokes it, slowly, at the very same moment as your own hidden hand.")
+
+
+def chatterbox_voices() -> list[dict]:
+    """Chatterbox's own voice, then the timbre of each Kokoro voice (a Kokoro clip is the reference it copies)."""
+    return [{"id": "default", "label": "Chatterbox · its own voice, American woman"},
+            *({"id": k, "label": f"{v} (as Chatterbox)"} for k, v in KOKORO_VOICES.items())]
+
+
+def speak_chatterbox(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter,
+                     pauses: str = "natural") -> None:
+    """Claude directs each sentence (a mood, now and then a sound); Chatterbox speaks it; pauses as for Kokoro."""
+    from . import chatterbox
+
+    if voice != "default" and voice not in KOKORO_VOICES:
+        raise ValueError(f"Unknown voice for Chatterbox: {voice}")
+    lines = _lines(sections)
+    texts = chatterbox.direct([s for s, _, _ in lines], rep)
+    reference = None
+    if voice != "default":
+        rep.info(f"Taking the timbre of the Kokoro voice {KOKORO_VOICES[voice].split(' · ')[0]}")
+        reference = sample_kokoro(voice, 1.0, CHATTERBOX_REFERENCE)
+    parts = chatterbox.speak(texts, reference, out.parent / "chatterbox-parts", rep, 0.05, 0.9)
+    rng = np.random.default_rng(len(sections) * 7919 + len(voice))
+    scale = PAUSE_SCALE.get(pauses, 1.0)
+    audio, rate = [], 24_000
+    for (sentence, paragraph_end, section_end), part in zip(lines, parts, strict=True):
+        samples, rate = _read_wav(part)
+        audio.append(_trim(samples, rate))
+        _, pause = delivery(sentence, paragraph_end, rng)
+        if section_end:
+            pause = max(pause, SECTION_PAUSE + 0.3)
+        audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
+    track = _room_tone(np.concatenate(audio), rng)
+    if abs(speed - 1.0) > 0.01:      # Chatterbox has no speed control: stretch the whole take, pitch kept
+        plain = out.with_suffix(".plain.wav")
+        _write_wav(plain, track, rate)
+        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(plain), "-af", f"atempo={max(0.5, min(2.0, speed))}",
+             str(out)])
+        plain.unlink(missing_ok=True)
+    else:
+        _write_wav(out, track, rate)
+    shutil.rmtree(out.parent / "chatterbox-parts", ignore_errors=True)
+
+
+def _read_wav(path: Path) -> tuple[np.ndarray, int]:
+    with wave.open(str(path)) as f:
+        rate, width, channels = f.getframerate(), f.getsampwidth(), f.getnchannels()
+        raw = f.readframes(f.getnframes())
+    if width == 2:
+        samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768
+    elif width == 4:
+        samples = np.frombuffer(raw, dtype="<f4").astype(np.float32)
+    else:
+        raise RuntimeError(f"Unexpected sample width in {path.name}: {width}")
+    return samples.reshape(-1, channels).mean(axis=1), rate
+
+
+def _trim(samples: np.ndarray, rate: int, floor_db: float = -45) -> np.ndarray:
+    """Cut the silence a model leaves before and after a sentence: the pauses are ours."""
+    loud = np.flatnonzero(np.abs(samples) > 10 ** (floor_db / 20))
+    if not len(loud):
+        return samples
+    pad = int(rate * 0.03)
+    return samples[max(0, loud[0] - pad):loud[-1] + pad]
 
 
 def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json") -> bytes:
@@ -348,9 +426,11 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     if not sections:
         raise RuntimeError("The script has no text to speak")
     rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}"
-             + (f", {take.pauses} pauses" if take.source == "kokoro" else ""))
+             + (f", {take.pauses} pauses" if take.source in ("kokoro", "chatterbox") else ""))
     if take.source == "kokoro":
         speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
+    elif take.source == "chatterbox":
+        speak_chatterbox(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
     elif take.source == "elevenlabs":
         speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep)
     else:

@@ -13,6 +13,8 @@ the library lacks are drawn by Claude as SVG in the house style, checked, and
 kept for every later video; the ink style redraws them as ink lines and wash.
 """
 
+import base64
+import io
 import json
 import logging
 import re
@@ -20,6 +22,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
+from PIL import Image
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -65,8 +68,10 @@ class Scene(BaseModel):
 
 
 class PropRequest(BaseModel):
-    name: str = Field(description="snake_case, e.g. led_bulb")
-    description: str = Field(description="What to draw, in one sentence, for an illustrator")
+    name: str = Field(description="snake_case and specific, e.g. roman_denarius rather than coin")
+    description: str = Field(description="For an illustrator, in one or two sentences: the object, its era and "
+                                         "material, its colours, and the detail that makes it recognisable in "
+                                         "this story")
 
 
 class Plan(BaseModel):
@@ -131,8 +136,12 @@ def numbered_words(words: list[dict]) -> str:
 
 
 def library() -> dict[str, str]:
+    """The props the planner may reuse: yours, and those drawn in the current illustrated style.
+
+    Older flat drawings are left out, so the planner asks for them again and they are redrawn."""
     with session_scope() as db:
-        return {a.name: a.description for a in db.scalars(select(StudioAsset).order_by(StudioAsset.name))}
+        return {a.name: a.description for a in db.scalars(select(StudioAsset).order_by(StudioAsset.name))
+                if a.origin == "you" or art.current_style(a.svg)}
 
 
 def clean(scenes: list[dict], word_count: int) -> list[dict]:
@@ -359,9 +368,10 @@ stretches; close frames small things tightly. Use look for a reveal.
 cut instead. Mix both: cut on a surprise, a change of place or a punchline, glide when \
 the story flows on. A map, a flag or a timeline often deserves its own short shot.
 - Vary the patterns: no two shots in a row with the same beats.
-- Props are single objects (a coin, a fridge, a human eye), never scenes. Reuse library \
-props by their exact names; for anything else invent a snake_case name, use it in a \
-draw line and describe it in new_props.
+- Props are single objects (a coin, a fridge, a human eye), never scenes. Reuse a library \
+prop by its exact name only when it is exactly the object this moment needs (the same \
+thing, era and look); otherwise invent a specific snake_case name (roman_denarius, not \
+coin), use it in a draw line and describe it in new_props for the illustrator.
 - {format_rules}
 
 A short example, for a different video:
@@ -670,39 +680,100 @@ class Drawing(BaseModel):
     svg: str = Field(description="One complete SVG document")
 
 
+SHADE_LIST = "; ".join(f"{k} {art.PALETTE[k]} (shadow {d}, light {li})" for k, (d, li) in art.SHADES.items())
+
 DRAW = f"""\
-You draw one prop for an animated YouTube channel, as SVG. House style:
-- viewBox="0 0 512 512"; the object centred and filling about 80 percent of it; \
-front or three-quarter view; no background.
-- Bold, flat and simple, like a sticker or an icon: at most about 30 shapes.
-- Every shape outlined in {art.INK} with stroke-width {art.STROKE}, \
-stroke-linecap="round" and stroke-linejoin="round".
-- Fills only from this palette: {", ".join(f"{k} {v}" for k, v in art.PALETTE.items())}. \
-A few white highlight strokes are welcome.
-- Allowed elements: path, rect, circle, ellipse, line, polyline, polygon, g. No text, \
-no gradients, filters, masks, images, styles, scripts or links.
-- Recognisable at a glance at small size; a little character (a slight tilt, a \
-cartoon proportion) is good, faces on objects only if asked.
-- It must also read as a line drawing: the channel's ink style shows props as black \
-lines with a pale colour wash. So every part that matters is its own outlined shape \
-(a screen, a button, a label area), never only a change of fill colour, and the outline \
-of the whole object is clear. One or two short accent strokes (shine, glow, motion) are \
-welcome; no ground, no shadow, no scenery."""
+You illustrate one prop for an animated explainer channel, as SVG. Aim for a good editorial \
+or picture-book illustration: the viewer recognises this exact object at a glance and it \
+looks crafted, not like an icon or clip art.
+- viewBox="0 0 512 512"; the object centred and filling about 80 percent of it; a \
+three-quarter view when that shows its form better than a flat front view. No background, \
+ground, shadow on the ground or scenery: the object alone.
+- Accurate: true proportions, and the specific parts that make it this object (its era, \
+material and details as described). Draw what the description says, not a generic version: \
+its pose and orientation (lying flat, open, tilted) and its real colours (the nearest \
+colours below; skin and beige for flesh, rubber, paper and wood that is pale).
+- Volume: each main part has its base colour, then a shadow shape (on the side away from \
+a light at the top left) and a light shape (on the side towards it), as separate shapes \
+with no outline, drawn on top of the base. A few thin white highlight strokes on shiny \
+parts. Texture where the material calls for it (wood grain, stitching, rivets) as thin lines.
+- Lines: the silhouette and each main part outlined in {art.INK}, stroke-width {art.STROKE}; \
+inner details in {art.INK} at stroke-width {art.DETAIL_STROKE}; stroke-linecap="round" and \
+stroke-linejoin="round". Shadow and light shapes have no stroke.
+- Colours, only these: ink {art.INK}, white #ffffff, and {SHADE_LIST}.
+- About 40 to 150 shapes. Allowed elements: path, rect, circle, ellipse, line, polyline, \
+polygon, g, with opacity if useful. No text or letters, gradients, filters, masks, images, \
+styles, scripts or links.
+- A face on an object only if asked.
+- It must also read as a line drawing: the channel's ink style keeps only the outlined \
+shapes as black lines over a pale wash of the colours. So every part that matters has its \
+own outline, and the silhouette is clear."""
+
+
+class Look(BaseModel):
+    matches: bool = Field(description="A viewer would name it as the object described")
+    quality: int = Field(ge=1, le=10, description="As an illustration: 1 crude, 5 plain icon, 8 crafted, 10 superb")
+    fix: str = Field(description="The most important things to change, in one or two sentences; empty if none")
+
+
+LOOK = """\
+You art-direct illustrations for an animated explainer channel. You see one drawn prop and \
+the brief it was drawn from. Judge it as a viewer would on a phone: is it clearly the object \
+in the brief, with the details that matter, and is it a crafted illustration (proportions, \
+volume, clean shapes) rather than a crude icon? Name concrete fixes (a missing part, wrong \
+proportions, a confusing shape, a flat look)."""
+
+GOOD_ENOUGH = 7       # below this, or not the object, the prop is drawn once more with the critique
+
+
+def look_at_prop(svg: str, name: str, description: str) -> Look:
+    """The quick tier looks at the rendered drawing; a failure counts as a pass (the drawing is valid)."""
+    image = art.rasterize(svg, 512)
+    flat = Image.new("RGB", image.size, art.PAPER)
+    flat.paste(image, mask=image.getchannel("A"))
+    buffer = io.BytesIO()
+    flat.save(buffer, "PNG")
+    content = [{"type": "text", "text": f"<brief>{name.replace('_', ' ')}: {description}</brief>"},
+               {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                            "data": base64.standard_b64encode(buffer.getvalue()).decode()}}]
+    try:
+        return llm.ask("prop_check", LOOK, content, Look, effort="low")
+    except Exception as err:  # noqa: BLE001 - an unchecked drawing is still a drawing
+        log.warning("prop check failed", extra={"prop": name, "error": str(err)[:200]})
+        return Look(matches=True, quality=GOOD_ENOUGH, fix="")
 
 
 def draw_prop(name: str, description: str, instruction: str = "") -> str:
+    """Draw a prop as an illustration, look at it, and draw it once more if it misses the brief.
+
+    Settings.prop_drawing sets the effort: careful thinks more and draws more detail, at about
+    three times the cost."""
+    from .. import settings as settings_mod
+
+    effort = "medium" if settings_mod.load().prop_drawing == "careful" else "low"
     prompt = f"Draw: {name.replace('_', ' ')}. {description}"
     if instruction:
         prompt += f"\nChange requested by the creator: {instruction}"
-    error = ""
-    for _ in range(3):
-        svg = llm.ask("props", DRAW, prompt + (f"\n\nYour last drawing was rejected: {error}. Fix that." if error
-                                                else ""), Drawing, effort="medium").svg
+    note, best, looked = "", None, False
+    for _ in range(4):
+        svg = llm.ask("props", DRAW, prompt + note, Drawing, effort=effort).svg
         try:
-            return art.check_prop_svg(svg)
+            svg = art.check_prop_svg(svg)
         except Exception as err:  # noqa: BLE001 - any rendering failure means: draw it again
-            error = str(err)[:300]
-    raise RuntimeError(f"Could not draw {name}: {error}")
+            log.info("prop drawing rejected", extra={"prop": name, "error": str(err)[:200]})
+            note = f"\n\nYour last drawing was rejected: {str(err)[:300]}. Fix that."
+            continue
+        if looked:
+            return art.mark_style(svg)
+        best, looked = svg, True
+        review = look_at_prop(svg, name, description)
+        if review.matches and review.quality >= GOOD_ENOUGH:
+            return art.mark_style(svg)
+        note = (f"\n\nAn art director looked at your last drawing ({review.quality}/10"
+                f"{'' if review.matches else ', not recognisable as the object'}): {review.fix} Draw it again, better.")
+    if best:
+        return art.mark_style(best)
+    raise RuntimeError(f"Could not draw {name}: {note.strip()[:300]}")
 
 
 def find_photos(storyboard_id: int, rep: Reporter, sleep=time.sleep) -> None:
@@ -769,12 +840,16 @@ def draw_missing(storyboard_id: int, rep: Reporter) -> None:
             if db.get(StudioAsset, name) is None:
                 db.add(StudioAsset(name=name, description=name.replace("_", " ")))
         db.flush()
-        todo = [(a.name, a.description) for a in db.scalars(select(StudioAsset).where(
-            StudioAsset.name.in_(names), StudioAsset.svg.is_(None)))]
+        todo = [(a.name, a.description) for a in db.scalars(select(StudioAsset).where(StudioAsset.name.in_(names)))
+                if a.svg is None or (a.origin != "you" and not art.current_style(a.svg))]
+        old = sum(1 for a in db.scalars(select(StudioAsset).where(StudioAsset.name.in_([n for n, _ in todo])))
+                  if a.svg is not None)
     if not todo:
         rep.info("Every prop is already in the library")
         return
-    rep.info(f"Drawing {len(todo)} new props: {', '.join(n for n, _ in todo)}")
+    rep.info(f"Drawing {len(todo)} props as illustrations: {', '.join(n for n, _ in todo)}"
+             + (f" ({old} of them were flat drawings in the old style, redrawn; your own are never touched)"
+                if old else ""))
     failed, done = [], 0
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(draw_prop, name, desc): name for name, desc in todo}

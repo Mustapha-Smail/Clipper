@@ -273,8 +273,8 @@ def status(db: Session = Depends(get_db)):
     }
 
 
-COST_NOTE = ("AI model calls only, as estimated from tokens. Kokoro voices and rendering are free; ElevenLabs "
-             "credits are not counted. Calls made before costs were tracked per video are not included.")
+COST_NOTE = ("AI model calls only, as estimated from tokens. Kokoro and Chatterbox voices and rendering are free; "
+             "ElevenLabs credits are not counted. Calls made before costs were tracked per video are not included.")
 
 
 @system.get("/costs", response_model=s.CostReport)

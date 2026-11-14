@@ -338,6 +338,9 @@ def disclosure(db: Session, board: Storyboard) -> dict:
     elif take.source == "kokoro":
         lines.append({"needs": False, "text": f"The AI voice ({take.voice}) is a synthetic narrator that imitates "
                                               "no real person."})
+    elif take.source == "chatterbox":
+        lines.append({"needs": False, "text": f"The AI voice (Chatterbox, {take.voice}) is a synthetic narrator that "
+                                              "imitates no real person; its audio carries an inaudible AI watermark."})
     else:
         lines.append({"needs": None, "text": f"ElevenLabs voice ({take.voice}): if it is a clone of a real "
                                              "person's voice, tick the label (and have their permission)."})

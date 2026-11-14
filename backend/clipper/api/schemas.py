@@ -509,6 +509,8 @@ class VoiceSample(BaseModel):
 class VoiceOptions(BaseModel):
     kokoro: list[VoiceChoice]
     kokoro_downloaded: bool
+    chatterbox: list[VoiceChoice]
+    chatterbox_ready: bool         # installed; else the first take installs it (about 2.5 GB in all)
     elevenlabs: list[VoiceChoice]
     elevenlabs_available: bool
     elevenlabs_error: str | None
@@ -546,7 +548,7 @@ class TakeAlignment(BaseModel):
 class TakeOut(Model):
     id: int
     script_id: int
-    source: Literal["recording", "kokoro", "elevenlabs"]
+    source: Literal["recording", "kokoro", "chatterbox", "elevenlabs"]
     voice: str
     speed: float | None
     pauses: str | None = None
@@ -562,7 +564,7 @@ class TakeOut(Model):
 
 
 class AiTakeCreate(BaseModel):
-    engine: Literal["kokoro", "elevenlabs"]
+    engine: Literal["kokoro", "chatterbox", "elevenlabs"]
     voice: str = Field(min_length=1, max_length=64)
     speed: float = Field(1.0, ge=0.7, le=1.3)
     pauses: Literal["tight", "natural", "relaxed"] = "natural"

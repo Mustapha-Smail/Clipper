@@ -13,6 +13,7 @@ from .. import config, jobs
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, VoiceTake
+from ..studio import chatterbox as chatterbox_mod
 from ..studio import compliance
 from ..studio import script as script_mod
 from ..studio import voice as voice_mod
@@ -91,8 +92,10 @@ def voice_options():
     return {
         "kokoro": [{"id": k, "label": v} for k, v in voice_mod.KOKORO_VOICES.items()],
         "kokoro_downloaded": voice_mod.kokoro_ready(),
+        "chatterbox": voice_mod.chatterbox_voices(), "chatterbox_ready": chatterbox_mod.ready(),
         "elevenlabs": eleven, "elevenlabs_available": available, "elevenlabs_error": error,
         "defaults": {"engine": settings.voice_engine, "kokoro_voice": settings.kokoro_voice,
+                     "chatterbox_voice": settings.chatterbox_voice,
                      "elevenlabs_voice": settings.elevenlabs_voice, "speed": settings.voice_speed,
                      "pauses": settings.voice_pauses},
     }
@@ -124,8 +127,10 @@ def create_ai_take(body: s.AiTakeCreate, script: Script = Depends(get_script), d
     _busy(db, script)
     if body.engine == "kokoro" and body.voice not in voice_mod.KOKORO_VOICES:
         raise HTTPException(400, f"Unknown Kokoro voice: {body.voice}")
+    if body.engine == "chatterbox" and body.voice not in {v["id"] for v in voice_mod.chatterbox_voices()}:
+        raise HTTPException(400, f"Unknown voice for Chatterbox: {body.voice}")
     take = _new_take(db, script, body.engine, body.voice, body.speed)
-    take.pauses = body.pauses if body.engine == "kokoro" else None
+    take.pauses = body.pauses if body.engine in ("kokoro", "chatterbox") else None
     job = jobs.enqueue(db, "voice_ai", script.title, {"script_id": script.id, "take_id": take.id})
     log.info("ai voice queued", extra={"take_id": take.id, "engine": body.engine, "voice": body.voice})
     return take_out(take, script, job)

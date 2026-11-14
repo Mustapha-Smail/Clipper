@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { Pauses, Script, VoiceChoice, VoiceOptions, VoiceTake } from '../core/models';
+import { Pauses, Script, VoiceChoice, VoiceEngine, VoiceOptions, VoiceTake } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { JobCard } from './job-card';
@@ -32,7 +32,7 @@ export class VoicePanel implements OnDestroy {
   protected readonly options = signal<VoiceOptions | null>(null);
   protected readonly mode = signal<Mode>('none');
   protected readonly uploading = signal(false);
-  protected readonly engine = signal<'kokoro' | 'elevenlabs'>('kokoro');
+  protected readonly engine = signal<VoiceEngine>('kokoro');
   protected readonly voice = signal('');
   protected readonly speed = signal(1);
   protected readonly pauses = signal<Pauses>('natural');
@@ -40,7 +40,7 @@ export class VoicePanel implements OnDestroy {
   protected readonly voices = computed(() => {
     const options = this.options();
     if (!options) return [];
-    return this.engine() === 'kokoro' ? options.kokoro : options.elevenlabs;
+    return options[this.engine()];
   });
   protected readonly working = computed(() => this.busy() || this.takes().some((t) => t.job));
 
@@ -106,7 +106,8 @@ export class VoicePanel implements OnDestroy {
     this.api.voiceOptions().subscribe({
       next: (options) => {
         this.options.set(options);
-        this.engine.set(options.defaults.engine === 'elevenlabs' && options.elevenlabs_available ? 'elevenlabs' : 'kokoro');
+        const wanted = options.defaults.engine;
+        this.engine.set(wanted === 'elevenlabs' && !options.elevenlabs_available ? 'kokoro' : wanted);
         this.pickDefaultVoice();
         this.speed.set(options.defaults.speed);
         this.pauses.set(options.defaults.pauses ?? 'natural');
@@ -133,7 +134,8 @@ export class VoicePanel implements OnDestroy {
   protected pickDefaultVoice(): void {
     const options = this.options();
     if (!options) return;
-    const wanted = this.engine() === 'kokoro' ? options.defaults.kokoro_voice : options.defaults.elevenlabs_voice;
+    const wanted = { kokoro: options.defaults.kokoro_voice, chatterbox: options.defaults.chatterbox_voice,
+      elevenlabs: options.defaults.elevenlabs_voice }[this.engine()];
     const list = this.voices();
     this.voice.set(list.some((v) => v.id === wanted) ? wanted : (list[0]?.id ?? ''));
   }
@@ -141,10 +143,12 @@ export class VoicePanel implements OnDestroy {
   protected label(take: VoiceTake): string {
     if (take.source === 'recording') return `Your recording · ${take.voice}`;
     const options = this.options();
-    const list = take.source === 'kokoro' ? options?.kokoro : options?.elevenlabs;
-    const name = list?.find((v) => v.id === take.voice)?.label.split(' · ')[0] ?? take.voice;
+    const list = options?.[take.source];
+    const name = take.source === 'chatterbox' && take.voice === 'default' ? 'its own voice'
+      : list?.find((v) => v.id === take.voice)?.label.split(' · ')[0] ?? take.voice;
     const pauses = take.pauses && take.pauses !== 'natural' ? ` · ${take.pauses} pauses` : '';
-    return `${take.source === 'kokoro' ? 'Kokoro' : 'ElevenLabs'} · ${name}${take.speed && take.speed !== 1 ? ` · ${take.speed}×` : ''}${pauses}`;
+    const engine = { kokoro: 'Kokoro', chatterbox: 'Chatterbox', elevenlabs: 'ElevenLabs' }[take.source];
+    return `${engine} · ${name}${take.speed && take.speed !== 1 ? ` · ${take.speed}×` : ''}${pauses}`;
   }
 
   protected time(seconds: number | null | undefined): string {

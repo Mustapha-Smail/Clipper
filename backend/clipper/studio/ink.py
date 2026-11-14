@@ -777,6 +777,8 @@ def ink_prop(svg: str) -> InkProp:
             f_rgb = _rgb(fill) if fill != "none" else None
             s_rgb = _rgb(stroke) if stroke != "none" else None
             has_fill = f_rgb is not None
+            light_stroke = s_rgb is not None and _luma(s_rgb) > 0.85
+            has_stroke = s_rgb is not None and not light_stroke
             if f_rgb is None:
                 line_fill, wash_fill = "none", "none"
             elif _luma(f_rgb) < 0.3:
@@ -784,9 +786,8 @@ def ink_prop(svg: str) -> InkProp:
             elif _luma(f_rgb) > 0.93:
                 line_fill, wash_fill = PAPER, "none"
             else:
-                line_fill, wash_fill = PAPER, _wash(fill)
-            light_stroke = s_rgb is not None and _luma(s_rgb) > 0.85
-            has_stroke = s_rgb is not None and not light_stroke
+                # an outlined part hides the lines behind it; a shading shape (no outline) is wash only
+                line_fill, wash_fill = PAPER if has_stroke else "none", _wash(fill)
             el.set("fill", line_fill)
             el.set("stroke", INK if has_stroke else "none")
             el.set("stroke-width", f"{max(2.0, sw * 0.62):.1f}")

@@ -189,8 +189,9 @@ export interface AppSettings {
   studio_theme: string;
   /** Who the videos are for: ideas, research and scripts are written for them. */
   audience: Audience;
-  voice_engine: 'kokoro' | 'elevenlabs';
+  voice_engine: VoiceEngine;
   kokoro_voice: string;
+  chatterbox_voice: string;
   elevenlabs_voice: string;
   elevenlabs_model: string;
   voice_speed: number;
@@ -204,6 +205,7 @@ export interface AppSettings {
   delete_source_after_render: boolean;
   /** Days an unapproved Studio render is kept before it is deleted; 0 = forever. */
   unapproved_keep_days: number;
+  prop_drawing: 'careful' | 'quick';
   clips_per_video: number;
   ai_fallback: 'rules' | 'fail';
   min_len: number;
@@ -384,18 +386,26 @@ export interface VoiceChoice {
 export interface VoiceOptions {
   kokoro: VoiceChoice[];
   kokoro_downloaded: boolean;
+  chatterbox: VoiceChoice[];
+  /** Installed; otherwise the first take installs it (about 2.5 GB). */
+  chatterbox_ready: boolean;
   elevenlabs: VoiceChoice[];
   elevenlabs_available: boolean;
   elevenlabs_error: string | null;
-  defaults: { engine: 'kokoro' | 'elevenlabs'; kokoro_voice: string; elevenlabs_voice: string; speed: number; pauses: Pauses };
+  defaults: {
+    engine: VoiceEngine; kokoro_voice: string; chatterbox_voice: string; elevenlabs_voice: string;
+    speed: number; pauses: Pauses;
+  };
 }
+
+export type VoiceEngine = 'kokoro' | 'chatterbox' | 'elevenlabs';
 
 export type Pauses = 'tight' | 'natural' | 'relaxed';
 
 export interface VoiceTake {
   id: number;
   script_id: number;
-  source: 'recording' | 'kokoro' | 'elevenlabs';
+  source: 'recording' | VoiceEngine;
   voice: string;
   speed: number | null;
   pauses: Pauses | null;

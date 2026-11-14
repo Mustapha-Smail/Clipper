@@ -180,7 +180,7 @@ class VoiceTake(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     script_id: Mapped[int] = mapped_column(
         ForeignKey("scripts.id", ondelete="CASCADE", name="fk_voice_takes_script_id"), index=True)
-    source: Mapped[str] = mapped_column(String(16))                 # recording|kokoro|elevenlabs
+    source: Mapped[str] = mapped_column(String(16))                 # recording|kokoro|chatterbox|elevenlabs
     voice: Mapped[str] = mapped_column(String(120), default="")     # AI voice name, or the uploaded file name
     speed: Mapped[float | None] = mapped_column(Float)
     pauses: Mapped[str | None] = mapped_column(String(16))          # AI takes: tight | natural | relaxed
