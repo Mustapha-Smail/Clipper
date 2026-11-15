@@ -13,6 +13,9 @@ the database). This module only knows what is decided when a process starts.
   ELEVENLABS_API_KEY     ElevenLabs key, for the paid AI voice (Kokoro, the free one, needs none)
   OPENAI_API_KEY         OpenAI key, when a tier in Settings uses OpenAI
   OPENAI_BASE_URL        any OpenAI-compatible server instead (OpenRouter, Ollama...); empty = OpenAI
+  CLAUDE_CODE_OAUTH_TOKEN  the token `claude setup-token` prints, when a tier in Settings uses your Claude
+                         plan through the Claude CLI on a machine with no login of its own (claude_cli.py)
+  CLAUDE_CLI             path of the Claude CLI, when it is not on the PATH
   WIKIMEDIA_CONTACT      a URL or email sent to Wikimedia in the User-Agent of archive photo searches;
                          with it Wikimedia allows 200 searches a minute, without it 10
   BUFFER_API_KEY         Buffer key, to schedule approved Shorts on your channels (buffer.py)
@@ -85,6 +88,15 @@ def elevenlabs_api_key() -> str:
 
 def openai_api_key() -> str:
     return (os.environ.get("OPENAI_API_KEY") or "").strip()
+
+
+def claude_cli() -> str:
+    """Where the Claude CLI is, when the owner says so; claude_cli.binary() looks further."""
+    return (os.environ.get("CLAUDE_CLI") or "").strip()
+
+
+def claude_cli_token() -> str:
+    return (os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip()
 
 
 def buffer_api_key() -> str:

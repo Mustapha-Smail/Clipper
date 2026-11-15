@@ -608,7 +608,8 @@ models):
 
 Models are picked from a list: the known current ones first with their prices,
 then every model your key can use ("Other…" accepts any model id, for example
-on a local Ollama). Each tier can use Claude or OpenAI (`OPENAI_API_KEY`), or any OpenAI-compatible
+on a local Ollama). Each tier can use the Claude API, your Claude plan (below), OpenAI
+(`OPENAI_API_KEY`), or any OpenAI-compatible
 server (`OPENAI_BASE_URL`: OpenRouter, a local Ollama...). Compatible servers
 have no web search, so Research needs Claude or OpenAI itself.
 
@@ -619,6 +620,30 @@ which lists every call by task with tokens, web searches and an estimated cost
 (list prices; unknown models show "+?"). The app already avoids repeat calls:
 props are drawn once and reused, fact checks search the web only for claims the
 research does not cover, ideas are checked only when you ask.
+
+**Your Claude plan instead of the API.** A tier set to "Claude plan (CLI)" runs
+through the Claude Code CLI on your Claude subscription (Pro or Max), so its
+calls cost nothing extra. They are logged with their tokens at $0.
+
+- **On the Mac** (`make run`): install Claude Code and sign in once with
+  `claude`. The app uses that login.
+- **In Docker or on a server:** the image already contains the CLI. Run
+  `claude setup-token` on your own computer (it opens the browser), put the
+  token it prints in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`, then
+  `docker compose up -d`. When the token expires, do it again.
+
+What to know before you switch:
+
+- The plan has usage limits (a 5-hour window and a weekly one), shared with
+  everything else you do with Claude. When one is reached the app says "AI
+  unavailable" with the time it comes back, exactly as when the API is down.
+  Opus uses the plan fastest; scripts and storyboards are the heavy jobs.
+- The app hides `ANTHROPIC_API_KEY` from the CLI, so a tier on the plan never
+  bills the API. Tiers left on "Claude API" still use the key.
+- Research works: the model marks each sourced passage, and a source is kept
+  only if one of its own web searches really returned that page.
+- Each call starts the CLI, which adds a few seconds. It is meant for your own
+  use with your own subscription.
 
 **Cost per video.** Every AI call is tagged with what it was for (an idea, a
 script, a storyboard or a clipped video). The script page shows what its idea,

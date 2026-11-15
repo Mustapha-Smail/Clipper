@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
 import { JobsStore } from '../core/jobs-store';
-import { AiModel, AiModels, AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
+import { AiModel, AiModels, AiProvider, AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
 import { Toasts } from '../core/toast';
 
 @Component({
@@ -282,7 +282,9 @@ import { Toasts } from '../core/toast';
             <h3>AI models</h3>
             <p class="small muted">Every AI task belongs to one of three tiers. Put the quick tier on a small model to spend
               far less; keep a strong model for writing. OpenAI needs OPENAI_API_KEY in .env (or OPENAI_BASE_URL for an
-              OpenAI-compatible server such as OpenRouter or Ollama).</p>
+              OpenAI-compatible server such as OpenRouter or Ollama). "Claude plan" runs the Claude CLI on your Claude
+              subscription instead of the API: nothing to pay per call, but it shares your plan's usage limits, and when
+              they are reached the AI is unavailable until they reset.</p>
             <div class="tiers">
               @for (tier of tiers; track tier.key) {
                 <div class="tier">
@@ -292,7 +294,8 @@ import { Toasts } from '../core/toast';
                   </div>
                   <select [ngModel]="$any(f)['ai_' + tier.key + '_provider']"
                           (ngModelChange)="setProvider(f, tier.key, $event)" [attr.aria-label]="tier.name + ' provider'">
-                    <option value="anthropic">Claude</option>
+                    <option value="anthropic">Claude API</option>
+                    <option value="claude_cli">Claude plan (CLI)</option>
                     <option value="openai">OpenAI or compatible</option>
                   </select>
                   <div class="model">
@@ -314,10 +317,12 @@ import { Toasts } from '../core/toast';
             <p class="small muted">Prices are per million tokens in / out.
               <button class="sm quiet" (click)="loadModels(true)">Refresh the model lists</button>
               @if (models()?.openai?.error; as e) { <span> · OpenAI: {{ e }}</span> }
+              @if (usesPlan(f) && models()?.claude_cli?.error; as e) { <span> · Claude plan: {{ e }}</span> }
             </p>
             @if (store.status(); as st) {
               <p class="small muted">Claude key: {{ st.api_key ? 'found' : 'missing' }} · OpenAI key:
-                {{ st.openai_key ? 'found' : 'missing' }}{{ st.openai_base_url ? ' · compatible server: ' + st.openai_base_url : '' }}</p>
+                {{ st.openai_key ? 'found' : 'missing' }}{{ st.openai_base_url ? ' · compatible server: ' + st.openai_base_url : '' }}
+                · Claude CLI: {{ st.claude_cli ? 'found' : 'not installed' }}{{ st.claude_cli_token ? ', token set' : '' }}</p>
             }
 
             @if (usage(); as u) {
@@ -329,7 +334,8 @@ import { Toasts } from '../core/toast';
                   {{ refreshing() ? 'Refreshing…' : 'Refresh' }}</button>
               </h4>
               <p class="small">{{ u.calls }} calls{{ u.failed ? ', ' + u.failed + ' failed' : '' }} · about
-                <strong>{{ '$' + u.cost_usd.toFixed(2) }}</strong> <span class="muted">(estimated from list prices)</span></p>
+                <strong>{{ '$' + u.cost_usd.toFixed(2) }}</strong> <span class="muted">(estimated from list prices; calls on your
+                Claude plan count as $0)</span></p>
               @if (u.by_task.length) {
                 <table class="usage">
                   <thead><tr><th>Task</th><th>Tier</th><th class="num">Calls</th><th class="num">Tokens in / out</th>
@@ -424,6 +430,7 @@ import { Toasts } from '../core/toast';
                 <dt>Clips folder</dt><dd>{{ status.clips_dir }}</dd>
                 <dt>Free disk space</dt><dd>{{ status.disk_free_gb }} GB</dd>
                 <dt>Claude API key</dt><dd>{{ status.api_key ? 'Found' : 'Missing: set ANTHROPIC_API_KEY in .env and restart' }}</dd>
+                <dt>Claude CLI</dt><dd>{{ status.claude_cli ? 'Found' + (status.claude_cli_token ? ', token set' : '') : 'Not installed' }}</dd>
                 <dt>YouTube API key</dt><dd>{{ status.youtube_key ? 'Found' : 'Missing: Studio ideas are scored without YouTube data. Set YOUTUBE_API_KEY in .env and restart' }}</dd>
                 <dt>ElevenLabs key</dt><dd>{{ status.elevenlabs_key ? 'Found' : 'Not set: only the free Kokoro voice is available' }}</dd>
                 <dt>Worker</dt><dd>{{ status.worker_online ? 'Online' : 'Offline' }}</dd>
@@ -576,7 +583,7 @@ export class SettingsPage {
   }
 
   protected modelsFor(form: AppSettings, tier: string): AiModel[] {
-    const provider = (form as unknown as Record<string, 'anthropic' | 'openai'>)[`ai_${tier}_provider`];
+    const provider = (form as unknown as Record<string, AiProvider>)[`ai_${tier}_provider`];
     return this.models()?.[provider]?.models ?? [];
   }
 
@@ -600,11 +607,17 @@ export class SettingsPage {
     return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
   }
 
+  protected usesPlan(form: AppSettings): boolean {
+    const f = form as unknown as Record<string, string>;
+    return this.tiers.some((tier) => f[`ai_${tier.key}_provider`] === 'claude_cli');
+  }
+
   /** Switching provider proposes that provider's usual model for the tier. */
-  protected setProvider(form: AppSettings, tier: string, provider: 'anthropic' | 'openai'): void {
+  protected setProvider(form: AppSettings, tier: string, provider: AiProvider): void {
     const defaults: Record<string, Record<string, string>> = {
       anthropic: { writing: 'claude-opus-5-5', quick: 'claude-haiku-5-5', research: 'claude-sonnet-5-5' },
       openai: { writing: 'gpt-6-astra', quick: 'gpt-6-luna', research: 'gpt-6.1-sol' },
+      claude_cli: { writing: 'claude-opus-5-5', quick: 'claude-haiku-5-5', research: 'claude-sonnet-5-5' },
     };
     const f = form as unknown as Record<string, string>;
     f[`ai_${tier}_provider`] = provider;

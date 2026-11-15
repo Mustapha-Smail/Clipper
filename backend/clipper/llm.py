@@ -10,6 +10,11 @@ one of three tiers, and Settings say which provider and model run each tier:
 Putting the quick tier on a small model is the main way to spend less. Every
 call is logged (tokens, web searches, estimated cost) so Settings can show
 where the money goes.
+
+Providers: "anthropic" and "openai" are paid per call through their APIs.
+"claude_cli" runs the Claude Code CLI on the owner's Claude subscription: its
+calls are logged with their tokens and a cost of zero, and they stop when the
+plan's usage limit is reached (an `AiUnavailable`, like any other outage).
 """
 
 import contextvars
@@ -19,7 +24,7 @@ from contextlib import contextmanager
 
 from pydantic import BaseModel
 
-from . import claude, config, openai_compat
+from . import claude, claude_cli, config, openai_compat
 from .ai_errors import AiUnavailable  # noqa: F401 - features catch it as llm.AiUnavailable
 from .db import session_scope
 from .db.models import AiUsage
@@ -62,7 +67,9 @@ PRICES = {
 }
 SEARCH_PRICE = 0.01
 
-PROVIDERS = {"anthropic": claude, "openai": openai_compat}
+PROVIDERS = {"anthropic": claude, "openai": openai_compat, "claude_cli": claude_cli}
+# Paid by a subscription, not per call: no price is shown and the logged cost is zero.
+INCLUDED = ("claude_cli",)
 
 # What the calls are for, so a video's cost can be added up: "idea:3", "script:4",
 # "storyboard:8", "video:12". The worker sets `job_ref` for the job it runs (one at a
@@ -89,12 +96,18 @@ KNOWN = {   # shown first in Settings, with a short description
                   "claude-fable-5-2": "Fable 5.2 · most capable, priciest"},
     "openai": {"gpt-6-astra": "GPT-6 Astra · flagship", "gpt-6.1-sol": "GPT-6.1 Sol · balanced",
                "gpt-6.1-terra": "GPT-6.1 Terra · cheaper", "gpt-6-luna": "GPT-6 Luna · fast and cheapest"},
+    "claude_cli": {"claude-opus-5-5": "Opus 5.5 · best writing, uses the plan fastest",
+                   "claude-sonnet-5-5": "Sonnet 5.5 · balanced",
+                   "claude-haiku-5-5": "Haiku 5.5 · lightest on the plan"},
 }
 _model_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
 def _live_ids(provider: str) -> list[str]:
     """Model ids the account can use, from the provider's models endpoint."""
+    if provider == "claude_cli":   # the CLI lists no models: offer the known ones once it is found and signed in
+        claude_cli.check()
+        return list(KNOWN["claude_cli"])
     if provider == "anthropic":
         import anthropic
         return [m.id for m in anthropic.Anthropic().models.list(limit=100)]
@@ -118,8 +131,9 @@ def available_models(provider: str, refresh: bool = False) -> dict:
         except Exception as err:  # noqa: BLE001 - no key, offline, or a server without /models
             live, error = [], str(err).split("\n")[0][:200]
         known = KNOWN.get(provider, {})
-        models = [{"id": k, "label": v, "price": PRICES.get(k), "live": k in live} for k, v in known.items()]
-        models += [{"id": i, "label": i, "price": PRICES.get(i), "live": True} for i in sorted(live) if i not in known]
+        prices = {} if provider in INCLUDED else PRICES
+        models = [{"id": k, "label": v, "price": prices.get(k), "live": k in live} for k, v in known.items()]
+        models += [{"id": i, "label": i, "price": prices.get(i), "live": True} for i in sorted(live) if i not in known]
         if not error:
             _model_cache[provider] = (time.monotonic(), models)
     return {"models": models, "error": error}
@@ -187,13 +201,14 @@ def health(within_hours: float = 24) -> dict:
 
 def _record(task: str, tier: str, provider: str, model: str, usage: dict, started: float,
             error: str | None = None, outage: bool = False) -> None:
+    cost = None if error else 0.0 if provider in INCLUDED else estimate(model, usage)
     try:
         with session_scope() as db:
             row = AiUsage(task=task, tier=tier, provider=provider, model=model,
                            input_tokens=usage.get("input", 0) + usage.get("cache_write", 0),
                            output_tokens=usage.get("output", 0),
                            cache_read_tokens=usage.get("cache_read", 0), searches=usage.get("searches", 0),
-                           cost_usd=estimate(model, usage) if not error else None, ok=error is None,
+                           cost_usd=cost, ok=error is None,
                            error=(error or "")[:500], duration_s=round(time.monotonic() - started, 2),
                            ref=current_ref(), outage=outage)
             db.add(row)

@@ -5,6 +5,21 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# The Claude Code CLI, for AI tiers that run on a Claude subscription instead of the API (claude_cli.py).
+# Nothing starts it unless Settings pick "Claude plan"; it then needs CLAUDE_CODE_OAUTH_TOKEN in .env.
+# Anthropic's installer checks the download's checksum; the one binary is kept, its updater is not.
+ARG CLAUDE_CLI_VERSION=2.1.322
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && curl -fsSL https://claude.ai/install.sh -o /tmp/install.sh \
+    && bash /tmp/install.sh "$CLAUDE_CLI_VERSION" \
+    && cp -L /root/.local/bin/claude /usr/local/bin/claude \
+    && chmod 755 /usr/local/bin/claude \
+    && rm -rf /tmp/install.sh /root/.local /root/.claude /root/.claude.json \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && claude --version
+
 # uv installs the locked dependencies; deno lets yt-dlp solve YouTube's JS challenges.
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno

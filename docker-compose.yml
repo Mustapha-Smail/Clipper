@@ -10,6 +10,7 @@
 #                      to /output on the Settings page (default ./data/clips)
 #   CLIPPER_VIDEOS     local videos to clip; in the UI type /videos/<file> (default ./videos)
 #   POSTGRES_PASSWORD  database password (default clipper; the database is not exposed)
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`, to run AI tiers on your Claude plan (see .env.example)
 name: clipper
 
 x-backend: &backend

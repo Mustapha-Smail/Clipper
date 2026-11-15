@@ -465,6 +465,9 @@ class SystemStatus(BaseModel):
     elevenlabs_key: bool
     openai_key: bool
     openai_base_url: str
+    claude_cli: bool            # the Claude CLI is installed here
+    claude_cli_token: bool      # CLAUDE_CODE_OAUTH_TOKEN is set (a server needs it; the Mac has its own login)
+    ai_providers: list[str]     # the providers the three tiers use now
     in_docker: bool
     database: str
     data_dir: str

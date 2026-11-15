@@ -321,6 +321,12 @@ export interface SystemStatus {
   elevenlabs_key: boolean;
   openai_key: boolean;
   openai_base_url: string;
+  /** The Claude CLI is installed where the app runs. */
+  claude_cli: boolean;
+  /** CLAUDE_CODE_OAUTH_TOKEN is set: what a server needs to use a Claude plan through the CLI. */
+  claude_cli_token: boolean;
+  /** The providers the three AI tiers use now. */
+  ai_providers: AiProvider[];
   in_docker: boolean;
   database: string;
   data_dir: string;
@@ -746,7 +752,7 @@ export interface AiModel {
   live: boolean;
 }
 
-export type AiModels = Record<'anthropic' | 'openai', { models: AiModel[]; error: string | null }>;
+export type AiModels = Record<AiProvider, { models: AiModel[]; error: string | null }>;
 
 export interface MusicFound {
   id: string;
@@ -763,7 +769,8 @@ export interface MusicFound {
   attribution: string;
 }
 
-export type AiProvider = 'anthropic' | 'openai';
+/** 'claude_cli' is Claude on the owner's subscription, through the Claude Code CLI. */
+export type AiProvider = 'anthropic' | 'openai' | 'claude_cli';
 
 export interface UsageLine {
   key: string;

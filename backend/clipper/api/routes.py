@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from .. import config, jobs, llm, pipeline, posting
+from .. import claude_cli, config, jobs, llm, pipeline, posting
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Video, Worker, as_utc, utcnow
@@ -232,7 +232,7 @@ def ai_usage(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db))
 @system.get("/ai-models")
 def ai_models(refresh: bool = False):
     """The models each provider offers this account, known ones first with their list prices."""
-    return {provider: llm.available_models(provider, refresh) for provider in ("anthropic", "openai")}
+    return {provider: llm.available_models(provider, refresh) for provider in llm.PROVIDERS}
 
 
 # --- system ------------------------------------------------------------------------------
@@ -258,6 +258,9 @@ def status(db: Session = Depends(get_db)):
         "youtube_key": bool(config.youtube_api_key()),
         "elevenlabs_key": bool(config.elevenlabs_api_key()),
         "openai_key": bool(config.openai_api_key()),
+        "claude_cli": claude_cli.binary() is not None,
+        "claude_cli_token": bool(config.claude_cli_token()),
+        "ai_providers": sorted({getattr(settings, f"ai_{tier}_provider") for tier in ("writing", "quick", "research")}),
         "openai_base_url": config.openai_base_url(),
         "in_docker": config.IN_DOCKER,
         "database": db.get_bind().dialect.name,

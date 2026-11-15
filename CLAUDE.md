@@ -41,7 +41,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   A task maps to a tier (writing, quick, research) whose provider and model come
   from Settings; providers live in `claude.py` (Anthropic) and
   `openai_compat.py` (OpenAI Responses API, or Chat Completions for
-  compatible servers). Every call is logged in `ai_usage`. New AI work needs a
+  compatible servers), and `claude_cli.py` (the owner's Claude subscription:
+  one `claude -p` per call with `--safe-mode`, no tools except web search for
+  research, `ANTHROPIC_API_KEY` hidden from it so it never bills the API, cost
+  logged as zero, a plan limit raised as `AiUnavailable`; a source mark is kept
+  only when a search of that run returned the URL). Every call is logged in `ai_usage`. New AI work needs a
   task in `llm.TASKS`, never a direct SDK call.
 - `moments.py`: the model answers with transcript line numbers, never timestamps.
 - AI outages: providers raise `ai_errors.AiUnavailable` (no key, credit, rate

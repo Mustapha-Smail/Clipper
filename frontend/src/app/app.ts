@@ -65,8 +65,12 @@ export class App {
     if (!status) return [];
     const list: string[] = [];
     if (!status.worker_online) list.push('No worker is running, so queued jobs will not start.');
-    if (!status.api_key) list.push('No Claude API key: set ANTHROPIC_API_KEY in .env and restart.');
-    else if (status.ai && !status.ai.ok) {
+    const uses = status.ai_providers ?? ['anthropic'];
+    if (uses.includes('anthropic') && !status.api_key) {
+      list.push('No Claude API key: set ANTHROPIC_API_KEY in .env and restart, or use your Claude plan in Settings.');
+    } else if (uses.includes('claude_cli') && !status.claude_cli) {
+      list.push('Settings use your Claude plan, but the Claude CLI is not installed where the app runs.');
+    } else if (status.ai && !status.ai.ok) {
       list.push(`The AI is unavailable: ${status.ai.message} Until it is back, clips are picked and checked by `
         + 'plain rules (if Settings say so) and pasted campaign listings wait to be read.');
     }
