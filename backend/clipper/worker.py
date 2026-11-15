@@ -13,7 +13,7 @@ import socket
 import threading
 import time
 
-from . import jobs, llm, pipeline, scout
+from . import buffer, jobs, llm, pipeline, posting, scout
 from . import settings as settings_mod
 from .db import session_scope
 from .db.models import Job, Worker, utcnow
@@ -28,6 +28,8 @@ from .studio import voice as voice_mod
 HEARTBEAT_SECONDS = 5
 SWEEP_SECONDS = 3600        # how often an idle worker looks for renders past their grace period
 SCOUT_CHECK_SECONDS = 300   # how often an idle worker checks whether a scheduled campaign scout is due
+POSTS_DUE_SECONDS = 600     # how often an idle worker asks Buffer about posts whose time has come
+POSTS_ALL_SECONDS = 86400   # ... and about every waiting post (Buffer counts requests: see posting.py)
 log = logging.getLogger("clipper.worker")
 
 
@@ -69,6 +71,12 @@ def run_job(job_id: int) -> None:
                 pipeline.check(video_id, settings, rep, clip_ids, skip_without_brief=kind != "check")
             elif stage == "scout":
                 done = scout.outcome(scout.run(settings, rep))
+            elif stage == "upload":
+                posting.upload(params["post_ids"], rep)
+            elif stage == "schedule":
+                done = posting.schedule(params["post_ids"], rep)
+            elif stage == "sync":
+                posting.sync(rep)
             elif stage == "research":
                 script_mod.research(params["script_id"], rep)
             elif stage == "write":
@@ -153,7 +161,8 @@ def main() -> None:
     threading.Thread(target=_heartbeat, args=(worker_id, stop), daemon=True, name="heartbeat").start()
     log.info("worker ready", extra={"worker_id": worker_id})
 
-    next_sweep = next_scout = 0.0
+    next_sweep = next_scout = next_due = 0.0
+    next_all = time.monotonic() + 60
     while not stop.is_set():
         try:
             job_id = jobs.claim_next(worker_id)
@@ -176,6 +185,17 @@ def main() -> None:
                         log.info("scheduled campaign scout queued")
                 except Exception:  # noqa: BLE001
                     log.warning("could not queue the campaign scout", exc_info=True)
+            # Posts handed to Buffer: learn what was sent, and take down videos no longer needed.
+            if time.monotonic() >= next_due and buffer.configured():
+                everything = time.monotonic() >= next_all
+                next_due = time.monotonic() + POSTS_DUE_SECONDS
+                if everything:
+                    next_all = time.monotonic() + POSTS_ALL_SECONDS
+                try:
+                    if posting.sync(due_only=not everything):
+                        log.info("scheduled posts changed on Buffer")
+                except Exception:  # noqa: BLE001
+                    log.warning("could not ask Buffer about scheduled posts", exc_info=True)
             stop.wait(1.0)
         else:
             run_job(job_id)

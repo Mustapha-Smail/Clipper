@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from .. import config, jobs, llm, pipeline
+from .. import config, jobs, llm, pipeline, posting
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Video, Worker, as_utc, utcnow
@@ -52,7 +52,9 @@ def list_clips(status: str | None = Query(None, pattern="^(pending|approved|reje
 
 
 @clips.patch("/{clip_id}", response_model=s.ClipOut)
-def review_clip(body: s.ClipPatch, clip: Clip = Depends(get_clip)):
+def review_clip(body: s.ClipPatch, clip: Clip = Depends(get_clip), db: Session = Depends(get_db)):
+    if body.status != "approved" and posting.has_live(db, "clip", clip.id):
+        raise HTTPException(409, "A post of this clip is waiting on Buffer. Cancel it before taking back the approval.")
     clip.status = body.status
     return clip_out(clip)
 
@@ -270,6 +272,7 @@ def status(db: Session = Depends(get_db)):
         "running": counts.get("running", 0),
         "features": {"clipping": settings.feature_clipping, "studio": settings.feature_studio},
         "ai": llm.health(),
+        "posting": posting.readiness(),
     }
 
 

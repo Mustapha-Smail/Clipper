@@ -7,13 +7,14 @@ import { ClipListItem, ClipStatus } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { BriefCheck } from '../shared/brief-check';
+import { PostScheduler } from '../shared/post-scheduler';
 
 type Filter = 'all' | ClipStatus;
 
 /** Every rendered clip in one place: the queue to work through before posting. */
 @Component({
   selector: 'app-clips-page',
-  imports: [RouterLink, BriefCheck, MegabytesPipe, AgoPipe],
+  imports: [RouterLink, BriefCheck, PostScheduler, MegabytesPipe, AgoPipe],
   template: `
     <div class="page">
       <div class="page-head">
@@ -64,6 +65,9 @@ type Filter = 'all' | ClipStatus;
               </div>
               @if (clip.compliance) {
                 <app-brief-check class="wide" [result]="clip.compliance" />
+              }
+              @if (clip.status === 'approved' && clip.format === 'vertical' && clip.file_exists) {
+                <app-post-scheduler class="wide" kind="clip" [refId]="clip.id" />
               }
             </article>
           } @empty {

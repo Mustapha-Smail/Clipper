@@ -13,6 +13,7 @@ import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
 import { PublishCheckView } from '../shared/publish-check';
 import { YoutubeTextView } from '../shared/youtube-text';
+import { PostScheduler } from '../shared/post-scheduler';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -80,7 +81,7 @@ type BoardTab = (typeof BOARD_TABS)[number];
 /** One storyboard in four tabs: the video and its review, the scenes, the sound, and publishing. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView, PostScheduler],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })

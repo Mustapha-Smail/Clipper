@@ -11,6 +11,7 @@ import { Confirm } from '../core/confirm';
 import { BriefCheck } from '../shared/brief-check';
 import { CostReportView } from '../shared/cost-report';
 import { JobCard } from '../shared/job-card';
+import { PostScheduler } from '../shared/post-scheduler';
 
 /** The editable copy of a moment shown in a card. `moment` is the saved version. */
 interface Draft {
@@ -38,7 +39,7 @@ const FORMAT_LABELS: Record<ClipFormat, string> = {
 
 @Component({
   selector: 'app-video-detail-page',
-  imports: [FormsModule, RouterLink, JobCard, BriefCheck, LengthPipe, MegabytesPipe, CostReportView],
+  imports: [FormsModule, RouterLink, JobCard, BriefCheck, PostScheduler, LengthPipe, MegabytesPipe, CostReportView],
   templateUrl: './video-detail.html',
   styleUrl: './video-detail.scss',
 })

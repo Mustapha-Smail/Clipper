@@ -248,8 +248,67 @@ export interface SettingsBundle {
   default_clips_dir: string;
 }
 
+/** Whether approved Shorts can be scheduled: the Buffer key and the public bucket (.env). */
+export interface PostingStatus {
+  ready: boolean;
+  buffer_key: boolean;
+  hosting: boolean;
+  missing: string[];
+  services: string[];
+}
+
+/** One of your channels in Buffer. */
+export interface BufferChannel {
+  id: string;
+  service: string;
+  name: string;
+  type: string;
+  timezone: string;
+  weekly_slots: number;
+  disconnected: boolean;
+  locked: boolean;
+  queue_paused: boolean;
+}
+
+export type PostMode = 'queue' | 'at' | 'draft';
+export type PostStatus = 'queued' | 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'removed';
+
+/** An approved Short handed to Buffer for one channel. */
+export interface Post {
+  id: number;
+  kind: 'clip' | 'storyboard';
+  clip_id: number | null;
+  storyboard_id: number | null;
+  title: string;
+  channel_id: string;
+  service: string;
+  channel_name: string;
+  text: string;
+  ai_label: boolean;
+  mode: PostMode;
+  due_at: string | null;
+  status: PostStatus;
+  link: string | null;
+  error: string | null;
+  sent_at: string | null;
+  checked_at: string | null;
+  created_at: string;
+  hosted: boolean;
+}
+
+export interface NewPost {
+  kind: 'clip' | 'storyboard';
+  ref_id: number;
+  channel_ids: string[];
+  text: string;
+  mode: PostMode;
+  due_at: string | null;
+  ai_label: boolean;
+}
+
 export interface SystemStatus {
   features?: { clipping: boolean; studio: boolean };
+  posting?: PostingStatus;
   /** The latest AI call failed because the AI is unavailable (no credit, no key, down). */
   ai?: { ok: boolean; message: string; since: string | null };
   version: string;

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import config, jobs, llm
+from .. import config, jobs, llm, posting
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
@@ -240,10 +240,13 @@ def video(board: Storyboard = Depends(get_board)):
 
 @router.patch("/storyboards/{storyboard_id}", response_model=s.StoryboardOut)
 def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
-    """Your verdict on the rendered video (nothing is ever posted for you), and the sound settings."""
+    """Your verdict on the rendered video (approving posts nothing by itself), and the sound settings."""
     if body.review is not None:
         if not board.video_path:
             raise HTTPException(409, "Render the video before reviewing it")
+        if body.review != "approved" and posting.has_live(db, "storyboard", board.id):
+            raise HTTPException(409, "A post of this video is waiting on Buffer. "
+                                     "Cancel it before taking back the approval.")
         if body.review != board.review:
             compliance.record(db, board.script_id, "review", "you",
                               {"approved": "Watched and approved the video",

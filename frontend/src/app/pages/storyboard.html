@@ -436,6 +436,13 @@
             }
           </section>
         }
+        @if (b.has_video && b.review === 'approved' && b.format === 'short') {
+          <section class="card publish">
+            <h3>Instagram and TikTok</h3>
+            <p class="small muted">Hands this approved Short to Buffer, which posts it at the time you choose.</p>
+            <app-post-scheduler kind="storyboard" [refId]="b.id" />
+          </section>
+        }
         @if (b.has_video) {
           <app-publish-check [storyboardId]="b.id" [version]="b.review + b.look + b.music_id + b.rendered_at + version()" />
         }

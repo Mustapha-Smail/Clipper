@@ -15,6 +15,9 @@ the database). This module only knows what is decided when a process starts.
   OPENAI_BASE_URL        any OpenAI-compatible server instead (OpenRouter, Ollama...); empty = OpenAI
   WIKIMEDIA_CONTACT      a URL or email sent to Wikimedia in the User-Agent of archive photo searches;
                          with it Wikimedia allows 200 searches a minute, without it 10
+  BUFFER_API_KEY         Buffer key, to schedule approved Shorts on your channels (buffer.py)
+  R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL
+                         the Cloudflare R2 bucket Buffer fetches those videos from (hosting.py)
 """
 
 import os
@@ -82,6 +85,15 @@ def elevenlabs_api_key() -> str:
 
 def openai_api_key() -> str:
     return (os.environ.get("OPENAI_API_KEY") or "").strip()
+
+
+def buffer_api_key() -> str:
+    return (os.environ.get("BUFFER_API_KEY") or "").strip()
+
+
+def r2(name: str) -> str:
+    """One of the R2_* variables of the bucket videos are published from (see hosting.py)."""
+    return (os.environ.get(name) or "").strip()
 
 
 def openai_base_url() -> str:

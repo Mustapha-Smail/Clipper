@@ -57,6 +57,21 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   the text sizes and positions of each format are in `captions.LAYOUTS`. A
   source that already has the clip's shape fills the frame and skips the face
   scan. A new format needs an entry in both tables and in the UI's labels.
+- Posting (`posting.py`, `buffer.py`, `hosting.py`): approved Shorts (a vertical
+  clip, a Studio storyboard of format `short`) are scheduled on Instagram and
+  TikTok through Buffer's GraphQL API; nothing else in the app posts, and
+  nothing posts to a network directly. `posting.check` is the gate (approved,
+  vertical, file on disk), run when asked and again by the `post` job before it
+  uploads; the review routes refuse to un-approve while `posting.has_live`.
+  Buffer has no upload, so the job copies the file to a Cloudflare R2 bucket
+  (`hosting.py`, S3 calls signed by hand, checked against AWS's published
+  signatures in the tests) under an unguessable key, and `release_media`
+  deletes it once no post needs it. One `posts` row per channel. Buffer counts
+  requests (1,000 per channel per 30 days on the Free plan): never poll;
+  `posting.sync` asks only for due posts, plus one full pass a day, batched in
+  one request (`buffer.posts`). Keys come from `.env` only (`BUFFER_API_KEY`,
+  `R2_*`), never from Settings or the database. A new network needs an entry in
+  `posting.SERVICES`, `posting.TEXT_MAX` and `buffer.METADATA`.
 - `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
   subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.
 - `subtitles.py`: burned-in captions are detected as a band of changing text,
@@ -247,6 +262,7 @@ Test a pipeline change in both runtimes.
   Never commit `.env` (API keys, the Wikimedia contact) or anything under `data/`,
   and keep personal details out of tracked files such as `.env.example`.
 - Every clip must pass human review before it is posted. Do not add auto-posting
-  without that gate. The brief check advises; it never approves.
+  without that gate: posting goes through `posting.py` only, and only when you
+  press Schedule on an approved video. The brief check advises; it never approves.
 - Clip only from sources a campaign authorises.
 - The UI has no login. Keep ports bound to localhost.

@@ -27,6 +27,9 @@ STAGES = {
     "check": ["check"],
     "subtitles": ["subtitles"],
     "scout": ["scout"],
+    # Scheduling approved Shorts on Buffer (posting.py)
+    "post": ["upload", "schedule"],
+    "post_sync": ["sync"],
     # Studio scripts
     "script": ["research", "write", "factcheck"],
     "redraft": ["write", "factcheck"],
@@ -47,6 +50,9 @@ STAGE_LABELS = {
     "render": "Rendering clips",
     "check": "Checking clips against the brief",
     "scout": "Reading public campaign listings",
+    "upload": "Putting the video online for Buffer",
+    "schedule": "Scheduling on Buffer",
+    "sync": "Asking Buffer what was posted",
     "research": "Researching with web sources",
     "write": "Writing the script",
     "factcheck": "Checking the facts",

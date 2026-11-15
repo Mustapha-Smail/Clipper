@@ -2,9 +2,9 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
+  ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, BufferChannel, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
-  MusicSuggestion, MusicTrack, NewVideo, Place, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
+  MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
   SystemStatus, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
@@ -373,6 +373,28 @@ export class Api {
     return this.http.post<Job>(`${BASE}/jobs/${id}/cancel`, {});
   }
   /** A failed or cancelled job; for a clipping video with no clip yet, the video and its files too. */
+  // --- scheduled posts (Buffer) ---
+  posts(): Observable<Post[]> {
+    return this.http.get<Post[]>(`${BASE}/posts`);
+  }
+  postChannels(fresh = false): Observable<{ channels: BufferChannel[]; others: string[]; fetched_at: string }> {
+    return this.http.get<{ channels: BufferChannel[]; others: string[]; fetched_at: string }>(
+      `${BASE}/posting/channels`, { params: { fresh } });
+  }
+  postDraft(kind: 'clip' | 'storyboard', refId: number): Observable<{ text: string; ai_label: boolean; allowed: boolean; reason: string }> {
+    return this.http.get<{ text: string; ai_label: boolean; allowed: boolean; reason: string }>(
+      `${BASE}/posting/draft`, { params: { kind, ref_id: refId } });
+  }
+  schedulePost(body: NewPost): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/posts`, body);
+  }
+  cancelPost(id: number): Observable<Post> {
+    return this.http.delete<Post>(`${BASE}/posts/${id}`);
+  }
+  syncPosts(): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/posts/sync`, {});
+  }
+
   deleteJob(id: number): Observable<void> {
     return this.http.delete<void>(`${BASE}/jobs/${id}`);
   }

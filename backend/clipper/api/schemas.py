@@ -374,6 +374,74 @@ class UploadOut(BaseModel):
     name: str
 
 
+# --- scheduled posts (Buffer) ------------------------------------------------------------
+
+class PostingStatus(BaseModel):
+    ready: bool
+    buffer_key: bool
+    hosting: bool
+    missing: list[str]              # names of the .env variables still to set
+    services: list[str]
+
+
+class ChannelOut(BaseModel):
+    id: str
+    service: str
+    name: str
+    type: str
+    timezone: str
+    weekly_slots: int               # posting times set in Buffer for this channel, per week
+    disconnected: bool
+    locked: bool
+    queue_paused: bool
+
+
+class ChannelsOut(BaseModel):
+    channels: list[ChannelOut]      # the ones a Short can be scheduled on
+    others: list[str]               # connected networks the app does not post to yet
+    fetched_at: UtcDatetime
+
+
+class PostCreate(BaseModel):
+    kind: Literal["clip", "storyboard"]
+    ref_id: int
+    channel_ids: list[str] = Field(min_length=1, max_length=10)
+    text: str = Field("", max_length=5000)
+    mode: Literal["queue", "at", "draft"] = "queue"
+    due_at: datetime | None = None
+    ai_label: bool = False
+
+
+class PostDraft(BaseModel):
+    """What the Schedule panel starts from, and whether this video may be scheduled."""
+    text: str
+    ai_label: bool
+    allowed: bool
+    reason: str = ""
+
+
+class PostOut(Model):
+    id: int
+    kind: str
+    clip_id: int | None
+    storyboard_id: int | None
+    title: str
+    channel_id: str
+    service: str
+    channel_name: str
+    text: str
+    ai_label: bool
+    mode: str
+    due_at: UtcDatetime | None
+    status: str
+    link: str | None
+    error: str | None
+    sent_at: UtcDatetime | None
+    checked_at: UtcDatetime | None
+    created_at: UtcDatetime
+    hosted: bool = False            # a copy of the video is online for Buffer
+
+
 # --- settings and system ---------------------------------------------------------------
 
 class FontChoice(BaseModel):
@@ -408,6 +476,7 @@ class SystemStatus(BaseModel):
     queued: int
     running: int
     features: dict[str, bool] = {}
+    posting: PostingStatus | None = None
     ai: dict = {}                    # {ok, message, since}: the latest AI call failed because the AI is unavailable
 
 

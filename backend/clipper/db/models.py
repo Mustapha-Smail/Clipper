@@ -412,11 +412,49 @@ class Clip(Base):
     moment: Mapped[Moment] = relationship(back_populates="clip")
 
 
+class Post(Base):
+    """An approved Short handed to Buffer to be published on one channel.
+
+    The video is a copy put online for Buffer (`media_key` in the bucket, see
+    hosting.py): the file you approved, whatever is rendered afterwards.
+    `title` is kept here so the row still reads well once its clip is gone.
+    """
+
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(12))                       # clip | storyboard
+    clip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clips.id", ondelete="SET NULL", name="fk_posts_clip_id"), index=True)
+    storyboard_id: Mapped[int | None] = mapped_column(
+        ForeignKey("storyboards.id", ondelete="SET NULL", name="fk_posts_storyboard_id"), index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    channel_id: Mapped[str] = mapped_column(String(40))                 # Buffer's id of the channel
+    service: Mapped[str] = mapped_column(String(16))                    # instagram | tiktok
+    channel_name: Mapped[str] = mapped_column(Text, default="")
+    text: Mapped[str] = mapped_column(Text, default="")                 # the caption posted with the video
+    ai_label: Mapped[bool] = mapped_column(Boolean, default=False)      # disclosed as AI-generated
+    mode: Mapped[str] = mapped_column(String(8), default="queue")       # queue | at | draft
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # queued (waiting for our worker) -> draft | scheduled -> sending -> sent, or
+    # failed (never reached Buffer, or Buffer could not publish) | cancelled | removed (deleted in Buffer)
+    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
+    buffer_id: Mapped[str | None] = mapped_column(String(40))
+    media_key: Mapped[str | None] = mapped_column(Text)                 # NULL once the hosted copy is deleted
+    media_url: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(Text)                      # the post on the network, once sent
+    error: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # last asked Buffer
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(24))        # process|select|render|check|subtitles
+    kind: Mapped[str] = mapped_column(String(24))        # process|select|render|check|subtitles|post...
     label: Mapped[str] = mapped_column(Text)
     # Not a foreign key: a job's history outlives the video it worked on.
     video_id: Mapped[str | None] = mapped_column(String(80), index=True)
