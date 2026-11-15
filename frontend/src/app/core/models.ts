@@ -325,6 +325,8 @@ export interface SystemStatus {
   claude_cli: boolean;
   /** CLAUDE_CODE_OAUTH_TOKEN is set: what a server needs to use a Claude plan through the CLI. */
   claude_cli_token: boolean;
+  /** The Codex CLI is installed where the app runs. */
+  codex_cli: boolean;
   /** The providers the three AI tiers use now. */
   ai_providers: AiProvider[];
   in_docker: boolean;
@@ -769,8 +771,8 @@ export interface MusicFound {
   attribution: string;
 }
 
-/** 'claude_cli' is Claude on the owner's subscription, through the Claude Code CLI. */
-export type AiProvider = 'anthropic' | 'openai' | 'claude_cli';
+/** 'claude_cli' is Claude on the owner's subscription (Claude Code CLI); 'codex_cli' OpenAI on their ChatGPT plan (Codex CLI). */
+export type AiProvider = 'anthropic' | 'openai' | 'claude_cli' | 'codex_cli';
 
 export interface UsageLine {
   key: string;

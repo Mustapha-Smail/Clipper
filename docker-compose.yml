@@ -11,6 +11,7 @@
 #   CLIPPER_VIDEOS     local videos to clip; in the UI type /videos/<file> (default ./videos)
 #   POSTGRES_PASSWORD  database password (default clipper; the database is not exposed)
 #   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`, to run AI tiers on your Claude plan (see .env.example)
+# AI tiers on a ChatGPT plan need no variable: `docker compose exec worker codex login --device-auth`, once.
 name: clipper
 
 x-backend: &backend

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from .. import claude_cli, config, jobs, llm, pipeline, posting
+from .. import claude_cli, codex_cli, config, jobs, llm, pipeline, posting
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import AiUsage, Clip, Job, JobEvent, Script, Storyboard, Video, Worker, as_utc, utcnow
@@ -260,6 +260,7 @@ def status(db: Session = Depends(get_db)):
         "openai_key": bool(config.openai_api_key()),
         "claude_cli": claude_cli.binary() is not None,
         "claude_cli_token": bool(config.claude_cli_token()),
+        "codex_cli": codex_cli.binary() is not None,
         "ai_providers": sorted({getattr(settings, f"ai_{tier}_provider") for tier in ("writing", "quick", "research")}),
         "openai_base_url": config.openai_base_url(),
         "in_docker": config.IN_DOCKER,

@@ -467,6 +467,7 @@ class SystemStatus(BaseModel):
     openai_base_url: str
     claude_cli: bool            # the Claude CLI is installed here
     claude_cli_token: bool      # CLAUDE_CODE_OAUTH_TOKEN is set (a server needs it; the Mac has its own login)
+    codex_cli: bool             # the Codex CLI is installed here
     ai_providers: list[str]     # the providers the three tiers use now
     in_docker: bool
     database: str

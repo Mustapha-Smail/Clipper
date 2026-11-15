@@ -177,7 +177,7 @@ def ask_model(model: str, system: str, content, output_format: type[BaseModel],
         raise RuntimeError(f"Claude's answer did not match the expected shape: {err.errors()[0]['msg']}") from err
 
 
-def _same(url: str) -> str:
+def same_page(url: str) -> str:
     return url.split("#")[0].rstrip("/").lower()
 
 
@@ -198,11 +198,11 @@ def found_pages(events: list[dict]) -> tuple[dict[str, tuple[str, str]], int]:
         for group in listed.get("results") or []:
             for hit in (group.get("content") or []) if isinstance(group, dict) else []:
                 if isinstance(hit, dict) and hit.get("url"):
-                    pages.setdefault(_same(hit["url"]), (hit["url"], hit.get("title") or ""))
+                    pages.setdefault(same_page(hit["url"]), (hit["url"], hit.get("title") or ""))
         for block in blocks:   # the same list as text, in case the structured copy changes shape
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 for url in URL.findall(json.dumps(block.get("content"), ensure_ascii=False)):
-                    pages.setdefault(_same(url), (url, ""))
+                    pages.setdefault(same_page(url), (url, ""))
     return pages, searches
 
 
@@ -213,7 +213,7 @@ def cited_pieces(text: str, pages: dict[str, tuple[str, str]]) -> tuple[Pieces, 
     for mark in MARK.finditer(text):
         passage = text[cursor:mark.start()]
         cursor = mark.end()
-        page = pages.get(_same(mark.group(1)))
+        page = pages.get(same_page(mark.group(1)))
         if page is None:
             dropped += 1
         source = [(page[0], page[1] or (mark.group(2) or "").strip())] if page else []

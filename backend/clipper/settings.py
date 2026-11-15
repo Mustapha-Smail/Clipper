@@ -62,12 +62,13 @@ class Settings(BaseModel):
     max_len: int = Field(60, ge=10, le=900)
     # AI models, by tier (see llm.py). Writing: scripts, storyboards, moments, ideas.
     # Quick: checks, props, campaign terms. Research: web search with citations.
-    # "claude_cli" is Claude on your subscription, through the Claude Code CLI (claude_cli.py).
-    ai_writing_provider: Literal["anthropic", "openai", "claude_cli"] = "anthropic"
+    # "claude_cli" is Claude on your subscription, through the Claude Code CLI (claude_cli.py);
+    # "codex_cli" is OpenAI's models on your ChatGPT plan, through the Codex CLI (codex_cli.py).
+    ai_writing_provider: Literal["anthropic", "openai", "claude_cli", "codex_cli"] = "anthropic"
     ai_writing_model: str = Field("claude-opus-5-5", pattern=r"^[\w.:/-]{2,80}$")
-    ai_quick_provider: Literal["anthropic", "openai", "claude_cli"] = "anthropic"
+    ai_quick_provider: Literal["anthropic", "openai", "claude_cli", "codex_cli"] = "anthropic"
     ai_quick_model: str = Field("claude-haiku-5-5", pattern=r"^[\w.:/-]{2,80}$")
-    ai_research_provider: Literal["anthropic", "openai", "claude_cli"] = "anthropic"
+    ai_research_provider: Literal["anthropic", "openai", "claude_cli", "codex_cli"] = "anthropic"
     ai_research_model: str = Field("claude-sonnet-5-5", pattern=r"^[\w.:/-]{2,80}$")
     auto_compliance: bool = True              # check clips against the brief after rendering
     # When the AI is unavailable (no credit, no key, down): choose moments and check briefs with plain

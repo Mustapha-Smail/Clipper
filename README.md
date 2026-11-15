@@ -608,7 +608,7 @@ models):
 
 Models are picked from a list: the known current ones first with their prices,
 then every model your key can use ("Other…" accepts any model id, for example
-on a local Ollama). Each tier can use the Claude API, your Claude plan (below), OpenAI
+on a local Ollama). Each tier can use the Claude API, your Claude plan or ChatGPT plan (below), OpenAI
 (`OPENAI_API_KEY`), or any OpenAI-compatible
 server (`OPENAI_BASE_URL`: OpenRouter, a local Ollama...). Compatible servers
 have no web search, so Research needs Claude or OpenAI itself.
@@ -644,6 +644,27 @@ What to know before you switch:
   only if one of its own web searches really returned that page.
 - Each call starts the CLI, which adds a few seconds. It is meant for your own
   use with your own subscription.
+
+**Your ChatGPT plan instead of the API.** The same idea for OpenAI's models: a
+tier set to "ChatGPT plan (Codex CLI)" runs through the Codex CLI on your
+ChatGPT subscription, logged at $0. The model list comes from the CLI's own
+catalogue, so the latest models appear as soon as the CLI knows them.
+
+- **On the Mac:** install the Codex CLI and run `codex login`. It must be
+  version 0.169 or later (`codex update`); Settings says so if it is older.
+- **In Docker or on a server:** the image contains the CLI. Sign in once with
+  `docker compose exec worker codex login --device-auth`: it prints a link and
+  a code to enter in your browser. The login is kept in the data folder
+  (`cache/codex-cli`), so it survives rebuilds.
+
+The same limits apply as for the Claude plan: usage is shared with your own
+Codex use, a reached limit shows as "AI unavailable", `OPENAI_API_KEY` is hidden
+from the CLI, and a CLI signed in with an API key is refused because it would
+bill the API. Codex is a coding agent that cannot be started without tools, so
+the app shuts it in: your own Codex setup is ignored, it runs in an empty
+folder with a read-only sandbox, and its shell, apps, plugins and browser are
+switched off. Research keeps only what it needs to search the web, and a
+source is kept only if one of its searches returned that page.
 
 **Cost per video.** Every AI call is tagged with what it was for (an idea, a
 script, a storyboard or a clipped video). The script page shows what its idea,

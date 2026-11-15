@@ -13,7 +13,7 @@ import socket
 import threading
 import time
 
-from . import buffer, jobs, llm, pipeline, posting, scout
+from . import buffer, codex_cli, jobs, llm, pipeline, posting, scout
 from . import settings as settings_mod
 from .db import session_scope
 from .db.models import Job, Worker, utcnow
@@ -155,6 +155,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
+    codex_cli.home()   # so `codex login`, run by hand in this container, finds its folder
     interrupted = jobs.recover_interrupted()
     if interrupted:
         log.warning("marked interrupted jobs as failed", extra={"count": interrupted})

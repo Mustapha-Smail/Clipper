@@ -45,7 +45,12 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   one `claude -p` per call with `--safe-mode`, no tools except web search for
   research, `ANTHROPIC_API_KEY` hidden from it so it never bills the API, cost
   logged as zero, a plan limit raised as `AiUnavailable`; a source mark is kept
-  only when a search of that run returned the URL). Every call is logged in `ai_usage`. New AI work needs a
+  only when a search of that run returned the URL), and `codex_cli.py` (the
+  same on a ChatGPT plan with `codex exec`: user config ignored, read-only
+  sandbox, every tool-bearing feature disabled, `code_mode_host` kept only for
+  research because it runs the web search; models from `codex debug models`;
+  a CLI older than `MINIMUM` or signed in with an API key is refused). Every
+  call is logged in `ai_usage`. New AI work needs a
   task in `llm.TASKS`, never a direct SDK call.
 - `moments.py`: the model answers with transcript line numbers, never timestamps.
 - AI outages: providers raise `ai_errors.AiUnavailable` (no key, credit, rate

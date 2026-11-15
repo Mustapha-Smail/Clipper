@@ -12,9 +12,10 @@ call is logged (tokens, web searches, estimated cost) so Settings can show
 where the money goes.
 
 Providers: "anthropic" and "openai" are paid per call through their APIs.
-"claude_cli" runs the Claude Code CLI on the owner's Claude subscription: its
-calls are logged with their tokens and a cost of zero, and they stop when the
-plan's usage limit is reached (an `AiUnavailable`, like any other outage).
+"claude_cli" runs the Claude Code CLI on the owner's Claude subscription and
+"codex_cli" the Codex CLI on their ChatGPT plan: those calls are logged with
+their tokens and a cost of zero, and they stop when the plan's usage limit is
+reached (an `AiUnavailable`, like any other outage).
 """
 
 import contextvars
@@ -24,7 +25,7 @@ from contextlib import contextmanager
 
 from pydantic import BaseModel
 
-from . import claude, claude_cli, config, openai_compat
+from . import claude, claude_cli, codex_cli, config, openai_compat
 from .ai_errors import AiUnavailable  # noqa: F401 - features catch it as llm.AiUnavailable
 from .db import session_scope
 from .db.models import AiUsage
@@ -67,9 +68,9 @@ PRICES = {
 }
 SEARCH_PRICE = 0.01
 
-PROVIDERS = {"anthropic": claude, "openai": openai_compat, "claude_cli": claude_cli}
+PROVIDERS = {"anthropic": claude, "openai": openai_compat, "claude_cli": claude_cli, "codex_cli": codex_cli}
 # Paid by a subscription, not per call: no price is shown and the logged cost is zero.
-INCLUDED = ("claude_cli",)
+INCLUDED = ("claude_cli", "codex_cli")
 
 # What the calls are for, so a video's cost can be added up: "idea:3", "script:4",
 # "storyboard:8", "video:12". The worker sets `job_ref` for the job it runs (one at a
@@ -99,6 +100,10 @@ KNOWN = {   # shown first in Settings, with a short description
     "claude_cli": {"claude-opus-5-5": "Opus 5.5 · best writing, uses the plan fastest",
                    "claude-sonnet-5-5": "Sonnet 5.5 · balanced",
                    "claude-haiku-5-5": "Haiku 5.5 · lightest on the plan"},
+    # Shown before the CLI is found; once it is, its own catalogue adds whatever is newer.
+    "codex_cli": {"gpt-6-astra": "GPT-6 Astra · flagship, uses the plan fastest",
+                  "gpt-6.1-sol": "GPT-6.1 Sol · balanced", "gpt-6.1-terra": "GPT-6.1 Terra · lighter",
+                  "gpt-6-luna": "GPT-6 Luna · lightest on the plan"},
 }
 _model_cache: dict[str, tuple[float, list[dict]]] = {}
 
@@ -108,6 +113,9 @@ def _live_ids(provider: str) -> list[str]:
     if provider == "claude_cli":   # the CLI lists no models: offer the known ones once it is found and signed in
         claude_cli.check()
         return list(KNOWN["claude_cli"])
+    if provider == "codex_cli":    # the models of the CLI's own catalogue, so new ones appear with an update
+        codex_cli.check()
+        return [name for name, _ in codex_cli.models()] or list(KNOWN["codex_cli"])
     if provider == "anthropic":
         import anthropic
         return [m.id for m in anthropic.Anthropic().models.list(limit=100)]
