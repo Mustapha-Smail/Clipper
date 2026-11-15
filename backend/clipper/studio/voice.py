@@ -185,12 +185,29 @@ PAUSE_SCALE = {"tight": 0.7, "natural": 1.0, "relaxed": 1.3}
 ROOM_TONE_DB = -62
 
 
+LOWER_START = re.compile(r"^[\"'“‘(]*[a-z]")
+
+
 def sentences(text: str) -> list[str]:
-    """Split narration into sentences (an ellipsis ends one too); very long ones into pieces."""
+    """Split narration into sentences; very long ones into pieces.
+
+    An ellipsis before a lowercase word ("team names, like… the Drunkards") is a
+    beat inside the sentence: it stays in one piece, so the engine holds its tone
+    through the hesitation. Cut there, the first half was read as a finished
+    sentence, falling tone and a sentence's pause, then the rest started anew.
+    Before a capital, or at the end, an ellipsis ends the sentence.
+    """
+    pieces: list[str] = []
+    for part in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        if not part:
+            continue
+        if pieces and pieces[-1].endswith(("…", "...")) and LOWER_START.match(part):
+            pieces[-1] += " " + part
+        else:
+            pieces.append(part)
     out = []
-    for sentence in re.split(r"(?<=[.!?…])\s+", text.strip()):
-        if sentence:
-            out.extend(_chunks(sentence) if len(sentence) > 400 else [sentence])
+    for sentence in pieces:
+        out.extend(_chunks(sentence) if len(sentence) > 400 else [sentence])
     return out
 
 
@@ -403,7 +420,7 @@ def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") 
     if voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
     text = " ".join(text.split())[:300] or "Your fridge has never made cold. It just moves heat around."
-    key = hashlib.sha256(f"{voice}|{speed:.2f}|{pauses}|{text}|v3".encode()).hexdigest()[:20]
+    key = hashlib.sha256(f"{voice}|{speed:.2f}|{pauses}|{text}|v4".encode()).hexdigest()[:20]
     folder = config.data_dir() / "cache" / "voice-samples"
     out = folder / f"{key}.wav"
     if out.is_file():

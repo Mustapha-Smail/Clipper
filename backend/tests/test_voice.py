@@ -196,8 +196,13 @@ def test_voice_samples_are_made_once(client, monkeypatch):
 
 def test_sentences_and_a_narrators_delivery():
     text = "Here's the thing: there's no white LED. Well… almost none. The bulb in your lamp? Blue."
-    assert voice.sentences(text) == ["Here's the thing: there's no white LED.", "Well…", "almost none.",
+    assert voice.sentences(text) == ["Here's the thing: there's no white LED.", "Well… almost none.",
                                      "The bulb in your lamp?", "Blue."]
+    # A beat inside a sentence stays in it (one breath, tone held); before a capital it ends the sentence.
+    assert voice.sentences("The crews had team names, like… the Drunkards of King Menkaure. Then… Nothing.") \
+        == ["The crews had team names, like… the Drunkards of King Menkaure.", "Then…", "Nothing."]
+    assert voice.sentences('Piles of bones... "enough" beef. And then...') == ['Piles of bones... "enough" beef.',
+                                                                               "And then..."]
     rng = np.random.default_rng(0)
     punch_speed, punch_pause = voice.delivery("Not white.", False, rng)
     long_speed, long_pause = voice.delivery(" ".join(["word"] * 20) + ".", False, rng)
