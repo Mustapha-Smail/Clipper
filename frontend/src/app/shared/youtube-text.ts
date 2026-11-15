@@ -19,7 +19,7 @@ import { Toasts } from '../core/toast';
         <div>
           <h3>YouTube title and description</h3>
           <p class="small muted">Written from the script only; chapters, sources and credits are added as they are.
-            You edit it, then copy it into YouTube Studio or use it in the Buffer scheduler below.</p>
+            Finish and save it here; then publish a long video manually or schedule a Short from Animations → Approved.</p>
         </div>
         @if (text()) {
           <button class="sm quiet" (click)="write()" [disabled]="writing()">{{ writing() ? 'Writing…' : 'Write it again' }}</button>

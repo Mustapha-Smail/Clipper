@@ -143,3 +143,30 @@ def test_youtube_text_is_written_only_for_approved_videos(client, app_env, monke
     assert ("Description", True) in {(x["part"], x["yours"]) for x in check["authorship"]["lines"]}
     assert publish.fit_tags(["a" * 99] * 10) == ["a" * 99]          # duplicates dropped
     assert len(",".join(publish.fit_tags([f"tag number {i}" for i in range(60)]))) <= 500
+
+
+def test_only_ready_long_videos_can_be_marked_published_manually(client, app_env):
+    with session_scope() as db:
+        long = make_video(db, "A long video", "A complete narration.")
+        long.format, long.review = "long", "approved"
+        short = make_video(db, "A Short", "A short narration.")
+        short.review = "approved"
+        long_id, short_id = long.id, short.id
+
+    missing = client.patch(f"/api/v1/storyboards/{long_id}", json={"published": True})
+    assert missing.status_code == 409 and "title and description" in missing.json()["detail"]
+
+    with session_scope() as db:
+        db.get(Storyboard, long_id).youtube = {
+            "title": "A long video", "description": "A complete description.", "problems": []}
+    published = client.patch(f"/api/v1/storyboards/{long_id}", json={"published": True})
+    assert published.status_code == 200 and published.json()["published_at"] is not None
+    assert published.json()["publish_ready"] is True
+    refused = client.patch(f"/api/v1/storyboards/{long_id}", json={"review": "pending"})
+    assert refused.status_code == 409 and "back to Approved" in refused.json()["detail"]
+
+    back = client.patch(f"/api/v1/storyboards/{long_id}", json={"published": False})
+    assert back.status_code == 200 and back.json()["published_at"] is None
+    assert client.patch(f"/api/v1/storyboards/{long_id}", json={"review": "pending"}).status_code == 200
+    short_mark = client.patch(f"/api/v1/storyboards/{short_id}", json={"published": True})
+    assert short_mark.status_code == 409 and "Only long videos" in short_mark.json()["detail"]

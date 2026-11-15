@@ -176,8 +176,10 @@
               @if (clip.compliance) {
                 <app-brief-check [result]="clip.compliance" />
               }
-              @if (clip.status === 'approved' && clip.file_exists) {
+              @if (clip.status === 'approved' && clip.file_exists && clip.format === 'vertical') {
                 <app-post-scheduler kind="clip" [refId]="clip.id" />
+              } @else if (clip.status === 'approved' && clip.file_exists) {
+                <p class="small muted">Buffer accepts only vertical Shorts. Publish this horizontal clip manually.</p>
               }
             }
 

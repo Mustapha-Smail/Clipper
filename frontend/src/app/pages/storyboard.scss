@@ -119,6 +119,16 @@
   }
 }
 
+.manual-publish {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 20px;
+
+  > div:first-child { flex: 1 1 360px; }
+}
+
 .export {
   display: grid;
   gap: 10px;

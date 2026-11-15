@@ -52,10 +52,12 @@ def _keep_days() -> int:
 def _computed(board: Storyboard, job: Job | None, keep_days: int) -> dict:
     return {"duration": round(board.end - board.start, 2), "scene_count": len(board.scenes),
             "has_video": bool(board.video_path), "job": s.JobOut.model_validate(job) if job else None,
+            "publish_ready": publish.ready(board.youtube),
             "expires_at": retention.deadline(board, keep_days)}
 
 
-SUMMARY_FIELDS = set(s.StoryboardSummary.model_fields) - {"duration", "scene_count", "has_video", "job", "expires_at"}
+SUMMARY_FIELDS = set(s.StoryboardSummary.model_fields) - {
+    "duration", "scene_count", "has_video", "publish_ready", "job", "expires_at"}
 
 
 def summary_out(board: Storyboard, job: Job | None, keep_days: int) -> s.StoryboardSummary:
@@ -244,6 +246,8 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
     if body.review is not None:
         if not board.video_path:
             raise HTTPException(409, "Render the video before reviewing it")
+        if body.review != "approved" and board.published_at:
+            raise HTTPException(409, "This long video is marked as published. Move it back to Approved first.")
         if body.review != "approved" and posting.has_live(db, "storyboard", board.id):
             raise HTTPException(409, "A post of this video is waiting on Buffer. "
                                      "Cancel it before taking back the approval.")
@@ -254,6 +258,22 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                                "pending": "Took back the review"}[body.review], storyboard_id=board.id)
             board.review_at = utcnow()      # an unapproved render gets a full grace period from here
         board.review = body.review
+    if body.published is not None:
+        if board.format != "long":
+            raise HTTPException(409, "Only long videos are published manually; schedule Shorts from the Approved tab")
+        if body.published:
+            if not board.video_path or board.review != "approved":
+                raise HTTPException(409, "Render and approve the long video before marking it published")
+            if not publish.ready(board.youtube):
+                raise HTTPException(409, "Finish and save the YouTube title and description first")
+            if not board.published_at:
+                board.published_at = utcnow()
+                compliance.record(db, board.script_id, "publish", "you", "Marked the long video as published manually",
+                                  storyboard_id=board.id)
+        elif board.published_at:
+            board.published_at = None
+            compliance.record(db, board.script_id, "publish", "you", "Moved the long video back to Approved",
+                              storyboard_id=board.id)
     if body.look is not None and body.look != board.look:
         if body.look not in LOOKS.get(board.style, ()) or board.style == "flat":
             raise HTTPException(400, f"The {board.style} style has no {body.look} look")

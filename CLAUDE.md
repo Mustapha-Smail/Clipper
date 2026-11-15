@@ -68,10 +68,12 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   scan. A new format needs an entry in both tables and in the UI's labels.
 - Posting (`posting.py`, `buffer.py`, `hosting.py`): approved videos are
   scheduled on Instagram, TikTok and YouTube through Buffer's GraphQL API;
-  nothing posts to a network directly. Instagram and TikTok require a vertical
-  Short; YouTube accepts vertical or horizontal video. `posting.check` is the
-  gate (approved, compatible shape, file on disk), run when asked and again by the `post` job before it
-  uploads; the review routes refuse to un-approve while `posting.has_live`.
+  nothing posts to a network directly. Buffer is for vertical Shorts only;
+  Studio Shorts also need valid saved YouTube metadata. Long Studio videos and
+  horizontal clips are published manually. `posting.check` is the gate
+  (approved, Short, metadata ready, file on disk), run when asked and again by
+  the `post` job before it uploads; the review routes refuse to un-approve while
+  `posting.has_live`.
   Buffer has no upload, so the job copies the file to a Cloudflare R2 bucket
   (`hosting.py`, S3 calls signed by hand, checked against AWS's published
   signatures in the tests) under an unguessable key, and `release_media`

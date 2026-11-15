@@ -247,7 +247,7 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         board.scenes = scenes
-        board.video_path = None
+        board.video_path = board.published_at = None
         for name in {e["name"] for s in scenes for e in s["elements"] if e["kind"] == "prop"}:
             if db.get(StudioAsset, name) is None:
                 db.add(StudioAsset(name=name, description=descriptions.get(name, name.replace("_", " "))))
@@ -515,7 +515,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         board.scenes = shots
-        board.video_path = None
+        board.video_path = board.published_at = None
         for name in beats.prop_names(shots):
             if db.get(StudioAsset, name) is None:
                 db.add(StudioAsset(name=name, description=descriptions.get(name, name.replace("_", " "))))
@@ -668,7 +668,7 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         board.scenes = shots
-        board.video_path = None
+        board.video_path = board.published_at = None
     lines = sum(len(s["lines"]) for s in shots)
     photos = len(film.photo_queries(shots))
     rep.info(f"{len(shots)} shots, {lines} beats, {photos} archive pictures to find")

@@ -573,6 +573,8 @@ export interface StoryboardSummary {
   rendered_at: string | null;
   /** When the verdict last changed. */
   review_at?: string | null;
+  /** Long video marked as uploaded or scheduled manually. */
+  published_at: string | null;
   /** When the render was deleted for not being approved in time (the plan is kept). */
   expired_at: string | null;
   created_at: string;
@@ -582,6 +584,8 @@ export interface StoryboardSummary {
   duration: number;
   scene_count: number;
   has_video: boolean;
+  /** Saved YouTube title and description exist and pass YouTube's limits. */
+  publish_ready: boolean;
   job: Job | null;
   /** When the render is deleted if it is still not approved; null = never. */
   expires_at: string | null;

@@ -9,7 +9,7 @@ const POST_JOBS = new Set(['post', 'post_sync']);
 export const WAITING = new Set<PostStatus>(['queued', 'draft', 'scheduled', 'sending']);
 export const SERVICE_NAMES: Record<string, string> = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube' };
 
-/** Posts that put a video in the Scheduled tab: waiting, or already posted. */
+/** Posts that move a Short from Approved into the Published phase: waiting, or already posted. */
 export function handedOver(posts: Post[] | undefined): Post[] {
   return (posts ?? []).filter((p) => WAITING.has(p.status) || p.status === 'sent');
 }

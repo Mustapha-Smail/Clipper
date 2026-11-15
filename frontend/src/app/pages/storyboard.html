@@ -436,12 +436,40 @@
             }
           </section>
         }
-        @if (b.has_video && b.review === 'approved') {
+        @if (b.has_video && b.review === 'approved' && b.format === 'short') {
           <section class="card publish">
-            <h3>Post with Buffer</h3>
-            <p class="small muted">Hands this approved video to your Studio Buffer account. Long videos can go to YouTube;
-              Shorts can also go to Instagram and TikTok.</p>
-            <app-post-scheduler kind="storyboard" [refId]="b.id" />
+            <h3>Schedule this Short</h3>
+            @if (b.publish_ready) {
+              <p class="small muted">The publishing details are ready. Schedule it from the Approved tab so all ready Shorts
+                can be handled in one place.</p>
+              <a class="btn primary" routerLink="/animations" [queryParams]="{ tab: 'approved' }">Open Approved Shorts</a>
+            } @else {
+              <div class="notice small"><span>Finish and save the YouTube title and description above. The Buffer scheduler
+                appears on this Short in Animations → Approved once the details are valid.</span></div>
+            }
+          </section>
+        }
+        @if (b.has_video && b.review === 'approved' && b.format === 'long') {
+          <section class="card publish manual-publish">
+            <div>
+              <h3>Publish this long video manually</h3>
+              <p class="small muted">Buffer accepts only Shorts. Upload or schedule this video in YouTube Studio yourself,
+                then mark it published here to move it out of Approved.</p>
+            </div>
+            @if (b.published_at) {
+              <div class="row">
+                <span class="pill approved">Published manually {{ b.published_at | ago }}</span>
+                <button class="sm quiet" (click)="markPublished(false)" [disabled]="markingPublished()">
+                  Move back to Approved</button>
+              </div>
+            } @else {
+              <button class="primary" (click)="markPublished(true)"
+                [disabled]="markingPublished() || !b.publish_ready">
+                {{ markingPublished() ? 'Saving…' : 'Mark as published' }}</button>
+              @if (!b.publish_ready) {
+                <p class="small muted">Finish and save the YouTube title and description above first.</p>
+              }
+            }
           </section>
         }
         @if (b.has_video) {

@@ -13,7 +13,6 @@ import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
 import { PublishCheckView } from '../shared/publish-check';
 import { YoutubeTextView } from '../shared/youtube-text';
-import { PostScheduler } from '../shared/post-scheduler';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -81,7 +80,7 @@ type BoardTab = (typeof BOARD_TABS)[number];
 /** One storyboard in four tabs: the video and its review, the scenes, the sound, and publishing. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView, PostScheduler],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
@@ -331,7 +330,8 @@ export class StoryboardPage {
 
   /** The YouTube text was written or saved: keep it, and let the checks see it. */
   protected setYoutube(text: YoutubeText): void {
-    this.board.update((b) => b && { ...b, youtube: text });
+    const ready = !!text.title.trim() && !!text.description.trim() && !text.problems.length;
+    this.board.update((b) => b && { ...b, youtube: text, publish_ready: ready });
     this.version.set(Date.now());
   }
 
@@ -530,6 +530,7 @@ export class StoryboardPage {
   }
 
   protected readonly exporting = signal(false);
+  protected readonly markingPublished = signal(false);
 
   /** The exported folder with its files under it, one per line. */
   protected exportListing(x: ExportInfo): string {
@@ -548,6 +549,27 @@ export class StoryboardPage {
       },
       error: (err) => {
         this.exporting.set(false);
+        this.toasts.error(err);
+      },
+    });
+  }
+
+  /** Record the manual YouTube handoff for a long video, or undo an accidental mark. */
+  protected async markPublished(published: boolean): Promise<void> {
+    if (!published && !(await this.confirm.ask({
+      title: 'Move this video back to Approved?',
+      message: 'This changes only its phase in Clipper. It does not remove or cancel anything in YouTube Studio.',
+      confirm: 'Move to Approved', danger: true,
+    }))) return;
+    this.markingPublished.set(true);
+    this.api.markStoryboardPublished(this.id, published).subscribe({
+      next: (board) => {
+        this.markingPublished.set(false);
+        this.board.set(board);
+        this.toasts.ok(published ? 'Moved to Published' : 'Moved back to Approved');
+      },
+      error: (err) => {
+        this.markingPublished.set(false);
         this.toasts.error(err);
       },
     });

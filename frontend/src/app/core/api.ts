@@ -227,6 +227,9 @@ export class Api {
   reviewStoryboard(id: number, review: 'pending' | 'approved' | 'rejected'): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { review });
   }
+  markStoryboardPublished(id: number, published: boolean): Observable<Storyboard> {
+    return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { published });
+  }
   setLook(id: number, look: Look): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { look });
   }

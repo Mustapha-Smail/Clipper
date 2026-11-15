@@ -74,7 +74,8 @@ class Source:
     youtube_text: str        # the longer description proposed for YouTube
     ai: bool                 # proposed "AI-generated" label
     approved: bool
-    short: bool              # vertical: what Instagram Reels and TikTok show full screen
+    short: bool              # Buffer accepts only Shorts; clips must be vertical, Studio videos format=short
+    metadata_ready: bool     # Studio Shorts must finish their Publish metadata first
     script_id: int | None = None
 
 
@@ -92,8 +93,9 @@ def source(db: Session, kind: str, ref_id: int) -> Source:
         if clip is None:
             raise PostingError("That clip no longer exists")
         caption = clip.moment.caption.strip()
-        return Source("clip", clip.id, clip.moment.title, Path(clip.path), caption, caption, False,
-                      clip.status == "approved", clip.format == "vertical")
+        return Source(kind="clip", ref_id=clip.id, title=clip.moment.title, path=Path(clip.path),
+                      text=caption, youtube_text=caption, ai=False, approved=clip.status == "approved",
+                      short=clip.format == "vertical", metadata_ready=True)
     if kind == "storyboard":
         board = db.get(Storyboard, ref_id)
         if board is None:
@@ -104,17 +106,28 @@ def source(db: Session, kind: str, ref_id: int) -> Source:
         caption = title + (f"\n\n{tags}" if tags else "")
         youtube_text = (written.get("description") or caption).strip()
         path = Path(board.video_path) if board.video_path else None
-        return Source("storyboard", board.id, title, path, caption, youtube_text, True,
-                      board.review == "approved", board.format == "short", board.script_id)
+        return Source(kind="storyboard", ref_id=board.id, title=title, path=path, text=caption,
+                      youtube_text=youtube_text, ai=True, approved=board.review == "approved",
+                      short=board.format == "short", metadata_ready=publish_ready(written), script_id=board.script_id)
     raise PostingError(f"Unknown kind of video: {kind}")
 
 
+def publish_ready(text: dict) -> bool:
+    """The small dependency-free form of studio.publish.ready, avoiding a Studio import cycle."""
+    title = (text.get("title") or "").strip()
+    description = (text.get("description") or "").strip()
+    return bool(title and description and len(title) <= 100 and len(description) <= 5000
+                and not any(c in title + description for c in "<>") and not text.get("problems"))
+
+
 def check(src: Source, services: list[str] | tuple[str, ...] = ()) -> None:
-    """The gate. YouTube accepts either shape; the other networks require a vertical Short."""
+    """The gate: approved, a Short, complete Studio metadata, and a file on disk."""
     if not src.approved:
         raise PostingError("Only an approved video can be scheduled: watch it and approve it first")
-    if not src.short and any(service != "youtube" for service in services):
-        raise PostingError("Instagram and TikTok are for vertical Shorts: this video is horizontal")
+    if not src.short:
+        raise PostingError("Buffer accepts only Shorts. Publish long or horizontal videos manually.")
+    if src.kind == "storyboard" and not src.metadata_ready:
+        raise PostingError("Finish and save the YouTube title and description in the Publish tab first")
     if src.path is None or not src.path.is_file():
         raise PostingError("The video file is missing from disk: render it again")
 

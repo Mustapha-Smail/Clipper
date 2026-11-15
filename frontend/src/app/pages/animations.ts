@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
@@ -7,26 +7,28 @@ import { StoryboardListItem } from '../core/models';
 import { Toasts } from '../core/toast';
 import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
 import { PostsStore, handedOver, lastSent, nextDue, postLine } from '../core/posts-store';
+import { PostScheduler } from '../shared/post-scheduler';
 
-/** Approved Shorts handed to Buffer leave Approved for Scheduled. */
-type Tab = 'review' | 'approved' | 'scheduled' | 'rejected' | 'unrendered';
+/** Ready Shorts handed to Buffer and manually published long videos leave Approved for Published. */
+type Tab = 'review' | 'approved' | 'published' | 'rejected' | 'unrendered';
+const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'];
 
 /** Every animated video across scripts, sorted for review: Shorts and long videos alike. */
 @Component({
   selector: 'app-animations-page',
-  imports: [RouterLink, AgoPipe, UntilPipe],
+  imports: [RouterLink, AgoPipe, UntilPipe, PostScheduler],
   template: `
     <div class="page">
       <div class="page-head">
         <div>
           <h1>Animations</h1>
-          <p class="muted">Every Short and long video made from your scripts. Watch each one before it is posted: only a
-            video you approved can be scheduled.</p>
+          <p class="muted">Review every Studio video here. Ready Shorts are scheduled from Approved; long videos are
+            published manually from their Publish tab.</p>
         </div>
         <div class="head-tools">
         <div class="tabs" role="tablist">
           @for (t of tabs; track t.value) {
-            <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="tab.set(t.value)">
+            <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
               {{ t.label }}
               @if (t.value === 'review' && counts()[t.value]) {
                 <span class="tab-badge num" [attr.aria-label]="counts()[t.value] + ' to review'">{{ counts()[t.value] }}</span>
@@ -44,29 +46,42 @@ type Tab = 'review' | 'approved' | 'scheduled' | 'rejected' | 'unrendered';
       @if (boards(); as all) {
         <div class="grid">
           @for (b of shown(); track b.id) {
-            <a class="card item" [routerLink]="['/storyboards', b.id]">
-              <img [class.wide]="b.format === 'long'" [src]="thumb(b)" alt="" loading="lazy" />
-              <div class="body">
-                <strong>{{ b.title }}</strong>
-                <span class="small muted">{{ b.format === 'short' ? 'Short · 9:16' : 'Long video · 16:9' }} ·
-                  {{ minutes(b.duration) }} · {{ b.scene_count }} scenes</span>
-                <span class="small muted">From “{{ b.script_title }}” · {{ (b.rendered_at ?? b.created_at) | ago }}</span>
-                @if (b.job) {
-                  <span class="pill running">{{ b.job.message }}</span>
-                } @else if (b.has_video) {
-                  <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
-                    {{ b.review === 'pending' ? 'to review' : b.review }}</span>
-                } @else {
-                  <span class="pill">{{ b.expired_at ? 'render deleted' : 'not rendered' }}</span>
-                }
-                @if (b.expires_at && !b.job) {
-                  <span class="small muted">Deleted {{ b.expires_at | until }} unless approved</span>
-                }
-                @if (line(b); as text) { <span class="small posted">{{ text }}</span> }
-              </div>
-            </a>
+            <article class="card item">
+              <a class="item-link" [routerLink]="['/storyboards', b.id]">
+                <img [class.wide]="b.format === 'long'" [src]="thumb(b)" alt="" loading="lazy" />
+                <div class="body">
+                  <strong>{{ b.title }}</strong>
+                  <span class="small muted">{{ b.format === 'short' ? 'Short · 9:16' : 'Long video · 16:9' }} ·
+                    {{ minutes(b.duration) }} · {{ b.scene_count }} scenes</span>
+                  <span class="small muted">From “{{ b.script_title }}” · {{ (b.rendered_at ?? b.created_at) | ago }}</span>
+                  @if (b.job) {
+                    <span class="pill running">{{ b.job.message }}</span>
+                  } @else if (b.has_video) {
+                    <span class="pill" [class.approved]="b.review === 'approved'" [class.failed]="b.review === 'rejected'">
+                      {{ b.review === 'pending' ? 'to review' : b.review }}</span>
+                  } @else {
+                    <span class="pill">{{ b.expired_at ? 'render deleted' : 'not rendered' }}</span>
+                  }
+                  @if (b.expires_at && !b.job) {
+                    <span class="small muted">Deleted {{ b.expires_at | until }} unless approved</span>
+                  }
+                  @if (line(b); as text) { <span class="small posted">{{ text }}</span> }
+                </div>
+              </a>
+              @if (tab() === 'approved' && b.format === 'short') {
+                <div class="handoff">
+                  @if (b.publish_ready) {
+                    <app-post-scheduler kind="storyboard" [refId]="b.id" />
+                  } @else {
+                    <div class="notice small"><span>Finish the YouTube title and description before scheduling this Short.</span></div>
+                    <a class="btn sm" [routerLink]="['/storyboards', b.id]" [queryParams]="{ tab: 'publish' }">
+                      Complete Publish details</a>
+                  }
+                </div>
+              }
+            </article>
           } @empty {
-            <div class="empty">{{ all.length ? (tab() === 'scheduled' ? 'Nothing scheduled yet. Approve a Short, then schedule it from its Publish tab.' : 'Nothing in this list.') : 'No animations yet. Open a script, then its Videos tab.' }}</div>
+            <div class="empty">{{ all.length ? (tab() === 'published' ? 'Nothing published yet. Schedule a ready Short here, or publish a long video manually from its Publish tab.' : 'Nothing in this list.') : 'No animations yet. Open a script, then its Videos tab.' }}</div>
           }
         </div>
       } @else {
@@ -84,13 +99,18 @@ type Tab = 'review' | 'approved' | 'scheduled' | 'rejected' | 'unrendered';
       gap: 12px;
     }
     .item {
+      padding: 0;
+      overflow: hidden;
+      &:hover { border-color: var(--text); }
+    }
+    .item-link {
       display: grid;
       grid-template-columns: 72px minmax(0, 1fr);
       gap: 12px;
       padding: 12px;
+      color: inherit;
       text-decoration: none;
       align-items: start;
-      &:hover { border-color: var(--text); }
       img {
         width: 72px;
         aspect-ratio: 9 / 16;
@@ -105,6 +125,13 @@ type Tab = 'review' | 'approved' | 'scheduled' | 'rejected' | 'unrendered';
       gap: 4px;
       justify-items: start;
     }
+    .handoff {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+    }
+    app-post-scheduler { display: block; }
   `,
 })
 export class AnimationsPage {
@@ -112,18 +139,21 @@ export class AnimationsPage {
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
   private readonly posts = inject(PostsStore);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly tabs: { value: Tab; label: string }[] = [
     { value: 'review', label: 'To review' }, { value: 'approved', label: 'Approved' },
-    { value: 'scheduled', label: 'Scheduled' }, { value: 'rejected', label: 'Rejected' },
+    { value: 'published', label: 'Published' }, { value: 'rejected', label: 'Rejected' },
     { value: 'unrendered', label: 'Not rendered' },
   ];
-  protected readonly tab = signal<Tab>('review');
+  protected readonly tab = signal<Tab>(TABS.includes(this.route.snapshot.queryParamMap.get('tab') as Tab)
+    ? this.route.snapshot.queryParamMap.get('tab') as Tab : 'review');
   protected readonly boards = signal<StoryboardListItem[] | null>(null);
 
   private bucket(b: StoryboardListItem): Tab {
     if (!b.has_video) return 'unrendered';
-    if (b.review === 'approved' && handedOver(this.postsOf(b)).length) return 'scheduled';
+    if (b.review === 'approved' && (b.published_at || handedOver(this.postsOf(b)).length)) return 'published';
     return b.review === 'pending' ? 'review' : b.review;
   }
 
@@ -144,7 +174,7 @@ export class AnimationsPage {
   protected readonly sorts: Record<Tab, SortOption<StoryboardListItem>[]> = {
     review: [this.o.expiring, this.o.rendered, this.o.shorts, this.o.script, this.o.title, this.o.shortest, this.o.longest],
     approved: [this.o.reviewed, this.o.rendered, this.o.shorts, this.o.script, this.o.title, this.o.shortest, this.o.longest],
-    scheduled: [
+    published: [
       { value: 'soon', label: 'Posting soonest', compare: (a, b) => this.waitingFirst(a, b) || byDate(nextDue(this.postsOf(a)), nextDue(this.postsOf(b)), false) },
       { value: 'late', label: 'Posting latest', compare: (a, b) => this.waitingFirst(a, b) || byDate(nextDue(this.postsOf(a)), nextDue(this.postsOf(b))) },
       { value: 'posted', label: 'Recently posted', compare: (a, b) => byDate(lastSent(this.postsOf(a)), lastSent(this.postsOf(b))) },
@@ -162,7 +192,7 @@ export class AnimationsPage {
   protected readonly shown = computed(() => sortBy(
     (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()), this.sorts[this.tab()], this.sort()));
   protected readonly counts = computed(() => {
-    const counts: Record<Tab, number> = { review: 0, approved: 0, scheduled: 0, rejected: 0, unrendered: 0 };
+    const counts: Record<Tab, number> = { review: 0, approved: 0, published: 0, rejected: 0, unrendered: 0 };
     for (const b of this.boards() ?? []) counts[this.bucket(b)]++;
     return counts;
   });
@@ -184,12 +214,26 @@ export class AnimationsPage {
     this.sortChoice[this.tab()].set(value);
   }
 
+  protected setTab(tab: Tab): void {
+    this.tab.set(tab);
+    this.router.navigate([], { queryParams: { tab: tab === 'review' ? null : tab }, replaceUrl: true });
+  }
+
   protected postsOf(b: StoryboardListItem) {
     return this.posts.byBoard().get(b.id) ?? [];
   }
 
   protected line(b: StoryboardListItem): string {
+    if (b.published_at) return `Published manually ${this.relative(b.published_at)}`;
     return postLine(this.postsOf(b));
+  }
+
+  private relative(iso: string): string {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+    if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`;
+    return `${Math.floor(seconds / 86_400)} d ago`;
   }
 
   /** Videos still waiting to go out come before the ones already posted. */

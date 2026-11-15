@@ -277,6 +277,8 @@ class Storyboard(Base):
     review: Mapped[str] = mapped_column(String(16), default="pending")   # pending|approved|rejected
     # When the verdict last changed. With rendered_at it starts the grace period (studio/retention.py).
     review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Long videos are uploaded/scheduled by hand; this records the one-click handoff to Published.
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Set when the render was deleted because it was not approved in time; cleared by the next render.
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # The last export of the approved video: {folder, files, at, rendered_at} (studio/export.py).

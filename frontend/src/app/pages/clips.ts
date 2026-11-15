@@ -80,8 +80,10 @@ const VERDICT_ORDER: Record<string, number> = { fail: 0, review: 1, pass: 2 };
               @if (clip.compliance) {
                 <app-brief-check class="wide" [result]="clip.compliance" />
               }
-              @if (clip.status === 'approved' && clip.file_exists) {
+              @if (clip.status === 'approved' && clip.file_exists && clip.format === 'vertical') {
                 <app-post-scheduler class="wide" kind="clip" [refId]="clip.id" />
+              } @else if (clip.status === 'approved' && clip.file_exists) {
+                <p class="small muted wide">Buffer accepts only vertical Shorts. Publish this horizontal clip manually.</p>
               }
             </article>
           } @empty {

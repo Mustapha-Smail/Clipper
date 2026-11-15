@@ -4,8 +4,8 @@ The model writes only the parts that need writing (title options, an opening of
 two or three short paragraphs, tags and hashtags), from the script's own text.
 Everything factual that can be listed is assembled by code: chapters from the
 take's timing, the sources the fact check relied on (numbered as in the
-research), and the credit lines for pictures and music. You edit the result
-and either copy it into YouTube Studio or schedule it through Buffer.
+research), and the credit lines for pictures and music. You edit the result,
+then publish long videos manually or schedule Shorts through Buffer.
 """
 
 import re
@@ -133,6 +133,8 @@ def problems(text: dict) -> list[str]:
     out = []
     if not text.get("title", "").strip():
         out.append("The title is empty")
+    if not text.get("description", "").strip():
+        out.append("The description is empty")
     if len(text.get("title", "")) > TITLE_MAX:
         out.append(f"The title is longer than {TITLE_MAX} characters")
     if len(text.get("description", "")) > DESCRIPTION_MAX:
@@ -140,6 +142,11 @@ def problems(text: dict) -> list[str]:
     if any(c in text.get("title", "") + text.get("description", "") for c in "<>"):
         out.append("YouTube does not accept < or > in titles and descriptions")
     return out
+
+
+def ready(text: dict | None) -> bool:
+    """Whether the saved YouTube metadata is complete enough to publish."""
+    return bool(text) and not problems(text)
 
 
 def draft(db: Session, board: Storyboard) -> dict:

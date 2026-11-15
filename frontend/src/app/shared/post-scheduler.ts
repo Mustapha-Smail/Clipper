@@ -22,8 +22,8 @@ const STATUS: Record<PostStatus, [string, string]> = {
 const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube: 5000 };
 
 /**
- * Schedule an approved video through the feature's Buffer account, and show where
- * its posts stand. Instagram and TikTok require a Short; YouTube accepts either shape.
+ * Schedule an approved Short through the feature's Buffer account, and show where
+ * its posts stand. Long and horizontal videos are published manually.
  */
 @Component({
   selector: 'app-post-scheduler',
@@ -329,8 +329,8 @@ export class PostScheduler {
     });
   }
 
-  protected channelAllowed(channel: BufferChannel): boolean {
-    return this.short() || channel.service === 'youtube';
+  protected channelAllowed(_channel: BufferChannel): boolean {
+    return this.short();
   }
 
   private chooseAvailable(): void {

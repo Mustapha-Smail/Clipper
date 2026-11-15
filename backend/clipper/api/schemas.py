@@ -682,6 +682,7 @@ class StoryboardSummary(Model):
     # Set when the render was deleted for not being approved in time; the plan is kept.
     expired_at: UtcDatetime | None = None
     review_at: UtcDatetime | None = None      # when the verdict last changed
+    published_at: UtcDatetime | None = None   # long video marked as uploaded/scheduled manually
     created_at: UtcDatetime
     music_id: int | None
     music_db: float
@@ -690,6 +691,7 @@ class StoryboardSummary(Model):
     duration: float
     scene_count: int
     has_video: bool
+    publish_ready: bool
     job: JobOut | None
     # When the render is deleted if it is still not approved; None = never (approved, or the setting is 0).
     expires_at: UtcDatetime | None = None
@@ -762,6 +764,7 @@ class StoryboardScenes(BaseModel):
 
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
+    published: bool | None = Field(None, description="Long video was published or scheduled manually")
     look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] | None = Field(
         None, description="Ink style: render again to see it")
     music_id: int | None = None

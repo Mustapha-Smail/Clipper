@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from clipper import buffer, config, hosting, jobs, posting
 from clipper.db import session_scope
-from clipper.db.models import Clip, Moment, Post, utcnow
+from clipper.db.models import Clip, Moment, Post, Script, Storyboard, utcnow
 
 TIKTOK = {"id": "chan-tiktok", "service": "tiktok", "name": "mychannel", "type": "account", "timezone": "Europe/Paris",
           "weekly_slots": 14, "disconnected": False, "locked": False, "queue_paused": False}
@@ -52,6 +52,22 @@ def clip(video, app_env):
 
 
 @pytest.fixture()
+def studio_short(app_env):
+    """An approved rendered Studio Short whose Publish metadata has not been completed yet."""
+    file = app_env / "studio-short.mp4"
+    file.write_bytes(b"video" * 1000)
+    with session_scope() as db:
+        script = Script(title="Blue light", sections=[])
+        db.add(script)
+        db.flush()
+        board = Storyboard(script_id=script.id, format="short", title="Blue light", review="approved",
+                           video_path=str(file), words=[], scenes=[])
+        db.add(board)
+        db.flush()
+        return board.id
+
+
+@pytest.fixture()
 def world(monkeypatch):
     """A fake bucket and a fake Buffer that remember what they were asked."""
     state = {"bucket": {}, "posts": {}, "refuse": set(), "deleted": []}
@@ -85,6 +101,13 @@ def ask(clip_id, channels=(TIKTOK,), **options):
     options = {"text": "A caption #tag", "mode": "queue", "due_at": None, "ai_label": False, **options}
     with session_scope() as db:
         job = posting.request(db, "clip", clip_id, list(channels), **options)
+        return job.params["post_ids"]
+
+
+def ask_board(board_id, channels=(YOUTUBE,), **options):
+    options = {"text": "", "mode": "queue", "due_at": None, "ai_label": True, **options}
+    with session_scope() as db:
+        job = posting.request(db, "storyboard", board_id, list(channels), **options)
         return job.params["post_ids"]
 
 
@@ -222,7 +245,7 @@ def test_only_an_approved_vertical_clip_can_be_scheduled(ready, clip, world):
     with session_scope() as db:
         row = db.get(Clip, clip)
         row.status, row.format = "approved", "horizontal"
-    with pytest.raises(posting.PostingError, match="vertical"):
+    with pytest.raises(posting.PostingError, match="only Shorts"):
         ask(clip)
     with session_scope() as db:
         db.get(Clip, clip).format = "vertical"
@@ -239,9 +262,7 @@ def test_only_an_approved_vertical_clip_can_be_scheduled(ready, clip, world):
         ask(clip)
 
 
-def test_youtube_accepts_horizontal_video_and_its_own_text(ready, clip, world):
-    with session_scope() as db:
-        db.get(Clip, clip).format = "horizontal"
+def test_youtube_uses_its_own_text_for_a_short(ready, clip, world):
     ids = ask(clip, channels=[YOUTUBE], text="social caption", title="A YouTube title",
               youtube_text="A longer YouTube description", ai_label=True)
     posting.upload(ids, Log())
@@ -249,6 +270,33 @@ def test_youtube_accepts_horizontal_video_and_its_own_text(ready, clip, world):
     made = world["posts"]["buf-1"]
     assert made["service"] == "youtube" and made["text"] == "A longer YouTube description"
     assert made["title"] == "A YouTube title" and made["category"] == "22" and made["kind"] == "clip"
+
+
+def test_buffer_accepts_only_shorts(ready, clip, studio_short, world):
+    with session_scope() as db:
+        db.get(Clip, clip).format = "horizontal"
+        board = db.get(Storyboard, studio_short)
+        board.format = "long"
+        board.youtube = {"title": "Blue light", "description": "Why it looks blue.", "problems": []}
+    with pytest.raises(posting.PostingError, match="only Shorts"):
+        ask(clip, channels=[YOUTUBE], title="Horizontal clip")
+    with pytest.raises(posting.PostingError, match="only Shorts"):
+        ask_board(studio_short)
+    assert statuses() == []
+
+
+def test_studio_short_needs_completed_publish_metadata(ready, studio_short, world):
+    with pytest.raises(posting.PostingError, match="Publish tab"):
+        ask_board(studio_short)
+    with session_scope() as db:
+        db.get(Storyboard, studio_short).youtube = {
+            "title": "Why Light Is Blue", "description": "A complete description.", "problems": []}
+    ids = ask_board(studio_short)
+    posting.upload(ids, Log())
+    posting.schedule(ids, Log())
+    made = world["posts"]["buf-1"]
+    assert made["kind"] == "storyboard" and made["service"] == "youtube"
+    assert made["title"] == "Why Light Is Blue" and made["text"] == "A complete description."
 
 
 def test_youtube_rejects_invalid_title_and_description(ready, clip, world):

@@ -545,15 +545,16 @@ drawn by code in `studio/art.py`; props are rendered with resvg.
 
 ## Posting with Buffer (Instagram, TikTok and YouTube)
 
-An approved clip or Studio video can be handed to [Buffer](https://buffer.com),
-which posts it at the time you choose. Vertical Shorts can go to Instagram,
-TikTok and YouTube; horizontal clips and long Studio videos can go to YouTube.
-The app never talks to those networks itself.
+An approved Short can be handed to [Buffer](https://buffer.com), which posts it
+at the time you choose. Vertical Shorts can go to Instagram, TikTok and YouTube.
+Horizontal clips and long Studio videos are published manually; the app never
+talks to those networks itself.
 
-**The gate.** Only a video you approved can be scheduled; the worker checks
-again right before it uploads. While a post is waiting, the approval cannot be
-taken back: cancel the post first. What is scheduled is the file you approved,
-whatever you render afterwards.
+**The gate.** Only a Short you approved can be scheduled; a Studio Short must
+also have a valid saved title and description from its Publish tab. The worker
+checks again right before it uploads. While a post is waiting, the approval
+cannot be taken back: cancel the post first. What is scheduled is the file you
+approved, whatever you render afterwards.
 
 **Why a bucket.** Buffer has no upload: it fetches the video from a public
 https address, when the post is created and again when it goes out. The app
@@ -580,21 +581,26 @@ for a payment method before R2 can be used.
 6. Put the account ID (R2 > Overview) in `R2_ACCOUNT_ID` and the bucket's name
    in `R2_BUCKET`, then restart the app (`docker compose up -d`, or `make run`).
 
-**Use.** On an approved clip or an approved Studio video's Publish tab,
+**Use.** An approved vertical clip has its scheduler on the clip. For Studio,
+finish and save the title and description on the video's Publish tab; its
+scheduler then appears directly on its card under Animations > Approved.
 "Schedule" asks for the channels and when: the next free slot of the Buffer
 queue, an exact date and time, or a draft that stays in Buffer. Instagram and
-TikTok share a caption. YouTube has its own title and description; Studio starts
-those fields from the text already written in its YouTube panel. YouTube posts
-use Education for Studio and People & Blogs for Clipping. The date and time are
-picked on a calendar that offers each channel's Buffer posting times for the
-chosen day and marks days that already have a post. Each channel is its own post
-with its own status: scheduled, posted (with a link), failed, or cancelled.
+TikTok share a caption. YouTube has its own title and description, uses Education
+for Studio and People & Blogs for Clipping. The date and time are picked on a
+calendar that offers each channel's Buffer posting times for the chosen day and
+marks days that already have a post. Each channel is its own post with its own
+status: scheduled, posted (with a link), failed, or cancelled.
 
-Once a video is handed to Buffer it leaves the Approved tab for the Scheduled
-tab, on Review (clips) and on Animations (Studio videos); if every post of it
-is cancelled it goes back to Approved. Each tab has its own sort menu (for
-example best score in To review, posting soonest in Scheduled), remembered in
-your browser.
+Long Studio videos stay manual. Upload or schedule one in YouTube Studio from
+the material on its Publish tab, then click "Mark as published" there. It leaves
+Approved and appears under Animations > Published; the mark can be undone if it
+was clicked by mistake.
+
+Once a Short is handed to Buffer it leaves Approved for Scheduled on Review
+(clips), or Published on Animations (Studio); if every post is cancelled it
+goes back to Approved. Each tab has its own sort menu, remembered in your
+browser.
 
 **After scheduling.** A post you delete or move inside either Buffer account is
 noticed within a day. Buffer's Free plan allows 1,000 requests per channel per
