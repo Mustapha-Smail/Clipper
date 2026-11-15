@@ -46,7 +46,8 @@ def list_clips(status: str | None = Query(None, pattern="^(pending|approved|reje
         query = query.where(Clip.status == status)
     return [
         s.ClipListItem(**clip_out(clip).model_dump(), video_title=clip.video.title,
-                       title=clip.moment.title, hook=clip.moment.hook, caption=clip.moment.caption)
+                       title=clip.moment.title, hook=clip.moment.hook, caption=clip.moment.caption,
+                       score=clip.moment.score)
         for clip in db.scalars(query)
     ]
 

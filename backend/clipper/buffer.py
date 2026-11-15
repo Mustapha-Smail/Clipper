@@ -83,7 +83,7 @@ def channels() -> list[dict]:
     for org in orgs:
         data = _data(call(
             "query($org: OrganizationId!) { channels(input: {organizationId: $org}) { id name displayName service "
-            "type isDisconnected isLocked isQueuePaused timezone postingSchedule { times paused } } }",
+            "type isDisconnected isLocked isQueuePaused timezone postingSchedule { day times paused } } }",
             {"org": org["id"]}))
         for channel in data["channels"]:
             slots = sum(len(day["times"]) for day in channel["postingSchedule"] if not day.get("paused"))
@@ -91,6 +91,8 @@ def channels() -> list[dict]:
                 "id": channel["id"], "service": channel["service"],
                 "name": channel["displayName"] or channel["name"], "type": channel["type"],
                 "timezone": channel["timezone"], "weekly_slots": slots,
+                "schedule": [{"day": day["day"], "times": [] if day.get("paused") else sorted(day["times"])}
+                             for day in channel["postingSchedule"]],
                 "disconnected": channel["isDisconnected"], "locked": channel["isLocked"],
                 "queue_paused": channel["isQueuePaused"],
             })

@@ -576,9 +576,17 @@ for a payment method before R2 can be used.
 **Use.** On an approved vertical clip (Review, or the video's page) or an
 approved Studio Short (its Publish tab), "Schedule" asks for the channels, the
 caption, and when: the next free slot of your Buffer queue, an exact date and
-time, or a draft that stays in Buffer until you schedule it there. Each channel
-is its own post with its own status: scheduled, posted (with a link to the
-post), failed (with Buffer's reason), cancelled.
+time, or a draft that stays in Buffer until you schedule it there. The date
+and time are picked on a calendar that offers each channel's Buffer posting
+times for the chosen day and marks the days that already have a post. Each
+channel is its own post with its own status: scheduled, posted (with a link to
+the post), failed (with Buffer's reason), cancelled.
+
+Once a video is handed to Buffer it leaves the Approved tab for the Scheduled
+tab, on Review (clips) and on Animations (Studio videos); if every post of it
+is cancelled it goes back to Approved. Each tab has its own sort menu (for
+example best score in To review, posting soonest in Scheduled), remembered in
+your browser.
 
 **What it does not do.** Horizontal clips and long videos are refused (these
 two networks are for vertical video); YouTube is not wired yet. A post you

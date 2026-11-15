@@ -88,6 +88,7 @@ class ClipListItem(ClipOut):
     title: str
     hook: str
     caption: str
+    score: int | None = None        # the moment's score, 1 to 10
 
 
 class MomentOut(Model):
@@ -391,6 +392,7 @@ class ChannelOut(BaseModel):
     type: str
     timezone: str
     weekly_slots: int               # posting times set in Buffer for this channel, per week
+    schedule: list[dict] = []       # [{day: "mon", times: ["18:35", ...]}], in the channel's timezone
     disconnected: bool
     locked: bool
     queue_paused: bool
@@ -670,6 +672,7 @@ class StoryboardSummary(Model):
     rendered_at: UtcDatetime | None
     # Set when the render was deleted for not being approved in time; the plan is kept.
     expired_at: UtcDatetime | None = None
+    review_at: UtcDatetime | None = None      # when the verdict last changed
     created_at: UtcDatetime
     music_id: int | None
     music_db: float

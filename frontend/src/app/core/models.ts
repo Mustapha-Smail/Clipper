@@ -73,6 +73,8 @@ export interface ClipListItem extends Clip {
   title: string;
   hook: string;
   caption: string;
+  /** The moment's score, 1 to 10. */
+  score: number | null;
 }
 
 export interface Moment {
@@ -265,6 +267,8 @@ export interface BufferChannel {
   type: string;
   timezone: string;
   weekly_slots: number;
+  /** Buffer's posting times per weekday ("mon"...), in the channel's timezone. */
+  schedule: { day: string; times: string[] }[];
   disconnected: boolean;
   locked: boolean;
   queue_paused: boolean;
@@ -557,6 +561,8 @@ export interface StoryboardSummary {
   title: string;
   review: 'pending' | 'approved' | 'rejected';
   rendered_at: string | null;
+  /** When the verdict last changed. */
+  review_at?: string | null;
   /** When the render was deleted for not being approved in time (the plan is kept). */
   expired_at: string | null;
   created_at: string;

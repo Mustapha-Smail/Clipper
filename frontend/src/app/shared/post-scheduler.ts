@@ -4,10 +4,11 @@ import { Api, errorMessage } from '../core/api';
 import { Confirm } from '../core/confirm';
 import { JobsStore } from '../core/jobs-store';
 import { BufferChannel, Post, PostMode, PostStatus } from '../core/models';
-import { PostsStore } from '../core/posts-store';
+import { PostsStore, SERVICE_NAMES, WAITING, dayKeyOf } from '../core/posts-store';
+import { WhenPicker, nextSlot } from './when-picker';
 import { Toasts } from '../core/toast';
 
-const SERVICE: Record<string, string> = { instagram: 'Instagram', tiktok: 'TikTok' };
+const SERVICE = SERVICE_NAMES;
 const STATUS: Record<PostStatus, [string, string]> = {
   queued: ['Sending to Buffer', 'running'],
   draft: ['Draft in Buffer', ''],
@@ -18,7 +19,6 @@ const STATUS: Record<PostStatus, [string, string]> = {
   cancelled: ['Cancelled', ''],
   removed: ['Deleted in Buffer', ''],
 };
-const WAITING = new Set<PostStatus>(['queued', 'draft', 'scheduled', 'sending']);
 const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
 
 /**
@@ -27,7 +27,7 @@ const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
  */
 @Component({
   selector: 'app-post-scheduler',
-  imports: [FormsModule],
+  imports: [FormsModule, WhenPicker],
   template: `
     <div class="box">
       <div class="row spread">
@@ -83,6 +83,7 @@ const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
                       @if (c.disconnected || c.locked) { <small>Disconnected or locked in Buffer</small> }
                       @else if (c.queue_paused) { <small>Its queue is paused in Buffer: nothing goes out until you resume it</small> }
                       @else if (mode() === 'queue' && !c.weekly_slots) { <small>No posting times are set in Buffer: choose a date and time instead</small> }
+                      @else if (mode() === 'queue' && nextTime(c); as next) { <small>Next free time in your Buffer schedule: {{ next }}, or later if it is taken</small> }
                     </span>
                   </label>
                 }
@@ -100,8 +101,7 @@ const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
               </select>
             </label>
             @if (mode() === 'at') {
-              <label class="field"><span>Date and time (your time)</span>
-                <input type="datetime-local" [ngModel]="when()" (ngModelChange)="when.set($event)" [min]="soonest()" /></label>
+              <app-when-picker [(value)]="when" [channels]="chosenChannels()" [marks]="marks()" />
             }
             <label class="field"><span>Caption</span>
               <textarea [ngModel]="text()" (ngModelChange)="text.set($event)" rows="4"></textarea>
@@ -194,6 +194,17 @@ export class PostScheduler {
       .filter((p) => !seen.has(p.channel_id) && !!seen.add(p.channel_id));
   });
 
+  protected readonly chosenChannels = computed(() => (this.channels() ?? []).filter((c) => this.chosen().has(c.id)));
+
+  /** Posts already waiting on each day, to see the calendar fill up. */
+  protected readonly marks = computed(() => {
+    const counts: Record<string, number> = {};
+    for (const post of this.store.posts()) {
+      if (WAITING.has(post.status) && post.due_at) counts[dayKeyOf(post.due_at)] = (counts[dayKeyOf(post.due_at)] ?? 0) + 1;
+    }
+    return counts;
+  });
+
   protected readonly missingServices = computed(() => {
     const have = new Set((this.channels() ?? []).map((c) => c.service));
     return Object.keys(SERVICE).filter((s) => !have.has(s)).map((s) => SERVICE[s]);
@@ -220,9 +231,9 @@ export class PostScheduler {
     return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
-  /** Ten minutes from now, in the form a datetime-local input wants. */
-  protected soonest(): string {
-    return this.local(new Date(Date.now() + 10 * 60_000));
+  protected nextTime(channel: BufferChannel): string {
+    const at = nextSlot(channel);
+    return at ? this.time(at.toISOString()) : '';
   }
 
   private local(date: Date): string {
@@ -277,6 +288,10 @@ export class PostScheduler {
     const at = this.mode() === 'at' ? new Date(this.when()) : null;
     if (at && Number.isNaN(at.getTime())) {
       this.toasts.error('Choose a date and time');
+      return;
+    }
+    if (at && at.getTime() < Date.now() + 10 * 60_000) {
+      this.toasts.error('Choose a time at least 10 minutes from now');
       return;
     }
     this.busy.set(true);

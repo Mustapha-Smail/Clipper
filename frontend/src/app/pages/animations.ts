@@ -6,8 +6,10 @@ import { JobsStore } from '../core/jobs-store';
 import { StoryboardListItem } from '../core/models';
 import { Toasts } from '../core/toast';
 import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
+import { PostsStore, handedOver, lastSent, nextDue, postLine } from '../core/posts-store';
 
-type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
+/** Approved Shorts handed to Buffer leave Approved for Scheduled. */
+type Tab = 'review' | 'approved' | 'scheduled' | 'rejected' | 'unrendered';
 
 /** Every animated video across scripts, sorted for review: Shorts and long videos alike. */
 @Component({
@@ -18,8 +20,8 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
       <div class="page-head">
         <div>
           <h1>Animations</h1>
-          <p class="muted">Every Short and long video made from your scripts. Watch each one before you post it: the app
-            never posts for you.</p>
+          <p class="muted">Every Short and long video made from your scripts. Watch each one before it is posted: only a
+            video you approved can be scheduled.</p>
         </div>
         <div class="head-tools">
         <div class="tabs" role="tablist">
@@ -33,8 +35,8 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
               }</button>
           }
         </div>
-        <select class="sort" [value]="sort()" (change)="sort.set($any($event.target).value)" aria-label="Sort animations">
-          @for (o of sorts; track o.value) { <option [value]="o.value" [selected]="o.value === sort()">{{ o.label }}</option> }
+        <select class="sort" [value]="sort()" (change)="setSort($any($event.target).value)" aria-label="Sort animations">
+          @for (o of sorts[tab()]; track o.value) { <option [value]="o.value" [selected]="o.value === sort()">{{ o.label }}</option> }
         </select>
         </div>
       </div>
@@ -60,10 +62,11 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
                 @if (b.expires_at && !b.job) {
                   <span class="small muted">Deleted {{ b.expires_at | until }} unless approved</span>
                 }
+                @if (line(b); as text) { <span class="small posted">{{ text }}</span> }
               </div>
             </a>
           } @empty {
-            <div class="empty">{{ all.length ? 'Nothing in this list.' : 'No animations yet. Open a script, then its Videos tab.' }}</div>
+            <div class="empty">{{ all.length ? (tab() === 'scheduled' ? 'Nothing scheduled yet. Approve a Short, then schedule it from its Publish tab.' : 'Nothing in this list.') : 'No animations yet. Open a script, then its Videos tab.' }}</div>
           }
         </div>
       } @else {
@@ -74,6 +77,7 @@ type Tab = 'review' | 'approved' | 'rejected' | 'unrendered';
   styles: `
     .head-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     .sort { width: auto; }
+    .posted { color: var(--good); font-weight: 600; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
@@ -107,40 +111,64 @@ export class AnimationsPage {
   private readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
+  private readonly posts = inject(PostsStore);
 
   protected readonly tabs: { value: Tab; label: string }[] = [
     { value: 'review', label: 'To review' }, { value: 'approved', label: 'Approved' },
-    { value: 'rejected', label: 'Rejected' }, { value: 'unrendered', label: 'Not rendered' },
+    { value: 'scheduled', label: 'Scheduled' }, { value: 'rejected', label: 'Rejected' },
+    { value: 'unrendered', label: 'Not rendered' },
   ];
   protected readonly tab = signal<Tab>('review');
   protected readonly boards = signal<StoryboardListItem[] | null>(null);
 
   private bucket(b: StoryboardListItem): Tab {
     if (!b.has_video) return 'unrendered';
+    if (b.review === 'approved' && handedOver(this.postsOf(b)).length) return 'scheduled';
     return b.review === 'pending' ? 'review' : b.review;
   }
 
-  protected readonly sorts: SortOption<StoryboardListItem>[] = [
-    { value: 'new', label: 'Newest', compare: (a, b) => byDate(a.created_at, b.created_at) },
-    { value: 'old', label: 'Oldest', compare: (a, b) => byDate(a.created_at, b.created_at, false) },
-    { value: 'rendered', label: 'Recently rendered', compare: (a, b) => byDate(a.rendered_at, b.rendered_at) },
-    { value: 'expiring', label: 'Deleted soonest', compare: (a, b) => byDate(a.expires_at, b.expires_at, false) },
-    { value: 'title', label: 'Title, A to Z', compare: (a, b) => byText(a.title, b.title) },
-    { value: 'script', label: 'Script, A to Z', compare: (a, b) => byText(a.script_title, b.script_title) || byText(a.title, b.title) },
-    { value: 'long', label: 'Longest', compare: (a, b) => b.duration - a.duration },
-    { value: 'short', label: 'Shortest', compare: (a, b) => a.duration - b.duration },
-    { value: 'format', label: 'Shorts first', compare: (a, b) => byText(b.format, a.format) || byDate(a.created_at, b.created_at) },
-  ];
-  protected readonly sort = rememberedSort('clipper.animations.sort', this.sorts);
+  // Orders that make sense for each tab; the first is the default.
+  private readonly o = {
+    newest: { value: 'new', label: 'Newest', compare: (a, b) => byDate(a.created_at, b.created_at) },
+    oldest: { value: 'old', label: 'Oldest', compare: (a, b) => byDate(a.created_at, b.created_at, false) },
+    rendered: { value: 'rendered', label: 'Recently rendered', compare: (a, b) => byDate(a.rendered_at, b.rendered_at) },
+    expiring: { value: 'expiring', label: 'Deleted soonest', compare: (a, b) => byDate(a.expires_at, b.expires_at, false) },
+    reviewed: { value: 'reviewed', label: 'Recently reviewed', compare: (a, b) => byDate(a.review_at, b.review_at) },
+    title: { value: 'title', label: 'Title, A to Z', compare: (a, b) => byText(a.title, b.title) },
+    script: { value: 'script', label: 'Script, A to Z', compare: (a, b) => byText(a.script_title, b.script_title) || byText(a.title, b.title) },
+    longest: { value: 'long', label: 'Longest', compare: (a, b) => b.duration - a.duration },
+    shortest: { value: 'short', label: 'Shortest', compare: (a, b) => a.duration - b.duration },
+    shorts: { value: 'format', label: 'Shorts first', compare: (a, b) => byText(b.format, a.format) || byDate(a.created_at, b.created_at) },
+  } satisfies Record<string, SortOption<StoryboardListItem>>;
+
+  protected readonly sorts: Record<Tab, SortOption<StoryboardListItem>[]> = {
+    review: [this.o.expiring, this.o.rendered, this.o.shorts, this.o.script, this.o.title, this.o.shortest, this.o.longest],
+    approved: [this.o.reviewed, this.o.rendered, this.o.shorts, this.o.script, this.o.title, this.o.shortest, this.o.longest],
+    scheduled: [
+      { value: 'soon', label: 'Posting soonest', compare: (a, b) => this.waitingFirst(a, b) || byDate(nextDue(this.postsOf(a)), nextDue(this.postsOf(b)), false) },
+      { value: 'late', label: 'Posting latest', compare: (a, b) => this.waitingFirst(a, b) || byDate(nextDue(this.postsOf(a)), nextDue(this.postsOf(b))) },
+      { value: 'posted', label: 'Recently posted', compare: (a, b) => byDate(lastSent(this.postsOf(a)), lastSent(this.postsOf(b))) },
+      { value: 'asked', label: 'Recently scheduled', compare: (a, b) => byDate(this.postsOf(a)[0]?.created_at, this.postsOf(b)[0]?.created_at) },
+      this.o.script, this.o.title,
+    ],
+    rejected: [this.o.expiring, this.o.reviewed, this.o.script, this.o.title],
+    unrendered: [this.o.newest, this.o.oldest, this.o.script, this.o.title, this.o.shorts],
+  };
+  /** Each tab remembers its own order. */
+  private readonly sortChoice = Object.fromEntries(this.tabs.map((t) =>
+    [t.value, rememberedSort(`clipper.animations.sort.${t.value}`, this.sorts[t.value])])) as Record<Tab, ReturnType<typeof rememberedSort>>;
+  protected readonly sort = computed(() => this.sortChoice[this.tab()]());
+
   protected readonly shown = computed(() => sortBy(
-    (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()), this.sorts, this.sort()));
+    (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()), this.sorts[this.tab()], this.sort()));
   protected readonly counts = computed(() => {
-    const counts: Record<Tab, number> = { review: 0, approved: 0, rejected: 0, unrendered: 0 };
+    const counts: Record<Tab, number> = { review: 0, approved: 0, scheduled: 0, rejected: 0, unrendered: 0 };
     for (const b of this.boards() ?? []) counts[this.bucket(b)]++;
     return counts;
   });
 
   constructor() {
+    this.posts.load(5_000);
     let known: string | null = null;      // null, so the list loads even when no job has ever run
     effect(() => {
       const signature = this.store.jobs().filter((j) => j.storyboard_id).map((j) => `${j.id}:${j.state}`).join();
@@ -150,6 +178,24 @@ export class AnimationsPage {
           next: (list) => this.boards.set(list), error: (err) => this.toasts.error(err) }));
       }
     });
+  }
+
+  protected setSort(value: string): void {
+    this.sortChoice[this.tab()].set(value);
+  }
+
+  protected postsOf(b: StoryboardListItem) {
+    return this.posts.byBoard().get(b.id) ?? [];
+  }
+
+  protected line(b: StoryboardListItem): string {
+    return postLine(this.postsOf(b));
+  }
+
+  /** Videos still waiting to go out come before the ones already posted. */
+  private waitingFirst(a: StoryboardListItem, b: StoryboardListItem): number {
+    const done = (x: StoryboardListItem) => Number(!!lastSent(this.postsOf(x)) && !nextDue(this.postsOf(x)));
+    return done(a) - done(b);
   }
 
   protected thumb(b: StoryboardListItem): string {
