@@ -43,6 +43,9 @@ class Settings(BaseModel):
     studio_theme: str = Field("How everyday things secretly work", max_length=300)
     # How carefully Claude draws a new prop: careful (more detail, about $0.20 each) or quick (about $0.06).
     prop_drawing: Literal["careful", "quick"] = "careful"
+    # After a storyboard is planned, the AI director looks at stills of its shots and rewrites the weak ones
+    # (studio/director.py): one writing-tier call per 4 to 6 shots, free on a subscription tier.
+    director_pass: bool = False
     # Who the videos are for: ideas, research and scripts are written for them (see studio/plain.py).
     audience: Literal["everyone", "curious", "enthusiasts"] = "everyone"
     # AI voice. Kokoro and Chatterbox run on this machine for free (Chatterbox is expressive and slower);

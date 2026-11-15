@@ -742,6 +742,8 @@ class StoryboardOut(StoryboardSummary):
     credits: str = ""                            # every credit line the description needs
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
     youtube: YoutubeText | None = None
+    director: dict | None = Field(None, description="The AI director's last pass: notes per shot, kept or refused")
+    director_undoable: bool = False
 
 
 class YoutubeEdit(BaseModel):

@@ -213,6 +213,7 @@ export interface AppSettings {
   /** Days an unapproved Studio render is kept before it is deleted; 0 = forever. */
   unapproved_keep_days: number;
   prop_drawing: 'careful' | 'quick';
+  director_pass: boolean;
   clips_per_video: number;
   ai_fallback: 'rules' | 'fail';
   min_len: number;
@@ -560,6 +561,34 @@ export interface LivelinessScore {
   changes: number;
 }
 
+/** One shot the AI director had something to say about. */
+export interface DirectorNote {
+  shot: number;
+  start_word: number;
+  problems: string[];
+  before: string;
+  after: string;
+  /** changed: the rewrite was kept; refused: it failed a safety check (see why); noted: no rewrite proposed. */
+  outcome: 'changed' | 'refused' | 'noted';
+  why: string;
+  dropped: string[];
+}
+
+export interface DirectorReport {
+  at: string;
+  shots: number;
+  sheets: number;
+  looked: number;
+  changed: number;
+  refused: number;
+  lines: number;
+  score_before: number | null;
+  score_after: number | null;
+  notes: DirectorNote[];
+  skipped: string;
+  undone_at?: string;
+}
+
 export interface StoryboardSummary {
   id: number;
   script_id: number;
@@ -611,6 +640,10 @@ export interface Storyboard extends StoryboardSummary {
   photo_searches_missing: string[];
   credits: string;
   youtube: YoutubeText | null;
+  /** The AI director's last pass over the stills, or null. */
+  director: DirectorReport | null;
+  /** The plan is still the one the director left, so Undo can put the old one back. */
+  director_undoable: boolean;
   export: ExportInfo | null;
 }
 

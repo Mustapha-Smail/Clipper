@@ -40,6 +40,7 @@ STAGES = {
     "voice_rec": ["prepare", "align"],
     "align": ["align"],
     "storyboard": ["plan", "draw"],
+    "direct": ["draw", "direct"],
     "animate": ["draw", "animate"],
 }
 STAGE_LABELS = {
@@ -64,6 +65,7 @@ STAGE_LABELS = {
     "plan": "Planning the scenes",
     "draw": "Drawing new props and finding photos",
     "animate": "Animating the video",
+    "direct": "The AI director is looking at the shots",
 }
 
 
@@ -73,9 +75,11 @@ class JobCancelled(Exception):
 
 # --- queue operations ------------------------------------------------------------
 
-def enqueue(db: Session, kind: str, label: str, params: dict, video_id: str | None = None) -> Job:
+def enqueue(db: Session, kind: str, label: str, params: dict, video_id: str | None = None,
+            stages: list[str] | None = None) -> Job:
+    """Queue a job. `stages` replaces the kind's usual ones (a storyboard plan with the director pass)."""
     job = Job(kind=kind, label=label, params=params, video_id=video_id,
-              stages=STAGES[kind], state="queued", message="Waiting")
+              stages=stages or STAGES[kind], state="queued", message="Waiting")
     db.add(job)
     db.flush()
     db.add(JobEvent(job_id=job.id, message="Queued"))

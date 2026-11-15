@@ -221,6 +221,12 @@ export class Api {
   replan(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/storyboards/${id}/replan`, {});
   }
+  directStoryboard(id: number): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/storyboards/${id}/direct`, {});
+  }
+  undoDirector(id: number): Observable<Storyboard> {
+    return this.http.post<Storyboard>(`${BASE}/storyboards/${id}/director/undo`, {});
+  }
   renderStoryboard(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/storyboards/${id}/render`, {});
   }

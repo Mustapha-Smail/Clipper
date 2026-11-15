@@ -48,6 +48,10 @@ import { Toasts } from '../core/toast';
                   <option value="quick">Quick · plainer, about $0.06 a new prop</option>
                 </select>
               </label>
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.director_pass" />
+                <span>AI director after every plan<small>The writing model looks at stills of each new storyboard and
+                  rewrites weak shots; you can undo it. One call per 4 to 6 shots: free on a Claude or ChatGPT plan,
+                  a few cents a sheet on the API. You can also run it by hand on any storyboard.</small></span></label>
             </div>
           </section>
 

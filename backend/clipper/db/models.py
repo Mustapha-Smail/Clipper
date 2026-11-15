@@ -290,6 +290,8 @@ class Storyboard(Base):
     effects: Mapped[bool] = mapped_column(Boolean, default=True)         # pops and whooshes
     # The YouTube text, once written: {titles, title, description, tags, made_at, edited, problems}.
     youtube: Mapped[dict | None] = mapped_column(JSON)
+    # The last AI director pass (studio/director.py): its notes per shot and, for one undo, the plan before it.
+    director: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

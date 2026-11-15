@@ -41,6 +41,7 @@ TASKS = {
     "simplify": ("writing", "Making scripts simpler"),
     "factcheck": ("writing", "Listing and checking claims"),
     "storyboard": ("writing", "Planning storyboards"),
+    "direct": ("writing", "Directing storyboards from stills"),
     "idea_check": ("quick", "Checking ideas"),
     "themes": ("quick", "Suggesting themes"),
     "campaign": ("quick", "Reading campaign listings"),

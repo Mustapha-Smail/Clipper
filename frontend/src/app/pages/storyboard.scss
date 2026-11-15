@@ -357,6 +357,46 @@ pre.cheat {
   }
 }
 
+.director {
+  display: grid;
+  gap: 8px;
+
+  h3,
+  p {
+    margin: 0;
+  }
+}
+
+.director-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+
+  li {
+    display: grid;
+    gap: 4px;
+  }
+}
+
+.director-diff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+
+  pre {
+    margin: 0;
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 700px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .deductions {
   list-style: none;
   margin: 0;

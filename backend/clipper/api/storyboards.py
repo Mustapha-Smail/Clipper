@@ -17,6 +17,7 @@ from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
 from ..studio import animate, art, beats, cartoon, compliance, film, music_pick, music_search, publish, retention, sound
+from ..studio import director as director_mod
 from ..studio import export as export_mod
 from ..studio import places as places_mod
 from ..studio import script as script_mod
@@ -88,7 +89,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            missing_props=sorted(names - drawn),
                            music_credit=credit, score=score, photos=used,
                            photo_searches_missing=[q for q in queries if q not in found], credits=credits,
-                           youtube=board.youtube)
+                           youtube=board.youtube, director=director_mod.public(board.director),
+                           director_undoable=director_mod.undoable(board))
 
 
 LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon"), "film": ("wall", "studio"), "flat": ("ink",)}
@@ -107,7 +109,11 @@ def _idle(db: Session, board: Storyboard) -> None:
 
 def _enqueue(db: Session, board: Storyboard, kind: str) -> Job:
     _idle(db, board)
-    return jobs.enqueue(db, kind, board.title, {"script_id": board.script_id, "storyboard_id": board.id})
+    stages = None
+    if kind == "storyboard" and board.style in director_mod.KITS and settings_mod.load().director_pass:
+        stages = [*jobs.STAGES["storyboard"], "direct"]       # Settings: the director looks after every plan
+    return jobs.enqueue(db, kind, board.title, {"script_id": board.script_id, "storyboard_id": board.id},
+                        stages=stages)
 
 
 # --- storyboards ----------------------------------------------------------------------------
@@ -215,6 +221,28 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
 def replan(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Plan the scenes again from scratch. Your edits are replaced."""
     return _enqueue(db, board, "storyboard")
+
+
+@router.post("/storyboards/{storyboard_id}/direct", response_model=s.JobOut, status_code=202)
+def direct(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """The AI director looks at stills of every shot and rewrites the weak ones. Undo puts the plan back."""
+    if board.style not in director_mod.KITS:
+        raise HTTPException(409, "The director works on ink and film storyboards only")
+    if not board.scenes:
+        raise HTTPException(409, "The storyboard has no shots yet")
+    return _enqueue(db, board, "direct")
+
+
+@router.post("/storyboards/{storyboard_id}/director/undo", response_model=s.StoryboardOut)
+def undo_director(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Put back the plan from before the director's last pass. Refused once the plan was edited since."""
+    _idle(db, board)
+    if not director_mod.undo(board):
+        raise HTTPException(409, "Nothing to undo: the director changed nothing, or the shots were edited since")
+    compliance.record(db, board.script_id, "beats_edit", "you", "Undid the AI director's changes",
+                      storyboard_id=board.id)
+    db.flush()
+    return board_out(board, None, db)
 
 
 @router.post("/storyboards/{storyboard_id}/render", response_model=s.JobOut, status_code=202)

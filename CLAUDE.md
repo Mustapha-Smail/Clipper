@@ -144,6 +144,16 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   redrawn when used; `origin == "you"` props are never redrawn. The renderer's layout
   pass (`animate.separate`) keeps elements inside the stage and apart; keep it
   when adding element kinds. Captions reuse `captions.py`.
+- AI director (`studio/director.py`, `llm` task `direct`, writing tier): the
+  renderer draws three stills per shot onto contact sheets (`animate.still`), the
+  model looks at them with the shots' narration and beat lines, and answers with
+  notes and whole-shot rewrites in the beat language (ink and film only). A
+  rewrite is kept only when `clean` leaves every other shot unchanged, it adds
+  no photo, and the ink liveliness score drops by at most `SCORE_SLACK`;
+  every verdict and refusal is in the log and in `storyboards.director`, which
+  keeps the plan from before for one undo (refused once the plan was edited).
+  Runs from a button, or after every plan when `Settings.director_pass` is on.
+  Stills show no motion: it never judges pacing.
 - Storyboards have a `style`: `ink` (default) or `flat`. Ink storyboards are
   shots of beat lines (`studio/beats.py`: "12 do narrator push fridge"), never
   JSON from the model; `beats.clean()` makes any plan or edit safe and counts

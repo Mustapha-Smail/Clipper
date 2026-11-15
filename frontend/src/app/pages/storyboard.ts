@@ -522,6 +522,33 @@ export class StoryboardPage {
     });
   }
 
+  /** The AI director looks at stills of every shot and rewrites the weak ones (undoable). */
+  protected direct(): void {
+    const go = () => this.api.directStoryboard(this.id).subscribe({
+      next: () => {
+        this.toasts.ok('The director is looking at the shots. Its notes appear in Scenes.');
+        this.store.refresh();
+        this.load();
+      },
+      error: (err) => this.toasts.error(err),
+    });
+    if (this.dirty()) this.save(go);
+    else go();
+  }
+
+  protected async undoDirector(): Promise<void> {
+    if (!(await this.confirm.ask({ title: "Undo the director's changes?",
+      message: 'The shots go back to the plan from before its pass.', confirm: 'Undo' }))) return;
+    this.api.undoDirector(this.id).subscribe({
+      next: (board) => {
+        this.board.set(board);
+        this.load();
+        this.toasts.ok('The plan from before the director is back. Render again to see it.');
+      },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
   protected review(verdict: 'approved' | 'rejected' | 'pending'): void {
     this.api.reviewStoryboard(this.id, verdict).subscribe({
       next: (board) => this.board.set(board),
