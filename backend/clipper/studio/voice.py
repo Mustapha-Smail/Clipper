@@ -41,8 +41,9 @@ log = logging.getLogger("clipper.studio")
 
 SAMPLE_RATE = 48_000
 LOUDNESS = "loudnorm=I=-16:TP=-1.5:LRA=11"     # YouTube plays at about -14 LUFS; -16 leaves headroom
-SECTION_PAUSE = 0.7      # seconds of silence between sections in an AI take
-SENTENCE_PAUSE = 0.12
+SECTION_PAUSE = 0.55     # deliberate silence between sections in an AI take
+LONG_SILENCE = 0.65      # provider pauses longer than this lose attention
+KEPT_SILENCE = 0.28      # retain a natural beat when shortening a long pause
 
 KOKORO_RELEASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 KOKORO_FILES = {"kokoro-v1.0.fp16.onnx": 177_464_787, "voices-v1.0.bin": 28_214_398}
@@ -202,15 +203,15 @@ def delivery(sentence: str, last_in_paragraph: bool, rng: np.random.Generator) -
     words = len(sentence.split())
     speed = (0.94 if words <= 4 else 1.04 if words >= 18 else 1.0) * rng.uniform(0.97, 1.03)
     if last_in_paragraph:
-        pause = 0.95
+        pause = 0.45
     elif sentence.endswith("?"):
-        pause = 0.55
+        pause = 0.35
     elif sentence.endswith("…"):
-        pause = 0.7
+        pause = 0.45
     elif words <= 4:
-        pause = 0.65
+        pause = 0.32
     else:
-        pause = 0.42
+        pause = 0.20
     return speed, pause * rng.uniform(0.85, 1.15)
 
 
@@ -230,10 +231,11 @@ def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep:
     for n, (sentence, paragraph_end, section_end) in enumerate(lines):
         factor, pause = delivery(sentence, paragraph_end, rng)
         samples, rate = engine.create(sentence, voice=voice, speed=max(0.5, min(2.0, speed * factor)), lang="en-us")
-        audio.append(samples.astype(np.float32))
+        audio.append(_trim(samples.astype(np.float32), rate))
         if section_end:
-            pause = max(pause, SECTION_PAUSE + 0.3)
-        audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
+            pause = max(pause, SECTION_PAUSE)
+        if n + 1 < len(lines):
+            audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
         rep.progress(0.3 + 0.7 * (n + 1) / len(lines), f"Speaking: {n + 1} of {len(lines)} sentences")
     del engine
     _write_wav(out, _room_tone(np.concatenate(audio), rng), rate)
@@ -285,13 +287,14 @@ def speak_chatterbox(sections: list[dict], voice: str, speed: float, out: Path, 
     rng = np.random.default_rng(len(sections) * 7919 + len(voice))
     scale = PAUSE_SCALE.get(pauses, 1.0)
     audio, rate = [], 24_000
-    for (sentence, paragraph_end, section_end), part in zip(lines, parts, strict=True):
+    for n, ((sentence, paragraph_end, section_end), part) in enumerate(zip(lines, parts, strict=True)):
         samples, rate = _read_wav(part)
         audio.append(_trim(samples, rate))
         _, pause = delivery(sentence, paragraph_end, rng)
         if section_end:
-            pause = max(pause, SECTION_PAUSE + 0.3)
-        audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
+            pause = max(pause, SECTION_PAUSE)
+        if n + 1 < len(lines):
+            audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
     track = _room_tone(np.concatenate(audio), rng)
     if abs(speed - 1.0) > 0.01:      # Chatterbox has no speed control: stretch the whole take, pitch kept
         plain = out.with_suffix(".plain.wav")
@@ -323,7 +326,34 @@ def _trim(samples: np.ndarray, rate: int, floor_db: float = -45) -> np.ndarray:
     if not len(loud):
         return samples
     pad = int(rate * 0.03)
-    return samples[max(0, loud[0] - pad):loud[-1] + pad]
+    return samples[max(0, loud[0] - pad):loud[-1] + pad + 1]
+
+
+def _compact_silence(samples: np.ndarray, rate: int, floor_db: float = -45) -> np.ndarray:
+    """Shorten confirmed long internal silences without touching normal speech rhythm."""
+    samples = _trim(samples, rate, floor_db)
+    frame = max(1, int(rate * 0.01))
+    frame_count = (len(samples) + frame - 1) // frame
+    padded = np.pad(samples, (0, frame_count * frame - len(samples)))
+    rms = np.sqrt(np.mean(padded.reshape(frame_count, frame).astype(np.float64) ** 2, axis=1))
+    silent = rms < 10 ** (floor_db / 20)
+    pieces, copied_to, i = [], 0, 0
+    while i < frame_count:
+        if not silent[i]:
+            i += 1
+            continue
+        end = i + 1
+        while end < frame_count and silent[end]:
+            end += 1
+        run_start, run_end = i * frame, min(end * frame, len(samples))
+        if i and end < frame_count and run_end - run_start >= int(rate * LONG_SILENCE):
+            keep = min(int(rate * KEPT_SILENCE), run_end - run_start)
+            left = keep // 2
+            pieces.append(samples[copied_to:run_start + left])
+            copied_to = run_end - (keep - left)
+        i = end
+    pieces.append(samples[copied_to:])
+    return np.concatenate(pieces)
 
 
 def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json") -> bytes:
@@ -373,7 +403,7 @@ def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") 
     if voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
     text = " ".join(text.split())[:300] or "Your fridge has never made cold. It just moves heat around."
-    key = hashlib.sha256(f"{voice}|{speed:.2f}|{pauses}|{text}|v2".encode()).hexdigest()[:20]
+    key = hashlib.sha256(f"{voice}|{speed:.2f}|{pauses}|{text}|v3".encode()).hexdigest()[:20]
     folder = config.data_dir() / "cache" / "voice-samples"
     out = folder / f"{key}.wav"
     if out.is_file():
@@ -406,11 +436,21 @@ def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: flo
         part.write_bytes(audio)
         parts.append(part)
         rep.progress((i + 1) / len(sections), f"Speaking: section {i + 1} of {len(sections)}")
-    # Join with silence after each section, decoded to one mono WAV.
-    inputs = [arg for part in parts for arg in ("-i", str(part))]
-    graph = "".join(f"[{i}:a]aformat=channel_layouts=mono,apad=pad_dur={SECTION_PAUSE}[p{i}];"
-                    for i in range(len(parts)))
-    graph += "".join(f"[p{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1[out]"
+    # TTS providers can bake distracting gaps into a section. Decode each one so
+    # confirmed long silences can be shortened, then add one exact section beat.
+    cleaned = []
+    for i, part in enumerate(parts):
+        decoded = folder / f"clean-{i:03d}.wav"
+        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(part), "-vn", "-ac", "1", "-ar",
+             str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(decoded)])
+        samples, rate = _read_wav(decoded)
+        samples = _compact_silence(samples, rate)
+        if i + 1 < len(parts):
+            samples = np.concatenate([samples, np.zeros(int(rate * SECTION_PAUSE), dtype=np.float32)])
+        _write_wav(decoded, samples, rate)
+        cleaned.append(decoded)
+    inputs = [arg for part in cleaned for arg in ("-i", str(part))]
+    graph = "".join(f"[{i}:a]" for i in range(len(cleaned))) + f"concat=n={len(cleaned)}:v=0:a=1[out]"
     run([require("ffmpeg"), "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[out]", str(out)])
     shutil.rmtree(folder, ignore_errors=True)
 

@@ -102,7 +102,7 @@ import { Toasts } from '../core/toast';
                   <option value="natural">Natural</option>
                   <option value="relaxed">Relaxed</option>
                 </select>
-                <small>Kokoro reads one sentence at a time and pauses like a narrator: longer after questions and punchlines.</small>
+                <small>Natural keeps a compact spoken rhythm; Tight is briskest for attention-heavy videos.</small>
               </label>
               <label class="field"><span>Timing model</span>
                 <select [(ngModel)]="f.voice_align_model">

@@ -151,10 +151,24 @@ def test_elevenlabs_sections_are_joined_with_pauses(app_env, tmp_path, monkeypat
     monkeypatch.setattr(voice, "_elevenlabs", fake_call)
     out = tmp_path / "raw.wav"
     voice.speak_elevenlabs(SECTIONS, "voice123", "eleven_multilingual_v2", 1.0, out, ConsoleReporter())
-    assert voice.duration_of(out) == pytest.approx(2 + 2 * voice.SECTION_PAUSE, abs=0.1)
+    assert voice.duration_of(out) == pytest.approx(2 + voice.SECTION_PAUSE, abs=0.1)
     assert sent[0][0] == "/v1/text-to-speech/voice123?output_format=mp3_44100_128"
     assert sent[0][1]["previous_text"] is None and sent[0][1]["next_text"] == SECTIONS[1]["text"]
     assert sent[1][1]["previous_text"] == SECTIONS[0]["text"] and sent[1][1]["voice_settings"]["speed"] == 1.0
+
+
+def test_elevenlabs_long_internal_silence_is_shortened(app_env, tmp_path, monkeypatch):
+    wav = tmp_path / "long-pause.wav"
+    mp3 = tmp_path / "long-pause.mp3"
+    samples = np.concatenate([tone(0.35, 44100), np.zeros(int(1.2 * 44100)), tone(0.35, 44100)])
+    voice._write_wav(wav, samples, 44100)
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(wav), str(mp3)], check=True)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
+    monkeypatch.setattr(voice, "_elevenlabs", lambda *args, **kwargs: mp3.read_bytes())
+
+    out = tmp_path / "compacted.wav"
+    voice.speak_elevenlabs([SECTIONS[0]], "voice123", "eleven_multilingual_v2", 1.0, out, ConsoleReporter())
+    assert 0.8 < voice.duration_of(out) < 1.4
 
 
 def test_voice_options_without_elevenlabs(client, monkeypatch):
@@ -190,7 +204,14 @@ def test_sentences_and_a_narrators_delivery():
     _, question = voice.delivery("Why would it be blue at all?", False, rng)
     _, paragraph = voice.delivery("And that is the whole trick of it.", True, rng)
     assert punch_speed < 1 < long_speed and punch_pause > long_pause
-    assert question > long_pause * 1.1 and paragraph > 0.8
+    assert question > long_pause * 1.1 and paragraph > question
+    assert long_pause < 0.25 and paragraph < 0.55
+
+
+def test_model_silence_is_trimmed_to_a_small_edge():
+    samples = np.concatenate([np.zeros(400), np.ones(200) * 0.1, np.zeros(800)])
+    trimmed = voice._trim(samples, rate=1000)
+    assert len(trimmed) == 260
 
 
 def test_kokoro_reads_sentence_by_sentence_with_pauses(app_env, monkeypatch):
@@ -202,7 +223,8 @@ def test_kokoro_reads_sentence_by_sentence_with_pauses(app_env, monkeypatch):
 
         def create(self, text, voice, speed, lang):
             spoken.append((text, round(speed, 2)))
-            return np.ones(2400, dtype=np.float32) * 0.1, 24000
+            samples = np.concatenate([np.zeros(4800), np.ones(2400) * 0.1, np.zeros(9600)])
+            return samples.astype(np.float32), 24000
     import sys
     import types
     monkeypatch.setitem(sys.modules, "kokoro_onnx", types.SimpleNamespace(Kokoro=FakeKokoro))
@@ -214,7 +236,8 @@ def test_kokoro_reads_sentence_by_sentence_with_pauses(app_env, monkeypatch):
         voice.speak_kokoro(sections, "am_michael", 1.0, out, voice.Reporter(), pauses)
         lengths[pauses] = voice.duration_of(out)
     assert [t for t, _ in spoken[:4]] == ["One idea here.", "Blue.", "A new paragraph.", "Next section."]
-    assert lengths["relaxed"] > lengths["tight"] + 0.8      # four pauses, each 30% longer or shorter
+    assert lengths["relaxed"] > lengths["tight"] + 0.5      # three pauses; never pad the end of the take
+    assert lengths["relaxed"] < 2.5                          # model tails are trimmed before our pauses
 
 
 def test_claude_directs_each_sentence_and_sounds_stay_rare(monkeypatch):
