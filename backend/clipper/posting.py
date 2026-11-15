@@ -1,4 +1,4 @@
-"""Scheduling approved Shorts on Instagram and TikTok, through Buffer.
+"""Scheduling approved videos on Instagram, TikTok and YouTube, through Buffer.
 
 The gate is the same as everywhere: only a video you approved can be scheduled,
 and it is checked twice, when you ask and again when the worker starts.
@@ -33,8 +33,10 @@ from .db import session_scope
 from .db.models import Clip, Job, Post, Storyboard, as_utc, utcnow
 from .jobs import Reporter
 
-SERVICES = {"instagram": "Instagram", "tiktok": "TikTok"}
-TEXT_MAX = {"instagram": 2196, "tiktok": 2200}       # Buffer's limits for a caption with a video
+SERVICES = {"instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube"}
+TEXT_MAX = {"instagram": 2196, "tiktok": 2200, "youtube": 5000}
+BUFFER_KEYS = {"clip": "BUFFER_CLIPPING_API_KEY", "storyboard": "BUFFER_STUDIO_API_KEY"}
+YOUTUBE_CATEGORY = {"clip": "22", "storyboard": "27"}   # People & Blogs; Education
 MODES = ("queue", "at", "draft")
 LIVE = ("queued", "draft", "scheduled", "sending")   # still on its way to being posted
 FROM_BUFFER = {"draft": "draft", "needs_approval": "draft", "scheduled": "scheduled", "sending": "sending",
@@ -46,10 +48,12 @@ class PostingError(RuntimeError):
     """The post cannot be made; the message says why, in words fit to show."""
 
 
-def readiness() -> dict:
-    """What is set up, for the UI to explain what is missing."""
-    missing = ([] if buffer.configured() else ["BUFFER_API_KEY"]) + hosting.missing()
-    return {"ready": not missing, "buffer_key": buffer.configured(), "hosting": hosting.configured(),
+def readiness(kind: str | None = None) -> dict:
+    """What is set up for one feature, or both features for the system status."""
+    kinds = [kind] if kind in BUFFER_KEYS else list(BUFFER_KEYS)
+    missing = [BUFFER_KEYS[k] for k in kinds if not buffer.configured(k)] + hosting.missing()
+    return {"ready": not missing, "buffer_key": all(buffer.configured(k) for k in kinds),
+            "hosting": hosting.configured(),
             "missing": missing, "services": list(SERVICES)}
 
 
@@ -67,6 +71,7 @@ class Source:
     title: str
     path: Path | None
     text: str                # the caption proposed for the post
+    youtube_text: str        # the longer description proposed for YouTube
     ai: bool                 # proposed "AI-generated" label
     approved: bool
     short: bool              # vertical: what Instagram Reels and TikTok show full screen
@@ -86,7 +91,8 @@ def source(db: Session, kind: str, ref_id: int) -> Source:
         clip = db.get(Clip, ref_id)
         if clip is None:
             raise PostingError("That clip no longer exists")
-        return Source("clip", clip.id, clip.moment.title, Path(clip.path), clip.moment.caption.strip(), False,
+        caption = clip.moment.caption.strip()
+        return Source("clip", clip.id, clip.moment.title, Path(clip.path), caption, caption, False,
                       clip.status == "approved", clip.format == "vertical")
     if kind == "storyboard":
         board = db.get(Storyboard, ref_id)
@@ -95,18 +101,19 @@ def source(db: Session, kind: str, ref_id: int) -> Source:
         written = board.youtube or {}
         title = (written.get("title") or board.title or "").strip()
         tags = _hashtags(written.get("description") or "")
+        caption = title + (f"\n\n{tags}" if tags else "")
+        youtube_text = (written.get("description") or caption).strip()
         path = Path(board.video_path) if board.video_path else None
-        return Source("storyboard", board.id, board.title or title, path,
-                      title + (f"\n\n{tags}" if tags else ""), True,
+        return Source("storyboard", board.id, title, path, caption, youtube_text, True,
                       board.review == "approved", board.format == "short", board.script_id)
     raise PostingError(f"Unknown kind of video: {kind}")
 
 
-def check(src: Source) -> None:
-    """The gate. Raises unless this is an approved Short whose file is on disk."""
+def check(src: Source, services: list[str] | tuple[str, ...] = ()) -> None:
+    """The gate. YouTube accepts either shape; the other networks require a vertical Short."""
     if not src.approved:
         raise PostingError("Only an approved video can be scheduled: watch it and approve it first")
-    if not src.short:
+    if not src.short and any(service != "youtube" for service in services):
         raise PostingError("Instagram and TikTok are for vertical Shorts: this video is horizontal")
     if src.path is None or not src.path.is_file():
         raise PostingError("The video file is missing from disk: render it again")
@@ -125,9 +132,10 @@ def has_live(db: Session, kind: str, ref_id: int) -> bool:
 # --- asking ---------------------------------------------------------------------------
 
 def request(db: Session, kind: str, ref_id: int, channels: list[dict], text: str, mode: str,
-            due_at: datetime | None, ai_label: bool) -> Job:
+            due_at: datetime | None, ai_label: bool, title: str | None = None,
+            youtube_text: str | None = None) -> Job:
     """Check everything that can be checked without the network, then queue the job."""
-    state = readiness()
+    state = readiness(kind)
     if not state["ready"]:
         raise PostingError("Scheduling is not set up yet: " + ", ".join(state["missing"]) + " missing in .env")
     src = source(db, kind, ref_id)
@@ -146,15 +154,28 @@ def request(db: Session, kind: str, ref_id: int, channels: list[dict], text: str
         due_at = None
     if not channels:
         raise PostingError("Choose at least one channel")
+    check(src, [channel["service"] for channel in channels])
     text = text.strip()
+    title = (title or src.title).strip()
+    youtube_text = (src.youtube_text if youtube_text is None else youtube_text).strip()
     for channel in channels:
         name = f"{SERVICES.get(channel['service'], channel['service'])} ({channel['name']})"
         if channel["service"] not in SERVICES:
             raise PostingError(f"Posting to {channel['service']} is not supported yet")
         if channel.get("disconnected") or channel.get("locked"):
             raise PostingError(f"{name} is disconnected or locked in Buffer: reconnect it there first")
-        if len(text.encode("utf-16-le")) // 2 > TEXT_MAX[channel["service"]]:
+        post_text = youtube_text if channel["service"] == "youtube" else text
+        if len(post_text.encode("utf-16-le")) // 2 > TEXT_MAX[channel["service"]]:
             raise PostingError(f"The caption is too long for {name}: {TEXT_MAX[channel['service']]} characters at most")
+        if channel["service"] == "youtube":
+            if not title:
+                raise PostingError("Choose a YouTube title")
+            if len(title.encode("utf-16-le")) // 2 > 100:
+                raise PostingError("The YouTube title is too long: 100 characters at most")
+            if "<" in title or ">" in title:
+                raise PostingError("The YouTube title cannot contain < or >")
+            if "<" in youtube_text or ">" in youtube_text:
+                raise PostingError("The YouTube description cannot contain < or >")
         waiting = db.scalar(select(Post.id).where(Post.kind == kind, _refs(kind, ref_id), Post.status.in_(LIVE),
                                                   Post.channel_id == channel["id"]).limit(1))
         if waiting is not None:
@@ -163,8 +184,12 @@ def request(db: Session, kind: str, ref_id: int, channels: list[dict], text: str
     posts = [Post(kind=kind, clip_id=ref_id if kind == "clip" else None,
                   storyboard_id=ref_id if kind == "storyboard" else None, title=src.title,
                   channel_id=channel["id"], service=channel["service"], channel_name=channel["name"],
-                  text=text, ai_label=ai_label, mode=mode, due_at=due_at, status="queued")
+                  text=youtube_text if channel["service"] == "youtube" else text,
+                  ai_label=ai_label, mode=mode, due_at=due_at, status="queued")
              for channel in channels]
+    for post in posts:
+        if post.service == "youtube":
+            post.title = title
     db.add_all(posts)
     db.flush()
     params = {"post_ids": [p.id for p in posts], f"{kind}_id": ref_id}
@@ -193,7 +218,7 @@ def upload(post_ids: list[int], rep: Reporter) -> None:
             if ref_id is None:
                 raise PostingError("The video was deleted before it could be scheduled")
             src = source(db, kind, ref_id)
-            check(src)                       # approved when asked is not enough: approved now
+            check(src, [post.service for post in waiting])   # approved when asked is not enough: approved now
             path, title = src.path, src.title
         except PostingError as err:
             problem = str(err)
@@ -251,6 +276,7 @@ def schedule(post_ids: list[int], rep: Reporter) -> str:
                 continue                     # cancelled since, or the upload did not happen
             ask = dict(channel_id=post.channel_id, service=post.service, text=post.text, video_url=post.media_url,
                        mode=post.mode, ai_generated=post.ai_label,
+                       kind=post.kind, title=post.title, category_id=YOUTUBE_CATEGORY[post.kind],
                        due_at=as_utc(post.due_at).strftime("%Y-%m-%dT%H:%M:%S.000Z") if post.due_at else None)
             name = f"{SERVICES.get(post.service, post.service)} ({post.channel_name})"
         try:
@@ -305,11 +331,13 @@ def sync(rep: Reporter | None = None, due_only: bool = False) -> int:
         query = select(Post).where(Post.buffer_id.is_not(None), Post.status.in_(("draft", "scheduled", "sending")))
         if due_only:
             query = query.where(Post.status != "draft", Post.due_at.is_not(None), Post.due_at <= utcnow())
-        ids = {post.buffer_id: post.id for post in db.scalars(query)}
+        ids_by_kind: dict[str, dict[str, int]] = {}
+        for post in db.scalars(query):
+            ids_by_kind.setdefault(post.kind, {})[post.buffer_id] = post.id
         leftovers = set(db.scalars(select(Post.media_key).where(Post.media_key.is_not(None))))
     changed = 0
-    if ids:
-        states = buffer.posts(list(ids))
+    for kind, ids in ids_by_kind.items():
+        states = buffer.posts(list(ids), kind)
         with session_scope() as db:
             for buffer_id, state in states.items():
                 post = db.get(Post, ids[buffer_id])
@@ -328,7 +356,8 @@ def sync(rep: Reporter | None = None, due_only: bool = False) -> int:
     with session_scope() as db:
         freed = sum(release_media(db, key) for key in leftovers)
     if rep:
-        rep.info(f"Asked Buffer about {len(ids)} post{'s' if len(ids) != 1 else ''}: {changed} changed"
+        count = sum(len(ids) for ids in ids_by_kind.values())
+        rep.info(f"Asked Buffer about {count} post{'s' if count != 1 else ''}: {changed} changed"
                  + (f"; removed {freed} hosted video{'s' if freed != 1 else ''} no longer needed" if freed else ""))
     return changed
 
@@ -340,7 +369,7 @@ def cancel(db: Session, post: Post) -> None:
                             "cancelled": "It is already cancelled"}.get(post.status, "There is nothing left to cancel"))
     if post.buffer_id:
         try:
-            buffer.delete_post(post.buffer_id)
+            buffer.delete_post(post.buffer_id, post.kind)
         except buffer.BufferError as err:
             raise PostingError(f"Buffer did not cancel the post: {err}") from err
     post.status, post.error = "cancelled", None

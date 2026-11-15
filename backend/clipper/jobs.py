@@ -27,7 +27,7 @@ STAGES = {
     "check": ["check"],
     "subtitles": ["subtitles"],
     "scout": ["scout"],
-    # Scheduling approved Shorts on Buffer (posting.py)
+    # Scheduling approved videos on Buffer (posting.py)
     "post": ["upload", "schedule"],
     "post_sync": ["sync"],
     # Studio scripts

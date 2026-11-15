@@ -176,7 +176,7 @@
               @if (clip.compliance) {
                 <app-brief-check [result]="clip.compliance" />
               }
-              @if (clip.status === 'approved' && clip.format === 'vertical' && clip.file_exists) {
+              @if (clip.status === 'approved' && clip.file_exists) {
                 <app-post-scheduler kind="clip" [refId]="clip.id" />
               }
             }

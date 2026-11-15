@@ -19,7 +19,8 @@ the database). This module only knows what is decided when a process starts.
   CODEX_CLI              path of the Codex CLI (a ChatGPT plan through `codex exec`, codex_cli.py), likewise
   WIKIMEDIA_CONTACT      a URL or email sent to Wikimedia in the User-Agent of archive photo searches;
                          with it Wikimedia allows 200 searches a minute, without it 10
-  BUFFER_API_KEY         Buffer key, to schedule approved Shorts on your channels (buffer.py)
+  BUFFER_CLIPPING_API_KEY  Buffer key for clips; BUFFER_STUDIO_API_KEY is the separate Studio account
+  BUFFER_API_KEY         legacy fallback used for either feature when its specific key is not set
   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL
                          the Cloudflare R2 bucket Buffer fetches those videos from (hosting.py)
 """
@@ -28,7 +29,7 @@ import os
 import re
 from pathlib import Path
 
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parent.parent
@@ -105,8 +106,14 @@ def claude_cli_token() -> str:
     return (os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip()
 
 
-def buffer_api_key() -> str:
-    return (os.environ.get("BUFFER_API_KEY") or "").strip()
+def buffer_api_key(kind: str | None = None) -> str:
+    """The Buffer account for a clip or Studio storyboard, with the old shared key as fallback."""
+    legacy = (os.environ.get("BUFFER_API_KEY") or "").strip()
+    names = {"clip": "BUFFER_CLIPPING_API_KEY", "storyboard": "BUFFER_STUDIO_API_KEY"}
+    if kind in names:
+        return (os.environ.get(names[kind]) or "").strip() or legacy
+    return legacy or (os.environ.get("BUFFER_CLIPPING_API_KEY") or "").strip() \
+        or (os.environ.get("BUFFER_STUDIO_API_KEY") or "").strip()
 
 
 def r2(name: str) -> str:

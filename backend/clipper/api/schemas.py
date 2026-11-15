@@ -399,7 +399,7 @@ class ChannelOut(BaseModel):
 
 
 class ChannelsOut(BaseModel):
-    channels: list[ChannelOut]      # the ones a Short can be scheduled on
+    channels: list[ChannelOut]      # supported channels from this feature's Buffer account
     others: list[str]               # connected networks the app does not post to yet
     fetched_at: UtcDatetime
 
@@ -409,6 +409,8 @@ class PostCreate(BaseModel):
     ref_id: int
     channel_ids: list[str] = Field(min_length=1, max_length=10)
     text: str = Field("", max_length=5000)
+    youtube_text: str | None = Field(None, max_length=5000)
+    title: str | None = Field(None, max_length=100)
     mode: Literal["queue", "at", "draft"] = "queue"
     due_at: datetime | None = None
     ai_label: bool = False
@@ -417,7 +419,10 @@ class PostCreate(BaseModel):
 class PostDraft(BaseModel):
     """What the Schedule panel starts from, and whether this video may be scheduled."""
     text: str
+    youtube_text: str
+    title: str
     ai_label: bool
+    short: bool
     allowed: bool
     reason: str = ""
 

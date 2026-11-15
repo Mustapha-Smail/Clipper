@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import {
   ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, BufferChannel, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
-  MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
+  MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
   SystemStatus, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
@@ -377,12 +377,19 @@ export class Api {
   posts(): Observable<Post[]> {
     return this.http.get<Post[]>(`${BASE}/posts`);
   }
-  postChannels(fresh = false): Observable<{ channels: BufferChannel[]; others: string[]; fetched_at: string }> {
-    return this.http.get<{ channels: BufferChannel[]; others: string[]; fetched_at: string }>(
-      `${BASE}/posting/channels`, { params: { fresh } });
+  postingStatus(kind: 'clip' | 'storyboard'): Observable<PostingStatus> {
+    return this.http.get<PostingStatus>(`${BASE}/posting`, { params: { kind } });
   }
-  postDraft(kind: 'clip' | 'storyboard', refId: number): Observable<{ text: string; ai_label: boolean; allowed: boolean; reason: string }> {
-    return this.http.get<{ text: string; ai_label: boolean; allowed: boolean; reason: string }>(
+  postChannels(kind: 'clip' | 'storyboard', fresh = false): Observable<{ channels: BufferChannel[]; others: string[]; fetched_at: string }> {
+    return this.http.get<{ channels: BufferChannel[]; others: string[]; fetched_at: string }>(
+      `${BASE}/posting/channels`, { params: { kind, fresh } });
+  }
+  postDraft(kind: 'clip' | 'storyboard', refId: number): Observable<{
+    text: string; youtube_text: string; title: string; ai_label: boolean; short: boolean; allowed: boolean; reason: string;
+  }> {
+    return this.http.get<{
+      text: string; youtube_text: string; title: string; ai_label: boolean; short: boolean; allowed: boolean; reason: string;
+    }>(
       `${BASE}/posting/draft`, { params: { kind, ref_id: refId } });
   }
   schedulePost(body: NewPost): Observable<Job> {

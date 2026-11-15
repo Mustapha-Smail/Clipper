@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
 import { Confirm } from '../core/confirm';
 import { JobsStore } from '../core/jobs-store';
-import { BufferChannel, Post, PostMode, PostStatus } from '../core/models';
+import { BufferChannel, Post, PostMode, PostingStatus, PostStatus } from '../core/models';
 import { PostsStore, SERVICE_NAMES, WAITING, dayKeyOf } from '../core/posts-store';
 import { WhenPicker, nextSlot } from './when-picker';
 import { Toasts } from '../core/toast';
@@ -19,11 +19,11 @@ const STATUS: Record<PostStatus, [string, string]> = {
   cancelled: ['Cancelled', ''],
   removed: ['Deleted in Buffer', ''],
 };
-const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
+const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube: 5000 };
 
 /**
- * Schedule an approved Short on Instagram and TikTok through Buffer, and show
- * where its posts stand. Only shown for approved videos; the server checks again.
+ * Schedule an approved video through the feature's Buffer account, and show where
+ * its posts stand. Instagram and TikTok require a Short; YouTube accepts either shape.
  */
 @Component({
   selector: 'app-post-scheduler',
@@ -72,15 +72,17 @@ const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
             <div><button class="sm quiet" (click)="open.set(false)">Close</button></div>
           } @else if (channels(); as list) {
             @if (!list.length) {
-              <div class="notice small"><span>No Instagram or TikTok channel is connected in your Buffer account. Connect one in
+              <div class="notice small"><span>No Instagram, TikTok or YouTube channel is connected in this Buffer account. Connect one in
                 Buffer, then reload.</span></div>
             } @else {
               <div class="channels">
                 @for (c of list; track c.id) {
                   <label class="check small">
-                    <input type="checkbox" [checked]="chosen().has(c.id)" (change)="toggle(c.id)" [disabled]="c.disconnected || c.locked" />
+                    <input type="checkbox" [checked]="chosen().has(c.id)" (change)="toggle(c.id)"
+                      [disabled]="c.disconnected || c.locked || !channelAllowed(c)" />
                     <span>{{ service(c.service) }} <span class="muted">{{ c.name }}</span>
                       @if (c.disconnected || c.locked) { <small>Disconnected or locked in Buffer</small> }
+                      @else if (!channelAllowed(c)) { <small>Horizontal videos can only go to YouTube</small> }
                       @else if (c.queue_paused) { <small>Its queue is paused in Buffer: nothing goes out until you resume it</small> }
                       @else if (mode() === 'queue' && !c.weekly_slots) { <small>No posting times are set in Buffer: choose a date and time instead</small> }
                       @else if (mode() === 'queue' && nextTime(c); as next) { <small>Next free time in your Buffer schedule: {{ next }}, or later if it is taken</small> }
@@ -103,17 +105,34 @@ const LIMIT = 2196;   // the shorter of Instagram's and TikTok's caption limits
             @if (mode() === 'at') {
               <app-when-picker [(value)]="when" [channels]="chosenChannels()" [marks]="marks()" />
             }
-            <label class="field"><span>Caption</span>
-              <textarea [ngModel]="text()" (ngModelChange)="text.set($event)" rows="4"></textarea>
-              <small [class.over]="text().length > limit">{{ text().length }} / {{ limit }}</small>
-            </label>
+            @if (hasSocial()) {
+              <label class="field"><span>Instagram / TikTok caption</span>
+                <textarea [ngModel]="text()" (ngModelChange)="text.set($event)" rows="4"></textarea>
+                <small [class.over]="text().length > socialLimit()">{{ text().length }} / {{ socialLimit() }}</small>
+              </label>
+            }
+            @if (hasYoutube()) {
+              <label class="field"><span>YouTube title</span>
+                <input type="text" [ngModel]="title()" (ngModelChange)="title.set($event)" maxlength="100" />
+                <small [class.over]="youtubeTitleInvalid()">{{ title().length }} / 100 ·
+                  {{ kind() === 'storyboard' ? 'Education' : 'People & Blogs' }}</small>
+              </label>
+              <label class="field"><span>YouTube description</span>
+                <textarea [ngModel]="youtubeText()" (ngModelChange)="youtubeText.set($event)" rows="6"></textarea>
+                <small [class.over]="youtubeTextInvalid()">{{ youtubeText().length }} / 5000</small>
+              </label>
+              @if (youtubeTitleInvalid() || youtubeTextInvalid()) {
+                <div class="notice bad small"><span>A YouTube title is required, and neither its title nor description may contain
+                  <code>&lt;</code> or <code>&gt;</code>.</span></div>
+              }
+            }
             <label class="check small"><input type="checkbox" [checked]="ai()" (change)="ai.set(!ai())" />
-              <span>Label it as AI-generated<small>Both networks ask for it when the picture or the voice was made by AI.</small></span>
+              <span>Label it as AI-generated<small>The selected networks receive their AI disclosure field.</small></span>
             </label>
             <p class="small muted">A copy of the video goes online under an address nobody can guess, so Buffer can fetch
               it. It is removed once the post is out or cancelled.</p>
             <div class="row">
-              <button class="primary sm" (click)="submit()" [disabled]="busy() || !chosen().size || text().length > limit">
+              <button class="primary sm" (click)="submit()" [disabled]="busy() || invalid()">
                 {{ busy() ? 'Sending…' : mode() === 'draft' ? 'Save the draft' : 'Schedule' }}</button>
               <button class="sm quiet" (click)="open.set(false)">Close</button>
             </div>
@@ -171,7 +190,6 @@ export class PostScheduler {
   readonly kind = input.required<'clip' | 'storyboard'>();
   readonly refId = input.required<number>();
 
-  protected readonly limit = LIMIT;
   protected readonly open = signal(false);
   protected readonly busy = signal(false);
   protected readonly channels = signal<BufferChannel[] | null>(null);
@@ -179,11 +197,14 @@ export class PostScheduler {
   protected readonly mode = signal<PostMode>('queue');
   protected readonly when = signal('');
   protected readonly text = signal('');
+  protected readonly youtubeText = signal('');
+  protected readonly title = signal('');
   protected readonly ai = signal(false);
+  protected readonly short = signal(true);
   protected readonly problem = signal('');
   protected readonly refused = signal('');
 
-  protected readonly ready = computed(() => this.jobs.status()?.posting ?? null);
+  protected readonly ready = signal<PostingStatus | null>(null);
 
   /** The latest post per channel of this video, without the ones taken back. */
   protected readonly mine = computed(() => {
@@ -195,6 +216,19 @@ export class PostScheduler {
   });
 
   protected readonly chosenChannels = computed(() => (this.channels() ?? []).filter((c) => this.chosen().has(c.id)));
+  protected readonly hasYoutube = computed(() => this.chosenChannels().some((c) => c.service === 'youtube'));
+  protected readonly hasSocial = computed(() => this.chosenChannels().some((c) => c.service !== 'youtube'));
+  protected readonly socialLimit = computed(() => {
+    const limits = this.chosenChannels().filter((c) => c.service !== 'youtube').map((c) => LIMITS[c.service] ?? 2196);
+    return limits.length ? Math.min(...limits) : 2196;
+  });
+  protected readonly youtubeTitleInvalid = computed(() => this.hasYoutube()
+    && (!this.title().trim() || this.title().length > 100 || /[<>]/.test(this.title())));
+  protected readonly youtubeTextInvalid = computed(() => this.hasYoutube()
+    && (this.youtubeText().length > LIMITS['youtube'] || /[<>]/.test(this.youtubeText())));
+  protected readonly invalid = computed(() => !this.chosen().size
+    || this.hasSocial() && this.text().length > this.socialLimit()
+    || this.youtubeTitleInvalid() || this.youtubeTextInvalid());
 
   /** Posts already waiting on each day, to see the calendar fill up. */
   protected readonly marks = computed(() => {
@@ -251,37 +285,59 @@ export class PostScheduler {
       this.when.set(this.local(tomorrow));
     }
     this.jobs.refresh();          // the setup may have changed since the page loaded
+    this.ready.set(null);
+    this.api.postingStatus(this.kind()).subscribe({
+      next: (state) => {
+        this.ready.set(state);
+        if (state.ready && this.channels() === null) this.loadChannels(false);
+      },
+      error: (err) => this.problem.set(errorMessage(err)),
+    });
     this.api.postDraft(this.kind(), this.refId()).subscribe({
       next: (draft) => {
         if (!this.text()) this.text.set(draft.text);
+        if (!this.youtubeText()) this.youtubeText.set(draft.youtube_text);
+        if (!this.title()) this.title.set(draft.title);
         this.ai.set(draft.ai_label);
+        this.short.set(draft.short);
+        this.chooseAvailable();
         this.refused.set(draft.allowed ? '' : draft.reason);
       },
       error: (err) => this.refused.set(errorMessage(err)),
     });
-    if (this.channels() === null) this.loadChannels(false);
   }
 
   protected loadChannels(fresh: boolean): void {
     this.problem.set('');
     this.channels.set(null);
-    this.api.postChannels(fresh).subscribe({
+    this.api.postChannels(this.kind(), fresh).subscribe({
       next: (found) => {
         this.channels.set(found.channels);
-        const waiting = new Set(this.mine().filter((p) => WAITING.has(p.status)).map((p) => p.channel_id));
-        this.chosen.set(new Set(found.channels
-          .filter((c) => !c.disconnected && !c.locked && !waiting.has(c.id)).map((c) => c.id)));
+        this.chooseAvailable();
       },
       error: (err) => this.problem.set(errorMessage(err)),
     });
   }
 
   protected toggle(id: string): void {
+    const channel = this.channels()?.find((c) => c.id === id);
+    if (!channel || !this.channelAllowed(channel)) return;
     this.chosen.update((set) => {
       const next = new Set(set);
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  }
+
+  protected channelAllowed(channel: BufferChannel): boolean {
+    return this.short() || channel.service === 'youtube';
+  }
+
+  private chooseAvailable(): void {
+    if (!this.channels()) return;
+    const waiting = new Set(this.mine().filter((p) => WAITING.has(p.status)).map((p) => p.channel_id));
+    this.chosen.set(new Set(this.channels()!
+      .filter((c) => this.channelAllowed(c) && !c.disconnected && !c.locked && !waiting.has(c.id)).map((c) => c.id)));
   }
 
   protected submit(): void {
@@ -297,6 +353,7 @@ export class PostScheduler {
     this.busy.set(true);
     this.api.schedulePost({
       kind: this.kind(), ref_id: this.refId(), channel_ids: [...this.chosen()], text: this.text(),
+      youtube_text: this.youtubeText(), title: this.title(),
       mode: this.mode(), due_at: at ? at.toISOString() : null, ai_label: this.ai(),
     }).subscribe({
       next: () => {

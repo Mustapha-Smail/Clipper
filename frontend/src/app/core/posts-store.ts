@@ -7,7 +7,7 @@ const POST_JOBS = new Set(['post', 'post_sync']);
 
 /** On its way to being posted: handed to Buffer and not taken back. */
 export const WAITING = new Set<PostStatus>(['queued', 'draft', 'scheduled', 'sending']);
-export const SERVICE_NAMES: Record<string, string> = { instagram: 'Instagram', tiktok: 'TikTok' };
+export const SERVICE_NAMES: Record<string, string> = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube' };
 
 /** Posts that put a video in the Scheduled tab: waiting, or already posted. */
 export function handedOver(posts: Post[] | undefined): Post[] {

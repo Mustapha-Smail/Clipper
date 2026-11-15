@@ -543,11 +543,12 @@ drawn by code in `studio/art.py`; props are rendered with resvg.
   warns when YouTube's chapter rules (3 or more, 10 s each, from 0:00) are not
   met.
 
-## Scheduling Shorts (Instagram and TikTok)
+## Posting with Buffer (Instagram, TikTok and YouTube)
 
-An approved vertical clip, or an approved Studio Short, can be handed to
-[Buffer](https://buffer.com), which posts it on your Instagram and TikTok
-channels at the time you choose. The app never talks to the networks itself.
+An approved clip or Studio video can be handed to [Buffer](https://buffer.com),
+which posts it at the time you choose. Vertical Shorts can go to Instagram,
+TikTok and YouTube; horizontal clips and long Studio videos can go to YouTube.
+The app never talks to those networks itself.
 
 **The gate.** Only a video you approved can be scheduled; the worker checks
 again right before it uploads. While a post is waiting, the approval cannot be
@@ -563,25 +564,31 @@ for a payment method before R2 can be used.
 
 **Setup, once.**
 
-1. Buffer: connect your Instagram and TikTok channels, then Settings > API >
-   create a key. Put it in `.env` as `BUFFER_API_KEY`.
-2. Cloudflare: dashboard > R2 > create a bucket (any name).
-3. In the bucket: Settings > Public Development URL > Enable. Copy the
+1. Buffer for Clipping: connect the Instagram, TikTok and/or YouTube channels
+   for clips, then Settings > API > create a key. Put it in `.env` as
+   `BUFFER_CLIPPING_API_KEY`.
+2. Buffer for Studio: in the account that owns the Studio channels, create
+   another key and put it in `.env` as `BUFFER_STUDIO_API_KEY`. This can be a
+   different Buffer account. If both features should share one old account,
+   `BUFFER_API_KEY` remains a fallback for either missing feature key.
+3. Cloudflare: dashboard > R2 > create a bucket (any name).
+4. In the bucket: Settings > Public Development URL > Enable. Copy the
    `https://pub-....r2.dev` address into `R2_PUBLIC_URL`.
-4. R2 > API Tokens > create a token with "Object Read & Write", limited to that
+5. R2 > API Tokens > create a token with "Object Read & Write", limited to that
    bucket. Copy the Access Key ID and the Secret Access Key into
    `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`.
-5. Put the account ID (R2 > Overview) in `R2_ACCOUNT_ID` and the bucket's name
+6. Put the account ID (R2 > Overview) in `R2_ACCOUNT_ID` and the bucket's name
    in `R2_BUCKET`, then restart the app (`docker compose up -d`, or `make run`).
 
-**Use.** On an approved vertical clip (Review, or the video's page) or an
-approved Studio Short (its Publish tab), "Schedule" asks for the channels, the
-caption, and when: the next free slot of your Buffer queue, an exact date and
-time, or a draft that stays in Buffer until you schedule it there. The date
-and time are picked on a calendar that offers each channel's Buffer posting
-times for the chosen day and marks the days that already have a post. Each
-channel is its own post with its own status: scheduled, posted (with a link to
-the post), failed (with Buffer's reason), cancelled.
+**Use.** On an approved clip or an approved Studio video's Publish tab,
+"Schedule" asks for the channels and when: the next free slot of the Buffer
+queue, an exact date and time, or a draft that stays in Buffer. Instagram and
+TikTok share a caption. YouTube has its own title and description; Studio starts
+those fields from the text already written in its YouTube panel. YouTube posts
+use Education for Studio and People & Blogs for Clipping. The date and time are
+picked on a calendar that offers each channel's Buffer posting times for the
+chosen day and marks days that already have a post. Each channel is its own post
+with its own status: scheduled, posted (with a link), failed, or cancelled.
 
 Once a video is handed to Buffer it leaves the Approved tab for the Scheduled
 tab, on Review (clips) and on Animations (Studio videos); if every post of it
@@ -589,12 +596,10 @@ is cancelled it goes back to Approved. Each tab has its own sort menu (for
 example best score in To review, posting soonest in Scheduled), remembered in
 your browser.
 
-**What it does not do.** Horizontal clips and long videos are refused (these
-two networks are for vertical video); YouTube is not wired yet. A post you
-delete or move inside Buffer is noticed within a day. Buffer's Free plan
-allows 1,000 requests per channel per 30 days, so the app asks Buffer only
-about posts whose time has come, plus one full pass a day; "Schedule" itself
-costs one request per channel.
+**After scheduling.** A post you delete or move inside either Buffer account is
+noticed within a day. Buffer's Free plan allows 1,000 requests per channel per
+30 days, so the app asks each account only about posts whose time has come, plus
+one full pass a day; "Schedule" itself costs one request per channel.
 
 ## AI models and spending
 

@@ -66,11 +66,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   the text sizes and positions of each format are in `captions.LAYOUTS`. A
   source that already has the clip's shape fills the frame and skips the face
   scan. A new format needs an entry in both tables and in the UI's labels.
-- Posting (`posting.py`, `buffer.py`, `hosting.py`): approved Shorts (a vertical
-  clip, a Studio storyboard of format `short`) are scheduled on Instagram and
-  TikTok through Buffer's GraphQL API; nothing else in the app posts, and
-  nothing posts to a network directly. `posting.check` is the gate (approved,
-  vertical, file on disk), run when asked and again by the `post` job before it
+- Posting (`posting.py`, `buffer.py`, `hosting.py`): approved videos are
+  scheduled on Instagram, TikTok and YouTube through Buffer's GraphQL API;
+  nothing posts to a network directly. Instagram and TikTok require a vertical
+  Short; YouTube accepts vertical or horizontal video. `posting.check` is the
+  gate (approved, compatible shape, file on disk), run when asked and again by the `post` job before it
   uploads; the review routes refuse to un-approve while `posting.has_live`.
   Buffer has no upload, so the job copies the file to a Cloudflare R2 bucket
   (`hosting.py`, S3 calls signed by hand, checked against AWS's published
@@ -78,8 +78,10 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   deletes it once no post needs it. One `posts` row per channel. Buffer counts
   requests (1,000 per channel per 30 days on the Free plan): never poll;
   `posting.sync` asks only for due posts, plus one full pass a day, batched in
-  one request (`buffer.posts`). Keys come from `.env` only (`BUFFER_API_KEY`,
-  `R2_*`), never from Settings or the database. A new network needs an entry in
+  one request per account (`buffer.posts`). Clipping and Studio may use separate
+  Buffer accounts (`BUFFER_CLIPPING_API_KEY`, `BUFFER_STUDIO_API_KEY`; the old
+  `BUFFER_API_KEY` is a fallback). Keys come from `.env` only, never from Settings
+  or the database. A new network needs an entry in
   `posting.SERVICES`, `posting.TEXT_MAX` and `buffer.METADATA`.
 - `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
   subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.

@@ -80,13 +80,13 @@ const VERDICT_ORDER: Record<string, number> = { fail: 0, review: 1, pass: 2 };
               @if (clip.compliance) {
                 <app-brief-check class="wide" [result]="clip.compliance" />
               }
-              @if (clip.status === 'approved' && clip.format === 'vertical' && clip.file_exists) {
+              @if (clip.status === 'approved' && clip.file_exists) {
                 <app-post-scheduler class="wide" kind="clip" [refId]="clip.id" />
               }
             </article>
           } @empty {
             <div class="empty wide">
-              {{ all.length ? (filter() === 'scheduled' ? 'Nothing scheduled yet. Approve a vertical clip, then press Schedule on it.' : 'No clips with this status.') : 'No clips yet. Add a video to make some.' }}
+              {{ all.length ? (filter() === 'scheduled' ? 'Nothing scheduled yet. Approve a clip, then press Schedule on it.' : 'No clips with this status.') : 'No clips yet. Add a video to make some.' }}
             </div>
           }
         </div>

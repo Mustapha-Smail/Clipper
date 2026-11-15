@@ -4,7 +4,9 @@ Buffer (buffer.com) holds the connections to the social networks and publishes a
 the scheduled time. This module only talks to it; what may be posted, and when
 it is asked, is decided in `posting.py`.
 
-  BUFFER_API_KEY   a personal key (Buffer > Settings > API)
+  BUFFER_CLIPPING_API_KEY  personal key for clips (Buffer > Settings > API)
+  BUFFER_STUDIO_API_KEY    personal key for Studio videos, which may be a different account
+  BUFFER_API_KEY           legacy fallback for both
 
 Limits on the Free plan: 150 requests per 15 minutes, 600 a day, and 1,000 per
 channel per 30 days. The last one is the tight one, so callers must not poll.
@@ -23,9 +25,13 @@ BATCH = 20               # posts read in one request (see `posts`)
 POST_FIELDS = "id status dueAt sentAt externalLink error { message }"
 # Service-specific fields a video post needs. Instagram: a Reel, also shown on the profile grid.
 METADATA = {
-    "instagram": lambda ai: {"type": "reel", "shouldShareToFeed": True, "isAiGenerated": ai},
-    "tiktok": lambda ai: {"isAiGenerated": ai},
+    "instagram": lambda ai, title, category: {
+        "type": "reel", "shouldShareToFeed": True, "isAiGenerated": ai},
+    "tiktok": lambda ai, title, category: {"isAiGenerated": ai},
+    "youtube": lambda ai, title, category: {
+        "title": title, "categoryId": category, "isAiGenerated": ai},
 }
+KEY_NAMES = {"clip": "BUFFER_CLIPPING_API_KEY", "storyboard": "BUFFER_STUDIO_API_KEY"}
 
 
 class BufferError(RuntimeError):
@@ -36,15 +42,16 @@ class BufferError(RuntimeError):
         self.retry_after = retry_after
 
 
-def configured() -> bool:
-    return bool(config.buffer_api_key())
+def configured(kind: str | None = None) -> bool:
+    return bool(config.buffer_api_key(kind))
 
 
-def call(query: str, variables: dict | None = None) -> dict:
+def call(query: str, variables: dict | None = None, kind: str | None = None) -> dict:
     """One request. Returns the whole answer ({data, errors}); raises on transport and account errors."""
-    key = config.buffer_api_key()
+    key = config.buffer_api_key(kind)
+    key_name = KEY_NAMES.get(kind, "BUFFER_API_KEY")
     if not key:
-        raise BufferError("BUFFER_API_KEY is not set in .env")
+        raise BufferError(f"{key_name} is not set in .env")
     request = urllib.request.Request(
         URL, method="POST", data=json.dumps({"query": query, "variables": variables or {}}).encode(),
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "clipper"})
@@ -57,13 +64,13 @@ def call(query: str, variables: dict | None = None) -> dict:
             raise BufferError("Buffer's request limit is reached"
                               + (f"; it resets in {wait // 60 + 1} min" if wait else ""), wait) from err
         if err.code == 401:
-            raise BufferError("Buffer refused the key: check BUFFER_API_KEY in .env") from err
+            raise BufferError(f"Buffer refused the key: check {key_name} in .env") from err
         raise BufferError(f"Buffer answered HTTP {err.code}") from err
     except (OSError, ValueError) as err:
         raise BufferError(f"Could not reach Buffer: {err}") from err
     codes = {(e.get("extensions") or {}).get("code") for e in answer.get("errors") or []}
     if "UNAUTHORIZED" in codes:
-        raise BufferError("Buffer refused the key: check BUFFER_API_KEY in .env")
+        raise BufferError(f"Buffer refused the key: check {key_name} in .env")
     if "RATE_LIMIT_EXCEEDED" in codes:
         raise BufferError("Buffer's request limit is reached")
     return answer
@@ -76,15 +83,15 @@ def _data(answer: dict) -> dict:
     return answer["data"]
 
 
-def channels() -> list[dict]:
+def channels(kind: str) -> list[dict]:
     """Every connected channel of the account, whatever the network."""
-    orgs = _data(call("{ account { organizations { id name } } }"))["account"]["organizations"]
+    orgs = _data(call("{ account { organizations { id name } } }", kind=kind))["account"]["organizations"]
     found = []
     for org in orgs:
         data = _data(call(
             "query($org: OrganizationId!) { channels(input: {organizationId: $org}) { id name displayName service "
             "type isDisconnected isLocked isQueuePaused timezone postingSchedule { day times paused } } }",
-            {"org": org["id"]}))
+            {"org": org["id"]}, kind))
         for channel in data["channels"]:
             slots = sum(len(day["times"]) for day in channel["postingSchedule"] if not day.get("paused"))
             found.append({
@@ -105,7 +112,8 @@ def _post(node: dict) -> dict:
 
 
 def create_post(channel_id: str, service: str, text: str, video_url: str, mode: str,
-                due_at: str | None = None, ai_generated: bool = False) -> dict:
+                due_at: str | None = None, ai_generated: bool = False, *, kind: str,
+                title: str = "", category_id: str = "22") -> dict:
     """Create one video post. mode: "queue" (next free slot), "at" (due_at, ISO 8601 UTC) or
     "draft" (kept in Buffer's drafts until you schedule it there)."""
     if service not in METADATA:
@@ -114,7 +122,7 @@ def create_post(channel_id: str, service: str, text: str, video_url: str, mode: 
         "channelId": channel_id, "text": text, "schedulingType": "automatic",
         "mode": "customScheduled" if mode == "at" else "addToQueue",
         "assets": [{"video": {"url": video_url}}],
-        "metadata": {service: METADATA[service](ai_generated)},
+        "metadata": {service: METADATA[service](ai_generated, title, category_id)},
     }
     if mode == "at":
         post["dueAt"] = due_at
@@ -122,14 +130,14 @@ def create_post(channel_id: str, service: str, text: str, video_url: str, mode: 
         post["saveToDraft"] = True
     answer = call("mutation($input: CreatePostInput!) { createPost(input: $input) { __typename "
                   f"... on PostActionSuccess {{ post {{ {POST_FIELDS} }} }} ... on MutationError {{ message }} }} }}",
-                  {"input": post})
+                  {"input": post}, kind)
     result = _data(answer)["createPost"]
     if not result.get("post"):
         raise BufferError(f"Buffer refused the post: {result.get('message') or result.get('__typename')}")
     return _post(result["post"])
 
 
-def posts(ids: list[str]) -> dict[str, dict | None]:
+def posts(ids: list[str], kind: str) -> dict[str, dict | None]:
     """The current state of several posts in as few requests as possible (the 30-day limit is
     counted in requests). None for a post Buffer no longer has."""
     found: dict[str, dict | None] = {}
@@ -137,7 +145,7 @@ def posts(ids: list[str]) -> dict[str, dict | None]:
         group = ids[start:start + BATCH]
         query = "query(" + ", ".join(f"$p{i}: PostId!" for i in range(len(group))) + ") { " + " ".join(
             f"p{i}: post(input: {{id: $p{i}}}) {{ {POST_FIELDS} }}" for i in range(len(group))) + " }"
-        answer = call(query, {f"p{i}": post_id for i, post_id in enumerate(group)})
+        answer = call(query, {f"p{i}": post_id for i, post_id in enumerate(group)}, kind)
         data = answer.get("data") or {}
         gone = {str((e.get("path") or [""])[0]) for e in answer.get("errors") or []
                 if (e.get("extensions") or {}).get("code") == "NOT_FOUND"}
@@ -150,13 +158,13 @@ def posts(ids: list[str]) -> dict[str, dict | None]:
             elif answer.get("data") is None:
                 # One missing post nulls the whole answer and only the first error is reported:
                 # ask about the others one by one (rare: only after a post was deleted in Buffer).
-                found.update(_one(post_id))
+                found.update(_one(post_id, kind))
             # anything else (a server error on that field): leave it out, and ask again later
     return found
 
 
-def _one(post_id: str) -> dict[str, dict | None]:
-    answer = call(f"query($p: PostId!) {{ post(input: {{id: $p}}) {{ {POST_FIELDS} }} }}", {"p": post_id})
+def _one(post_id: str, kind: str) -> dict[str, dict | None]:
+    answer = call(f"query($p: PostId!) {{ post(input: {{id: $p}}) {{ {POST_FIELDS} }} }}", {"p": post_id}, kind)
     node = (answer.get("data") or {}).get("post")
     if node:
         return {post_id: _post(node)}
@@ -164,9 +172,10 @@ def _one(post_id: str) -> dict[str, dict | None]:
     return {post_id: None} if "NOT_FOUND" in codes else {}
 
 
-def delete_post(post_id: str) -> None:
+def delete_post(post_id: str, kind: str) -> None:
     answer = call("mutation($input: DeletePostInput!) { deletePost(input: $input) { __typename "
-                  "... on DeletePostSuccess { id } ... on MutationError { message } } }", {"input": {"id": post_id}})
+                  "... on DeletePostSuccess { id } ... on MutationError { message } } }",
+                  {"input": {"id": post_id}}, kind)
     codes = {(e.get("extensions") or {}).get("code") for e in answer.get("errors") or []}
     if "NOT_FOUND" in codes:
         return          # already gone: that is what was asked

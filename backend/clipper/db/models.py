@@ -413,7 +413,7 @@ class Clip(Base):
 
 
 class Post(Base):
-    """An approved Short handed to Buffer to be published on one channel.
+    """An approved video handed to Buffer to be published on one channel.
 
     The video is a copy put online for Buffer (`media_key` in the bucket, see
     hosting.py): the file you approved, whatever is rendered afterwards.
@@ -430,7 +430,7 @@ class Post(Base):
         ForeignKey("storyboards.id", ondelete="SET NULL", name="fk_posts_storyboard_id"), index=True)
     title: Mapped[str] = mapped_column(Text, default="")
     channel_id: Mapped[str] = mapped_column(String(40))                 # Buffer's id of the channel
-    service: Mapped[str] = mapped_column(String(16))                    # instagram | tiktok
+    service: Mapped[str] = mapped_column(String(16))                    # instagram | tiktok | youtube
     channel_name: Mapped[str] = mapped_column(Text, default="")
     text: Mapped[str] = mapped_column(Text, default="")                 # the caption posted with the video
     ai_label: Mapped[bool] = mapped_column(Boolean, default=False)      # disclosed as AI-generated

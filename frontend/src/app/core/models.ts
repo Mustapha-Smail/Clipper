@@ -250,7 +250,7 @@ export interface SettingsBundle {
   default_clips_dir: string;
 }
 
-/** Whether approved Shorts can be scheduled: the Buffer key and the public bucket (.env). */
+/** Whether this feature can schedule through its Buffer account and the public bucket. */
 export interface PostingStatus {
   ready: boolean;
   buffer_key: boolean;
@@ -277,7 +277,7 @@ export interface BufferChannel {
 export type PostMode = 'queue' | 'at' | 'draft';
 export type PostStatus = 'queued' | 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'removed';
 
-/** An approved Short handed to Buffer for one channel. */
+/** An approved video handed to Buffer for one channel. */
 export interface Post {
   id: number;
   kind: 'clip' | 'storyboard';
@@ -305,6 +305,8 @@ export interface NewPost {
   ref_id: number;
   channel_ids: string[];
   text: string;
+  youtube_text: string;
+  title: string;
   mode: PostMode;
   due_at: string | null;
   ai_label: boolean;

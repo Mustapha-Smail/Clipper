@@ -436,10 +436,11 @@
             }
           </section>
         }
-        @if (b.has_video && b.review === 'approved' && b.format === 'short') {
+        @if (b.has_video && b.review === 'approved') {
           <section class="card publish">
-            <h3>Instagram and TikTok</h3>
-            <p class="small muted">Hands this approved Short to Buffer, which posts it at the time you choose.</p>
+            <h3>Post with Buffer</h3>
+            <p class="small muted">Hands this approved video to your Studio Buffer account. Long videos can go to YouTube;
+              Shorts can also go to Instagram and TikTok.</p>
             <app-post-scheduler kind="storyboard" [refId]="b.id" />
           </section>
         }

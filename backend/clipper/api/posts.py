@@ -1,4 +1,4 @@
-"""Scheduled posts: approved Shorts handed to Buffer for Instagram and TikTok."""
+"""Approved videos handed to feature-specific Buffer accounts."""
 
 import time
 
@@ -15,17 +15,21 @@ from . import schemas as s
 router = APIRouter(tags=["posts"])
 
 CHANNELS_TTL = 300          # seconds: Buffer counts requests, and channels rarely change
-_channels: dict = {"at": 0.0, "when": None, "list": []}
+_channels: dict[str, dict] = {
+    "clip": {"at": 0.0, "when": None, "list": []},
+    "storyboard": {"at": 0.0, "when": None, "list": []},
+}
 
 
-def _all_channels(fresh: bool = False) -> dict:
-    if fresh or not _channels["when"] or time.monotonic() - _channels["at"] > CHANNELS_TTL:
+def _all_channels(kind: str, fresh: bool = False) -> dict:
+    cached = _channels[kind]
+    if fresh or not cached["when"] or time.monotonic() - cached["at"] > CHANNELS_TTL:
         try:
-            found = buffer.channels()
+            found = buffer.channels(kind)
         except buffer.BufferError as err:
             raise HTTPException(502, str(err)) from err
-        _channels.update(at=time.monotonic(), when=utcnow(), list=found)
-    return _channels
+        cached.update(at=time.monotonic(), when=utcnow(), list=found)
+    return cached
 
 
 def post_out(post: Post) -> s.PostOut:
@@ -35,15 +39,15 @@ def post_out(post: Post) -> s.PostOut:
 
 
 @router.get("/posting", response_model=s.PostingStatus)
-def posting_status():
-    """Whether the Buffer key and the public bucket are set up."""
-    return posting.readiness()
+def posting_status(kind: str | None = Query(None, pattern="^(clip|storyboard)$")):
+    """Whether this feature's Buffer key and the public bucket are set up."""
+    return posting.readiness(kind)
 
 
 @router.get("/posting/channels", response_model=s.ChannelsOut)
-def channels(fresh: bool = False):
-    """Your Buffer channels a Short can go to. Asks Buffer at most every five minutes."""
-    cached = _all_channels(fresh)
+def channels(kind: str = Query("clip", pattern="^(clip|storyboard)$"), fresh: bool = False):
+    """Supported channels in one feature's Buffer account. Cached for five minutes."""
+    cached = _all_channels(kind, fresh)
     usable = [c for c in cached["list"] if c["service"] in posting.SERVICES]
     others = sorted({c["service"] for c in cached["list"]} - set(posting.SERVICES))
     return {"channels": usable, "others": others, "fetched_at": cached["when"]}
@@ -59,8 +63,10 @@ def draft(kind: str = Query(pattern="^(clip|storyboard)$"), ref_id: int = Query(
     try:
         posting.check(src)
     except posting.PostingError as err:
-        return {"text": src.text, "ai_label": src.ai, "allowed": False, "reason": str(err)}
-    return {"text": src.text, "ai_label": src.ai, "allowed": True}
+        return {"text": src.text, "youtube_text": src.youtube_text, "title": src.title,
+                "ai_label": src.ai, "short": src.short, "allowed": False, "reason": str(err)}
+    return {"text": src.text, "youtube_text": src.youtube_text, "title": src.title,
+            "ai_label": src.ai, "short": src.short, "allowed": True}
 
 
 @router.get("/posts", response_model=list[s.PostOut])
@@ -77,14 +83,15 @@ def list_posts(clip_id: int | None = None, storyboard_id: int | None = None,
 
 @router.post("/posts", response_model=s.JobOut, status_code=202)
 def schedule(body: s.PostCreate, db: Session = Depends(get_db)):
-    """Queue an approved Short for Buffer, one post per chosen channel."""
-    known = {c["id"]: c for c in _all_channels()["list"]}
+    """Queue an approved video for its feature's Buffer account, one post per chosen channel."""
+    known = {c["id"]: c for c in _all_channels(body.kind)["list"]}
     missing = [cid for cid in body.channel_ids if cid not in known]
     if missing:
         raise HTTPException(400, "One of those channels is no longer connected in Buffer. Reload the channels.")
     try:
         job = posting.request(db, body.kind, body.ref_id, [known[cid] for cid in dict.fromkeys(body.channel_ids)],
-                              body.text, body.mode, body.due_at, body.ai_label)
+                              body.text, body.mode, body.due_at, body.ai_label,
+                              title=body.title, youtube_text=body.youtube_text)
     except posting.PostingError as err:
         raise HTTPException(409, str(err)) from err
     if body.kind == "storyboard":
@@ -99,7 +106,7 @@ def schedule(body: s.PostCreate, db: Session = Depends(get_db)):
 def sync(db: Session = Depends(get_db)):
     """Ask Buffer now what became of the waiting posts (the worker also does it by itself)."""
     if not buffer.configured():
-        raise HTTPException(409, "BUFFER_API_KEY is not set in .env")
+        raise HTTPException(409, "Neither Buffer account key is set in .env")
     return jobs.enqueue(db, "post_sync", "Scheduled posts", {})
 
 

@@ -5,7 +5,7 @@ two or three short paragraphs, tags and hashtags), from the script's own text.
 Everything factual that can be listed is assembled by code: chapters from the
 take's timing, the sources the fact check relied on (numbered as in the
 research), and the credit lines for pictures and music. You edit the result
-and copy it into YouTube Studio; nothing is uploaded for you.
+and either copy it into YouTube Studio or schedule it through Buffer.
 """
 
 import re
