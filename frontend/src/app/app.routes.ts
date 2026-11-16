@@ -27,14 +27,17 @@ export const routes: Routes = [
     title: 'Campaigns · Clipper',
     loadComponent: () => import('./pages/campaigns').then((m) => m.CampaignsPage),
   },
-  { path: 'ideas', redirectTo: 'themes' },
-  { path: 'scripts', redirectTo: 'themes' },
+  // only the old list address: 'ideas/:id' pages must not be caught by it
+  { path: 'ideas', pathMatch: 'full', redirectTo: 'themes' },
+  // only the old list address: 'scripts/:id' pages must not be caught by it
+  { path: 'scripts', pathMatch: 'full', redirectTo: 'themes' },
   {
     path: 'scripts/:id',
     title: 'Script · Clipper',
     loadComponent: () => import('./pages/script').then((m) => m.ScriptPage),
   },
-  { path: 'animations', redirectTo: 'themes' },
+  // only the old list address: 'animations/:id' pages must not be caught by it
+  { path: 'animations', pathMatch: 'full', redirectTo: 'themes' },
   {
     path: 'storyboards/:id',
     title: 'Storyboard · Clipper',
