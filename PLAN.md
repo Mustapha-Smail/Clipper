@@ -1,6 +1,6 @@
 # Clipping pipeline: plan
 
-Version 2 (2026-11-16, branch `v2`, waiting for review): the Studio is organised by theme, from the first idea to the published video; each theme reads its videos' statistics (Buffer for posted Shorts, YouTube for long videos linked by hand), ranks them with shown arithmetic, draws lessons on request, and can generate ideas built on what worked. Every system prompt is a file the Prompts page can edit and reset. New navigation (Themes home, theme workspace, ⌘K switcher) and a refreshed design.
+Version 2.0.0 (released 2026-11-17): the Studio is organised by theme, from the first idea to the published video; each theme reads its videos' statistics (Buffer for posted Shorts, YouTube for long videos linked by hand), ranks them with shown arithmetic, draws lessons on request, and can generate ideas built on what worked. Every system prompt is a file the Prompts page can edit and reset. New navigation (Themes home, theme workspace, ⌘K switcher) and a refreshed design.
 
 Status (2026-11-12): Phases 1 to 3 are done. Campaigns can be pasted or scouted from public listings, are ranked with an explained score, and feed their rules into a video's brief. Open in Phase 3: running the scout on a daily schedule. Next: Phase 4 (tracking views and payouts).
 
