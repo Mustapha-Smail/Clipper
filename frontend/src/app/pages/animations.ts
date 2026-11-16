@@ -22,8 +22,8 @@ const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'
       <div class="page-head">
         <div>
           <h1>Animations</h1>
-          <p class="muted">Review every Studio video here. Ready Shorts are scheduled from Approved; long videos are
-            published manually from their Publish tab.</p>
+          <p class="muted">Review every Studio video here. Ready Shorts are scheduled from Approved and can be undone
+            from Published; long videos are published manually from their Publish tab.</p>
         </div>
         <div class="head-tools">
         <div class="tabs" role="tablist">
@@ -68,7 +68,7 @@ const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'
                   @if (line(b); as text) { <span class="small posted">{{ text }}</span> }
                 </div>
               </a>
-              @if (tab() === 'approved' && b.format === 'short') {
+              @if ((tab() === 'approved' || tab() === 'published' && !b.published_at) && b.format === 'short') {
                 <div class="handoff">
                   @if (b.publish_ready) {
                     <app-post-scheduler kind="storyboard" [refId]="b.id" />

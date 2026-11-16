@@ -6,7 +6,7 @@ import {
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
-  SystemStatus, ThumbnailEdit, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
+  SystemStatus, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -417,6 +417,10 @@ export class Api {
   }
   cancelPost(id: number): Observable<Post> {
     return this.http.delete<Post>(`${BASE}/posts/${id}`);
+  }
+  /** Take back every post of a video that has not gone out yet. */
+  undoPublish(kind: 'clip' | 'storyboard', refId: number): Observable<UndoResult> {
+    return this.http.post<UndoResult>(`${BASE}/posts/undo`, { kind, ref_id: refId });
   }
   syncPosts(): Observable<Job> {
     return this.http.post<Job>(`${BASE}/posts/sync`, {});

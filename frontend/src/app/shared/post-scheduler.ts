@@ -32,9 +32,15 @@ const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube:
     <div class="box">
       <div class="row spread">
         <strong class="small">Post it</strong>
-        @if (!open()) {
-          <button class="sm" (click)="start()">{{ mine().length ? 'Schedule again' : 'Schedule' }}</button>
-        }
+        <span class="row tight">
+          @if (undoable().length > 1) {
+            <button class="sm quiet danger" (click)="undoAll()" [disabled]="busy()"
+                    title="Delete every waiting post of this video from Buffer">Undo all</button>
+          }
+          @if (!open()) {
+            <button class="sm" (click)="start()">{{ mine().length ? 'Schedule again' : 'Schedule' }}</button>
+          }
+        </span>
       </div>
 
       @for (post of mine(); track post.id) {
@@ -56,7 +62,10 @@ const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube:
             }
           </span>
           @if (cancellable(post)) {
-            <button class="sm quiet danger" (click)="cancel(post)" [disabled]="busy()">Cancel</button>
+            <button class="sm quiet danger" (click)="cancel(post)" [disabled]="busy()"
+                    title="Delete it from Buffer before it goes out">Undo</button>
+          } @else if (post.status === 'sent') {
+            <span class="small muted" title="Buffer cannot take back a post that is out">Delete it on {{ service(post.service) }} to undo</span>
           }
         </div>
       }
@@ -163,6 +172,7 @@ const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube:
       gap: 8px 10px;
       align-items: center;
     }
+    .tight { gap: 6px; }
     .where { font-weight: 650; }
     .where .muted { font-weight: 400; }
     .grow { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
@@ -256,6 +266,9 @@ export class PostScheduler {
     return STATUS[post.status] ?? [post.status, ''];
   }
 
+  /** Posts that can still be taken back before they go out. */
+  protected readonly undoable = computed(() => this.mine().filter((p) => this.cancellable(p)));
+
   protected cancellable(post: Post): boolean {
     return WAITING.has(post.status) || post.status === 'failed' && post.hosted;
   }
@@ -340,6 +353,30 @@ export class PostScheduler {
       .filter((c) => this.channelAllowed(c) && !c.disconnected && !c.locked && !waiting.has(c.id)).map((c) => c.id)));
   }
 
+  protected async undoAll(): Promise<void> {
+    const names = [...new Set(this.undoable().map((p) => this.service(p.service)))].join(', ');
+    const sent = this.mine().filter((p) => p.status === 'sent').length;
+    if (!(await this.confirm.ask({
+      title: 'Undo the publish?',
+      message: `The waiting posts (${names}) are deleted from Buffer before they go out. `
+        + (sent ? 'Posts already out stay: delete those on the network. ' : '')
+        + 'The video is kept, still approved.',
+      confirm: 'Undo all', cancel: 'Keep them', danger: true }))) return;
+    this.busy.set(true);
+    this.api.undoPublish(this.kind(), this.refId()).subscribe({
+      next: (result) => {
+        this.busy.set(false);
+        result.undone.forEach((p) => this.store.replace(p));
+        if (result.failed.length) this.toasts.error(`Not undone: ${result.failed.join('; ')}`);
+        else this.toasts.ok(`Undone: ${result.undone.length} post${result.undone.length === 1 ? '' : 's'}`);
+      },
+      error: (err) => {
+        this.busy.set(false);
+        this.toasts.error(err);
+      },
+    });
+  }
+
   protected submit(): void {
     const at = this.mode() === 'at' ? new Date(this.when()) : null;
     if (at && Number.isNaN(at.getTime())) {
@@ -372,15 +409,16 @@ export class PostScheduler {
 
   protected async cancel(post: Post): Promise<void> {
     if (!(await this.confirm.ask({
-      title: `Cancel the ${this.service(post.service)} post?`,
-      message: 'It is deleted in Buffer and the hosted copy of the video is taken down. The clip itself is kept.',
-      confirm: 'Cancel the post', cancel: 'Keep it', danger: true }))) return;
+      title: `Undo the ${this.service(post.service)} post?`,
+      message: 'It is deleted from Buffer before it goes out, and the online copy of the video is taken down. '
+        + 'The video itself is kept, still approved: you can schedule it again.',
+      confirm: 'Undo the post', cancel: 'Keep it', danger: true }))) return;
     this.busy.set(true);
     this.api.cancelPost(post.id).subscribe({
       next: (updated) => {
         this.busy.set(false);
         this.store.replace(updated);
-        this.toasts.ok('Post cancelled');
+        this.toasts.ok(`${this.service(post.service)} post undone`);
       },
       error: (err) => {
         this.busy.set(false);

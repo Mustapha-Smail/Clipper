@@ -74,6 +74,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   (approved, Short, metadata ready, file on disk), run when asked and again by
   the `post` job before it uploads; the review routes refuse to un-approve while
   `posting.has_live`.
+  Undo (`posting.cancel` one post, `posting.undo` every waiting post of a
+  video, route `POST /posts/undo`) deletes the post on Buffer before it goes
+  out; a post undone while the job is creating it is deleted there by
+  `schedule`. A sent post cannot be taken back through Buffer: say so. The
+  posts and their Undo stay with the video once it moves to Published.
   Buffer has no upload, so the job copies the file to a Cloudflare R2 bucket
   (`hosting.py`, S3 calls signed by hand, checked against AWS's published
   signatures in the tests) under an unguessable key, and `release_media`

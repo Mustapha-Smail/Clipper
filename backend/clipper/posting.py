@@ -9,7 +9,8 @@ share one uploaded copy of the video.
   upload()    stage 1: copy the approved file to the public bucket (hosting.py)
   schedule()  stage 2: create the posts on Buffer (buffer.py)
   sync()      ask Buffer what became of them; delete the hosted copy when no post needs it
-  cancel()    delete the post on Buffer
+  cancel()    take one post back: delete it on Buffer before it goes out
+  undo()      take back every post of a video that has not gone out yet
 
 The hosted copy is the file you approved: rendering the clip again later does
 not change what was scheduled. Rejecting a video that has a post waiting is
@@ -304,6 +305,16 @@ def schedule(post_ids: list[int], rep: Reporter) -> str:
         with session_scope() as db:
             post = db.get(Post, post_id)
             post.buffer_id = state["id"]
+            if post.status == "cancelled":
+                # You undid it while Buffer was taking it: take it back there too, or it would go out.
+                try:
+                    buffer.delete_post(state["id"], post.kind)
+                    rep.info(f"{name}: undone while it was being sent; deleted from Buffer")
+                except buffer.BufferError as err:
+                    post.status, post.error = "scheduled", f"Undone too late, Buffer kept it: {err}"[:1000]
+                    rep.warn(f"{name}: you undid it while it was being sent, but Buffer would not delete it ({err}). "
+                             "Undo it again, or delete it in Buffer.")
+                continue
             _apply(post, state)
             done.append(f"{name}: {_when(post)}")
             rep.info(done[-1][0].upper() + done[-1][1:])
@@ -376,10 +387,15 @@ def sync(rep: Reporter | None = None, due_only: bool = False) -> int:
 
 
 def cancel(db: Session, post: Post) -> None:
-    """Take a post back: delete it on Buffer, then the hosted copy if nothing else needs it."""
+    """Take a post back: delete it on Buffer, then the hosted copy if nothing else needs it.
+
+    A post still being sent to Buffer (status queued) is marked cancelled at once; the job
+    deletes it on Buffer if Buffer took it in the meantime (`schedule`).
+    """
     if not needs_media(post):
-        raise PostingError({"sent": "It was already posted: delete it on the network itself",
-                            "cancelled": "It is already cancelled"}.get(post.status, "There is nothing left to cancel"))
+        raise PostingError({"sent": f"It was already posted on {SERVICES.get(post.service, post.service)}: "
+                                    "Buffer cannot take it back, delete it on the network itself",
+                            "cancelled": "It is already undone"}.get(post.status, "There is nothing left to undo"))
     if post.buffer_id:
         try:
             buffer.delete_post(post.buffer_id, post.kind)
@@ -388,3 +404,21 @@ def cancel(db: Session, post: Post) -> None:
     post.status, post.error = "cancelled", None
     db.flush()
     release_media(db, post.media_key)
+
+
+def undo(db: Session, kind: str, ref_id: int) -> dict:
+    """Take back every post of a video that has not gone out. Posts already out are listed, not touched.
+
+    Returns {"undone": [Post], "failed": ["Instagram (name): why"], "sent": [Post]}.
+    """
+    posts = db.scalars(select(Post).where(Post.kind == kind, _refs(kind, ref_id)).order_by(Post.id)).all()
+    out: dict = {"undone": [], "failed": [], "sent": [p for p in posts if p.status == "sent"]}
+    for post in posts:
+        if not needs_media(post):
+            continue
+        try:
+            cancel(db, post)
+            out["undone"].append(post)
+        except PostingError as err:
+            out["failed"].append(f"{SERVICES.get(post.service, post.service)} ({post.channel_name}): {err}")
+    return out

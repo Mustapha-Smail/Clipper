@@ -280,7 +280,7 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
             raise HTTPException(409, "This long video is marked as published. Move it back to Approved first.")
         if body.review != "approved" and posting.has_live(db, "storyboard", board.id):
             raise HTTPException(409, "A post of this video is waiting on Buffer. "
-                                     "Cancel it before taking back the approval.")
+                                     "Undo it (Animations, Published) before taking back the approval.")
         if body.review != board.review:
             compliance.record(db, board.script_id, "review", "you",
                               {"approved": "Watched and approved the video",

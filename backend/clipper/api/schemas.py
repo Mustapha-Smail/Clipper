@@ -449,6 +449,18 @@ class PostOut(Model):
     hosted: bool = False            # a copy of the video is online for Buffer
 
 
+class UndoRequest(BaseModel):
+    kind: Literal["clip", "storyboard"]
+    ref_id: int
+
+
+class UndoOut(BaseModel):
+    """What an undo did: posts taken back, those Buffer refused, and those already out (untouched)."""
+    undone: list[PostOut]
+    failed: list[str] = []
+    sent: list[PostOut] = []
+
+
 # --- settings and system ---------------------------------------------------------------
 
 class FontChoice(BaseModel):

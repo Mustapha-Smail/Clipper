@@ -494,14 +494,12 @@
         }
         @if (b.has_video && b.review === 'approved' && b.format === 'short') {
           <section class="card publish">
-            <h3>Schedule this Short</h3>
+            <h3>Post this Short</h3>
             @if (b.publish_ready) {
-              <p class="small muted">The publishing details are ready. Schedule it from the Approved tab so all ready Shorts
-                can be handled in one place.</p>
-              <a class="btn primary" routerLink="/animations" [queryParams]="{ tab: 'approved' }">Open Approved Shorts</a>
+              <app-post-scheduler kind="storyboard" [refId]="b.id" />
             } @else {
-              <div class="notice small"><span>Finish and save the YouTube title and description above. The Buffer scheduler
-                appears on this Short in Animations → Approved once the details are valid.</span></div>
+              <div class="notice small"><span>Finish and save the YouTube title and description above to schedule it on
+                Buffer.</span></div>
             }
           </section>
         }

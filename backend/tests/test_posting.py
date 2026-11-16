@@ -405,7 +405,7 @@ def test_cancelling_deletes_the_post_on_buffer_and_the_video(ready, clip, world,
     posting.upload(ids, Log())
     posting.schedule(ids, Log())
     refused = client.patch(f"/api/v1/clips/{clip}", json={"status": "rejected"})
-    assert refused.status_code == 409 and "Cancel it" in refused.json()["detail"]
+    assert refused.status_code == 409 and "Undo it" in refused.json()["detail"]
 
     cancelled = client.delete(f"/api/v1/posts/{ids[0]}").json()
     assert cancelled["status"] == "cancelled" and cancelled["hosted"] is False
@@ -453,3 +453,52 @@ def test_scheduling_through_the_api(ready, clip, world, client, monkeypatch):
     assert [(p["status"], p["service"], p["title"]) for p in listed] == [("queued", "tiktok", "First")]
     again = client.post("/api/v1/posts", json={"kind": "clip", "ref_id": clip, "channel_ids": ["chan-tiktok"]})
     assert again.status_code == 409 and "already has a post waiting" in again.json()["detail"]
+
+
+def test_undo_takes_back_every_waiting_post_of_a_video_and_leaves_sent_ones(ready, clip, world, client):
+    ids = ask(clip, channels=[TIKTOK, INSTAGRAM])
+    posting.upload(ids, Log())
+    posting.schedule(ids, Log())
+    world["posts"]["buf-2"].update(status="sent", sent_at="2026-12-01T17:00:09.000Z", link="https://ig/p/1")
+    posting.sync()
+    undone = client.post("/api/v1/posts/undo", json={"kind": "clip", "ref_id": clip}).json()
+    assert [p["service"] for p in undone["undone"]] == ["tiktok"] and undone["failed"] == []
+    assert [p["service"] for p in undone["sent"]] == ["instagram"]
+    assert world["deleted"] == [("buf-1", "clip")] and statuses() == ["cancelled", "sent"]
+    again = client.post("/api/v1/posts/undo", json={"kind": "clip", "ref_id": clip})
+    assert again.status_code == 409 and "already posted" in again.json()["detail"]
+
+
+def test_undo_while_buffer_takes_the_post_deletes_it_there_too(ready, clip, world):
+    ids = ask(clip)
+    posting.upload(ids, Log())
+    real = buffer.create_post
+
+    def undone_meanwhile(*args, **kwargs):
+        made = real(*args, **kwargs)
+        with session_scope() as db:          # you pressed Undo while Buffer was answering
+            posting.cancel(db, db.get(Post, ids[0]))
+        return made
+    buffer.create_post = undone_meanwhile
+    log = Log()
+    try:
+        assert posting.schedule(ids, log) == "Done: nothing was left to schedule"
+    finally:
+        buffer.create_post = real
+    assert statuses() == ["cancelled"] and world["deleted"] == [("buf-1", "clip")]
+    assert any("undone while it was being sent" in line for line in log.lines)
+
+
+def test_a_studio_undo_is_recorded_as_your_step(ready, studio_short, world, client):
+    from clipper.db.models import StudioEvent
+
+    with session_scope() as db:
+        board = db.get(Storyboard, studio_short)
+        board.youtube = {"title": "Blue light", "description": "Why LEDs look blue.", "tags": [], "problems": []}
+    ids = ask_board(studio_short)
+    posting.upload(ids, Log())
+    posting.schedule(ids, Log())
+    assert client.post("/api/v1/posts/undo", json={"kind": "storyboard", "ref_id": studio_short}).status_code == 200
+    with session_scope() as db:
+        kinds = [e.kind for e in db.scalars(select(StudioEvent))]
+    assert "unschedule" in kinds

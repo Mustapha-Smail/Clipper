@@ -55,7 +55,7 @@ def list_clips(status: str | None = Query(None, pattern="^(pending|approved|reje
 @clips.patch("/{clip_id}", response_model=s.ClipOut)
 def review_clip(body: s.ClipPatch, clip: Clip = Depends(get_clip), db: Session = Depends(get_db)):
     if body.status != "approved" and posting.has_live(db, "clip", clip.id):
-        raise HTTPException(409, "A post of this clip is waiting on Buffer. Cancel it before taking back the approval.")
+        raise HTTPException(409, "A post of this clip is waiting on Buffer. Undo it before taking back the approval.")
     clip.status = body.status
     return clip_out(clip)
 

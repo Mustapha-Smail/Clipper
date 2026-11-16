@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import buffer, jobs, posting
 from ..db import get_db
-from ..db.models import Post, utcnow
+from ..db.models import Post, Storyboard, utcnow
 from ..studio import compliance
 from . import schemas as s
 
@@ -110,9 +110,23 @@ def sync(db: Session = Depends(get_db)):
     return jobs.enqueue(db, "post_sync", "Scheduled posts", {})
 
 
+def _record_undo(db: Session, posts: list[Post]) -> None:
+    """Studio videos keep who did what: an undo is your step."""
+    boards = {}
+    for post in posts:
+        if post.kind == "storyboard" and post.storyboard_id:
+            boards.setdefault(post.storyboard_id, []).append(posting.SERVICES.get(post.service, post.service))
+    for board_id, names in boards.items():
+        board = db.get(Storyboard, board_id)
+        if board is not None:
+            compliance.record(db, board.script_id, "unschedule", "you",
+                              f"Took the video back from Buffer on {', '.join(dict.fromkeys(names))}",
+                              storyboard_id=board_id)
+
+
 @router.delete("/posts/{post_id}", response_model=s.PostOut)
 def cancel(post_id: int, db: Session = Depends(get_db)):
-    """Cancel a waiting post: it is deleted on Buffer and its hosted video is taken down."""
+    """Undo a waiting post: it is deleted on Buffer and its hosted video is taken down."""
     post = db.get(Post, post_id)
     if post is None:
         raise HTTPException(404, "Post not found")
@@ -120,4 +134,18 @@ def cancel(post_id: int, db: Session = Depends(get_db)):
         posting.cancel(db, post)
     except posting.PostingError as err:
         raise HTTPException(409, str(err)) from err
+    _record_undo(db, [post])
     return post_out(post)
+
+
+@router.post("/posts/undo", response_model=s.UndoOut)
+def undo(body: s.UndoRequest, db: Session = Depends(get_db)):
+    """Undo the publish of a video: every post not yet out is deleted on Buffer. Posts already out stay."""
+    result = posting.undo(db, body.kind, body.ref_id)
+    if not result["undone"] and not result["failed"]:
+        reason = "It was already posted: Buffer cannot take it back, delete it on the network itself" \
+            if result["sent"] else "Nothing is waiting to be posted"
+        raise HTTPException(409, reason)
+    _record_undo(db, result["undone"])
+    return {"undone": [post_out(p) for p in result["undone"]], "failed": result["failed"],
+            "sent": [post_out(p) for p in result["sent"]]}

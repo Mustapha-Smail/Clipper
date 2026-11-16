@@ -279,6 +279,13 @@ export type PostMode = 'queue' | 'at' | 'draft';
 export type PostStatus = 'queued' | 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'removed';
 
 /** An approved video handed to Buffer for one channel. */
+/** What "Undo all" did: posts taken back, those Buffer refused, and those already out (left alone). */
+export interface UndoResult {
+  undone: Post[];
+  failed: string[];
+  sent: Post[];
+}
+
 export interface Post {
   id: number;
   kind: 'clip' | 'storyboard';
