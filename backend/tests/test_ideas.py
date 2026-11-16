@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from idea_jobs import generate
 
 from clipper.db.models import Idea
 from clipper.studio import ideas, youtube
@@ -137,12 +138,12 @@ def fake_claude(monkeypatch):
 
 
 def test_generate_validate_decide_and_edit(client, fake_claude):
-    made = client.post("/api/v1/ideas/generate", json={"count": 3}).json()
+    made = generate(client, count=3)
     assert [i["title"] for i in made] == ["Idea 0", "Idea 1", "Idea 2"]
     assert fake_claude["theme"] == "How everyday things secretly work"
     assert made[0]["score"] is None
 
-    client.post("/api/v1/ideas/generate", json={"count": 1, "theme": "Odd history"})
+    generate(client, count=1, theme="Odd history")
     assert fake_claude["existing"] == ["Idea 0", "Idea 1", "Idea 2"]   # Claude is told what you already have
 
     checked = client.post(f"/api/v1/ideas/{made[1]['id']}/validate").json()
@@ -172,7 +173,7 @@ def test_theme_suggestions_avoid_existing_themes(client, monkeypatch):
     monkeypatch.setattr(llm, "ask", fake_ask)
     monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
         ideas.Draft(title="T", hook="h", answer="a", angle="x", format="single", search_query="q", beats=[])])
-    client.post("/api/v1/ideas/generate", json={"count": 1, "theme": "Odd history"})
+    generate(client, count=1, theme="Odd history")
 
     themes = client.post("/api/v1/ideas/themes", json={}).json()
     assert len(themes) == 5 and themes[0] == {"theme": "Theme 0", "why": "Because", "example": "Ex"}

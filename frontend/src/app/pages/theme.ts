@@ -104,6 +104,8 @@ export class ThemePage {
   protected duration(seconds: number): string {
     return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
   }
+  /** A batch of ideas is being written for this theme. */
+  protected readonly writing = computed(() => this.jobs.active().some((j) => j.kind === 'ideas' && j.theme_id === this.id()));
   protected readonly ideaMode = signal<'fresh' | 'proven' | null>(null);
 
   // settings form

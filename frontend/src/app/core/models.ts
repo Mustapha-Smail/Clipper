@@ -12,6 +12,8 @@ export interface Job {
   script_id: number | null;
   take_id: number | null;
   storyboard_id: number | null;
+  /** Theme jobs (ideas, banner). */
+  theme_id?: number | null;
   state: JobState;
   stages: string[];
   stage: string | null;

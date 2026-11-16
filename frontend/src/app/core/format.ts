@@ -109,12 +109,13 @@ export const KIND_NAMES: Record<string, string> = {
   post_sync: 'Buffer check',
   stats: 'Views and reactions',
   banner: 'Theme banner',
+  ideas: 'Ideas',
 };
 
 /** Which part of the work a job belongs to, for the Activity filters. */
 export const KIND_AREAS: Record<string, 'Studio' | 'Publishing' | 'Clipping'> = {
   script: 'Studio', redraft: 'Studio', spoken: 'Studio', simpler: 'Studio', factcheck: 'Studio', voice_ai: 'Studio',
   voice_rec: 'Studio', align: 'Studio', storyboard: 'Studio', animate: 'Studio', direct: 'Studio', thumbnails: 'Studio',
-  banner: 'Studio', post: 'Publishing', post_sync: 'Publishing', stats: 'Publishing',
+  banner: 'Studio', ideas: 'Studio', post: 'Publishing', post_sync: 'Publishing', stats: 'Publishing',
   process: 'Clipping', select: 'Clipping', render: 'Clipping', check: 'Clipping', subtitles: 'Clipping', scout: 'Clipping',
 };

@@ -427,3 +427,48 @@ code {
     }
   }
 }
+
+// A batch of ideas being written: shown whenever you come back while it runs.
+.writing {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: var(--accent-soft);
+  animation: page-in var(--med) var(--ease);
+
+  .grow {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.pen {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent-ink);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.idea-skeleton {
+  height: 150px;
+}

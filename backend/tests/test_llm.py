@@ -1,6 +1,7 @@
 from types import SimpleNamespace as NS
 
 import pytest
+from idea_jobs import generate
 from pydantic import BaseModel
 
 from clipper import llm, openai_compat
@@ -195,7 +196,7 @@ def test_generated_ideas_wait_in_the_inbox(client, monkeypatch):
     monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
         ideas.Draft(title=seed or f"Idea {i}", hook="h", answer="a", angle="x", format="single", search_query="q",
                     beats=[]) for i in range(1 if seed else count)])
-    made = client.post("/api/v1/ideas/generate", json={"count": 2, "theme": "Odd history"}).json()
+    made = generate(client, count=2, theme="Odd history")
     assert [i["status"] for i in made] == ["inbox", "inbox"] and made[0]["theme"] == "Odd history"
     mine = client.post("/api/v1/ideas", json={"text": "Why ships float"}).json()
     assert mine["status"] == "new"                           # your own ideas skip the inbox

@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 import pytest
+from idea_jobs import generate
 from sqlalchemy import select
 
 from clipper import buffer, posting, prompts
@@ -110,7 +111,7 @@ def test_themes_api_create_rename_merge_and_archive(client, monkeypatch):
     a = client.post("/api/v1/themes", json={"name": "Odd history", "description": "Strange rules"}).json()
     b = client.post("/api/v1/themes", json={"name": "Odd laws"}).json()
     assert client.post("/api/v1/themes", json={"name": "odd history"}).status_code == 409
-    made = client.post("/api/v1/ideas/generate", json={"count": 2, "theme_id": a["id"]}).json()
+    made = generate(client, count=2, theme_id=a["id"])
     assert all(i["theme_id"] == a["id"] and i["theme"] == "Odd history" for i in made)
     assert len(client.get(f"/api/v1/ideas?theme_id={a['id']}").json()) == 2
 
@@ -208,8 +209,7 @@ def test_proven_examples_put_the_evidence_first_and_new_ideas_say_what_they_buil
                                   search_query="q", beats=[], inspired_by=[1, 1, 9], why_now="Same hook as Big")]
 
     monkeypatch.setattr(ideas, "generate_proven", fake_proven)
-    made = client.post("/api/v1/ideas/generate", json={"count": 1, "theme_id": theme_id, "mode": "proven",
-                                                      "hint": "kings"}).json()
+    made = generate(client, count=1, theme_id=theme_id, mode="proven", hint="kings")
     assert seen["examples"].startswith("[1] \"Big\" (video, published: 9,000 views")
     assert "Kept and approved" in seen["examples"] and seen["rejected"] == ["Rejected"] and seen["hint"] == "kings"
     assert made[0]["inspired_by"] == [{"kind": "video", "id": made[0]["inspired_by"][0]["id"], "title": "Big",
@@ -424,8 +424,7 @@ def test_you_choose_which_proven_examples_new_ideas_build_on(client, monkeypatch
                                   beats=[], inspired_by=[1], why_now="Same")]
 
     monkeypatch.setattr(ideas, "generate_proven", fake_proven)
-    made = client.post("/api/v1/ideas/generate", json={"count": 1, "theme_id": theme_id, "mode": "proven",
-                                                      "examples": [f"idea:{kept_id}"]}).json()
+    made = generate(client, count=1, theme_id=theme_id, mode="proven", examples=[f"idea:{kept_id}"])
     assert seen["examples"].startswith("[1] \"Kept and approved\"") and "Big" not in seen["examples"]
     assert made[0]["inspired_by"][0]["title"] == "Kept and approved"
 
@@ -443,3 +442,30 @@ def test_board_items_say_whether_the_voice_is_done(client):
     item = client.get(f"/api/v1/themes/{theme_id}").json()["items"][0]
     assert item["voiced"] and item["words"] == 3 and item["take"] == {"source": "kokoro", "voice": "am_michael",
                                                                       "duration": 12.5}
+
+
+def test_ideas_are_written_by_a_job_you_can_come_back_to(client, monkeypatch):
+    from clipper import worker
+
+    seen = {}
+
+    def fake_generate(theme, count, existing, seed=""):
+        seen["theme"] = theme
+        return [ideas.Draft(title=f"Idea {i}", hook="h", answer="a", angle="x", format="single", search_query="q",
+                            beats=[]) for i in range(count)]
+
+    monkeypatch.setattr(ideas, "generate", fake_generate)
+    theme = client.post("/api/v1/themes", json={"name": "Odd rules"}).json()
+    first = client.post("/api/v1/ideas/generate", json={"count": 2, "theme_id": theme["id"], "hint": "kings"}).json()
+    again = client.post("/api/v1/ideas/generate", json={"count": 5, "theme_id": theme["id"]}).json()
+    assert first["kind"] == "ideas" and first["theme_id"] == theme["id"] and again["id"] == first["id"]
+    listed = [j for j in client.get("/api/v1/jobs").json() if j["kind"] == "ideas"]
+    assert listed[0]["state"] == "queued" and listed[0]["theme_id"] == theme["id"]   # what the page shows on return
+    assert client.get(f"/api/v1/ideas?theme_id={theme['id']}").json() == []
+
+    worker.run_job(first["id"])
+    done = client.get(f"/api/v1/jobs/{first['id']}").json()
+    assert done["state"] == "succeeded" and done["message"] == "2 new ideas waiting to be sorted"
+    assert "Lean towards: kings" in seen["theme"]
+    made = client.get(f"/api/v1/ideas?theme_id={theme['id']}").json()
+    assert sorted(i["title"] for i in made) == ["Idea 0", "Idea 1"] and {i["status"] for i in made} == {"inbox"}

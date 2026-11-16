@@ -23,6 +23,7 @@ from .studio import animate as animate_mod
 from .studio import banner as banner_mod
 from .studio import compliance, learning, retention
 from .studio import director as director_mod
+from .studio import ideas as ideas_mod
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
 from .studio import thumbnail as thumbnail_mod
@@ -46,7 +47,8 @@ def run_job(job_id: int) -> None:
     started = time.monotonic()
     llm.job_ref = (f"storyboard:{params['storyboard_id']}" if params.get("storyboard_id")
                    else f"script:{params['script_id']}" if params.get("script_id")
-                   else f"video:{video_id}" if video_id else None)
+                   else f"video:{video_id}" if video_id
+                   else f"theme:{params['theme_id']}" if params.get("theme_id") else None)
     log.info("job started", extra={"job_id": job_id, "kind": kind, "video_id": video_id})
     try:
         settings = settings_mod.load()
@@ -81,6 +83,8 @@ def run_job(job_id: int) -> None:
                 done = posting.schedule(params["post_ids"], rep)
             elif stage == "sync":
                 posting.sync(rep)
+            elif stage == "ideas":
+                done = ideas_mod.run_generation(params, rep)
             elif stage == "banner":
                 done = banner_mod.draw(params["theme_id"], rep, params.get("note", ""))
             elif stage == "stats":

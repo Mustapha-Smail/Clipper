@@ -25,6 +25,7 @@ class JobOut(Model):
     script_id: int | None = None
     take_id: int | None = None
     storyboard_id: int | None = None
+    theme_id: int | None = None
     state: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     stages: list[str]
     stage: str | None

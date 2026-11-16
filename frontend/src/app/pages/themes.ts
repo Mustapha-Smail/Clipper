@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
 import { THEME_STAGES, Theme, ThemeStage } from '../core/models';
+import { JobsStore } from '../core/jobs-store';
 import { ThemesStore } from '../core/themes-store';
 import { Toasts } from '../core/toast';
 
@@ -91,7 +92,9 @@ type StatusFilter = 'active' | 'paused' | 'archived' | 'all';
                 <div class="top">
                   <span class="swatch"></span>
                   @if (t.status !== 'active') { <span class="pill">{{ t.status }}</span> }
-                  @if (store.attention(t); as n) {
+                  @if (writingFor().has(t.id)) {
+                    <span class="waiting small writing">Writing ideas…</span>
+                  } @else if (store.attention(t); as n) {
                     <span class="waiting small">{{ n }} waiting for you</span>
                   }
                 </div>
@@ -193,7 +196,8 @@ type StatusFilter = 'active' | 'paused' | 'archived' | 'all';
       pointer-events: none;
     }
     .top { display: flex; justify-content: space-between; align-items: center; position: relative; min-height: 22px; }
-    .waiting { padding: 1px 9px; border-radius: 99px; background: var(--accent-soft); font-weight: 600; }
+    .waiting { padding: 1px 9px; border-radius: 99px; background: var(--accent-soft); font-weight: 600;
+      &.writing { animation: pulse 1.6s infinite ease-in-out; } }
     .about { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .pipe {
       list-style: none;
@@ -235,6 +239,10 @@ export class ThemesPage {
   private readonly toasts = inject(Toasts);
   private readonly router = inject(Router);
   protected readonly store = inject(ThemesStore);
+  private readonly jobs = inject(JobsStore);
+  /** Themes with a batch of ideas being written. */
+  protected readonly writingFor = computed(() =>
+    new Set(this.jobs.active().filter((j) => j.kind === 'ideas').map((j) => j.theme_id)));
   protected readonly stages = THEME_STAGES;
 
   protected readonly creating = signal(inject(ActivatedRoute).snapshot.queryParamMap.has('new'));

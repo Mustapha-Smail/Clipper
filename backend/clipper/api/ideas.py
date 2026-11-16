@@ -1,18 +1,16 @@
 """Studio ideas: generate them for a theme, check them against YouTube, decide."""
 
 import logging
-import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import llm
+from .. import jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import Idea, Script, Theme, utcnow
+from ..db.models import Idea, Job, Script, Theme
 from ..studio import ideas as ideas_mod
-from ..studio import learning
 from ..studio import themes as themes_mod
 from . import schemas as s
 
@@ -43,13 +41,8 @@ def _latest_scripts(db: Session) -> dict[int, int]:
                            .order_by(Script.id)).all())
 
 
-def _with_about(theme: Theme) -> str:
-    """The theme as the idea prompts get it: its name, and what it is about when you said."""
-    return theme.name + (f"\n{theme.description}" if theme.description else "")
-
-
 def _existing_titles(db: Session) -> list[str]:
-    return list(db.scalars(select(Idea.title).order_by(Idea.id)))
+    return ideas_mod.existing_titles(db)
 
 
 def _theme(db: Session, theme_id: int | None, name: str | None = None) -> Theme:
@@ -68,48 +61,23 @@ def list_ideas(theme_id: int | None = None, db: Session = Depends(get_db)):
     return sorted(items, key=lambda i: (i.score is None, -(i.score or 0), -i.id))
 
 
-@router.post("/generate", response_model=list[s.IdeaOut])
+@router.post("/generate", response_model=s.JobOut, status_code=202)
 def generate_ideas(body: s.IdeaGenerate, db: Session = Depends(get_db)):
-    """Ask the AI for new ideas on the theme. Takes up to a minute or two.
+    """Queue a batch of ideas for the theme (the `ideas` job); they land in its inbox when it is done.
 
-    `mode` proven builds them on the theme's best videos, approved scripts and kept ideas, and says
-    which ones each idea builds on."""
+    `mode` proven builds them on the theme's best videos, approved scripts and kept ideas you ticked, and
+    says which ones each idea builds on. A batch already on its way for the theme is returned instead."""
     theme = _theme(db, body.theme_id, body.theme)
-    started = time.monotonic()
-    examples: list[dict] = []
-    try:
-        with llm.attribute(f"theme:{theme.id}"):
-            if body.mode == "proven":
-                examples = learning.chosen(learning.proven(db, theme), body.examples)
-                if not examples:
-                    raise HTTPException(409, "Nothing is proven in this theme yet: keep or approve a few ideas, "
-                                             "or publish a video, then try again")
-                drafts = ideas_mod.generate_proven(
-                    theme.name, theme.description, body.count, _existing_titles(db),
-                    learning.examples_text(examples), learning.lessons_text(theme),
-                    learning.rejected_titles(db, theme.id), body.hint)
-            else:
-                drafts = ideas_mod.generate(_with_about(theme), body.count, _existing_titles(db))
-    except RuntimeError as err:
-        raise HTTPException(502, str(err)) from err
-    by_number = {e["n"]: e for e in examples}
-    created = []
-    for draft in drafts:
-        idea = Idea(theme=theme.name, theme_id=theme.id, origin="claude", status="inbox")   # waits until kept
-        ideas_mod.apply_draft(idea, draft)
-        if examples:
-            idea.inspired_by = [{"kind": by_number[n]["kind"], "id": by_number[n]["id"],
-                                 "title": by_number[n]["title"], "evidence": by_number[n]["evidence"]}
-                                for n in dict.fromkeys(getattr(draft, "inspired_by", [])) if n in by_number][:3]
-            if getattr(draft, "why_now", ""):
-                idea.notes = f"Builds on: {draft.why_now}"
-        db.add(idea)
-        created.append(idea)
-    if created:
-        theme.updated_at = utcnow()
-    db.flush()
-    log.info("ideas generated", extra={"count": len(created), "duration_s": round(time.monotonic() - started, 1)})
-    return [idea_out(i) for i in created]
+    if body.mode == "proven" and not ideas_mod.proven_examples(db, theme, body.examples):
+        raise HTTPException(409, "Nothing is proven in this theme yet: keep or approve a few ideas, "
+                                 "or publish a video, then try again")
+    for job in db.scalars(select(Job).where(Job.kind == "ideas", Job.state.in_(jobs.ACTIVE))):
+        if job.theme_id == theme.id:
+            return job
+    what = "ideas built on what works" if body.mode == "proven" else "new ideas"
+    return jobs.enqueue(db, "ideas", f"{body.count} {what} for “{theme.name}”",
+                        {"theme_id": theme.id, "count": body.count, "mode": body.mode, "hint": body.hint.strip(),
+                         "examples": body.examples})
 
 
 @router.post("/themes", response_model=list[s.ThemeSuggestion])
@@ -131,7 +99,7 @@ def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
     """Your own idea: Claude develops it into a title, hook, beats and search."""
     theme = _theme(db, body.theme_id)
     try:
-        drafts = ideas_mod.generate(_with_about(theme), 1, _existing_titles(db), seed=body.text.strip())
+        drafts = ideas_mod.generate(ideas_mod.with_about(theme), 1, _existing_titles(db), seed=body.text.strip())
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
     if not drafts:

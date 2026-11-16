@@ -532,6 +532,11 @@ class Job(Base):
     def storyboard_id(self) -> int | None:
         return (self.params or {}).get("storyboard_id")
 
+    @property
+    def theme_id(self) -> int | None:
+        """Theme jobs (ideas, banner) carry their theme in params."""
+        return (self.params or {}).get("theme_id")
+
 
 class JobEvent(Base):
     """One log line of a job, shown in the UI and mirrored to the process log."""

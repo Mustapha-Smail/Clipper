@@ -32,6 +32,7 @@ STAGES = {
     "post_sync": ["sync"],
     "stats": ["stats"],
     "banner": ["banner"],
+    "ideas": ["ideas"],
     # Studio scripts
     "script": ["research", "write", "factcheck"],
     "redraft": ["write", "factcheck"],
@@ -59,6 +60,7 @@ STAGE_LABELS = {
     "sync": "Asking Buffer what was posted",
     "stats": "Reading views and reactions",
     "banner": "Drawing the theme's banner",
+    "ideas": "Writing new ideas",
     "research": "Researching with web sources",
     "write": "Writing the script",
     "factcheck": "Checking the facts",

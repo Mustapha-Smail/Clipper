@@ -116,6 +116,82 @@ def generate_proven(theme: str, about: str, count: int, existing: list[str], exa
     return drafts[:count]
 
 
+# --- a batch of ideas, as a worker job ---------------------------------------------------
+
+def with_about(theme) -> str:
+    """The theme as the idea prompts get it: its name, and what it is about when you said."""
+    return theme.name + (f"\n{theme.description}" if theme.description else "")
+
+
+def existing_titles(db) -> list[str]:
+    from sqlalchemy import select
+
+    return list(db.scalars(select(Idea.title).order_by(Idea.id)))
+
+
+def proven_examples(db, theme, keys: list[str]) -> list[dict]:
+    from . import learning
+
+    return learning.chosen(learning.proven(db, theme), keys)
+
+
+def run_generation(params: dict, rep) -> str:
+    """The `ideas` job: ask for a batch of ideas for a theme and leave them in its inbox. Returns the job's message.
+
+    params: theme_id, count, mode (fresh | proven), hint, examples (keys of the proven examples you kept)."""
+    from ..db import session_scope
+    from ..db.models import Theme, utcnow
+    from . import learning
+
+    count, mode, hint = int(params.get("count") or 8), params.get("mode", "fresh"), params.get("hint", "")
+    with session_scope() as db:
+        theme = db.get(Theme, params["theme_id"])
+        if theme is None:
+            raise RuntimeError("The theme was deleted")
+        existing = existing_titles(db)
+        if mode == "proven":
+            examples = proven_examples(db, theme, params.get("examples") or [])
+            if not examples:
+                raise RuntimeError("Nothing is proven in this theme any more: keep or approve a few ideas first")
+            prompt_parts = (theme.name, theme.description, learning.examples_text(examples),
+                            learning.lessons_text(theme), learning.rejected_titles(db, theme.id))
+        else:
+            examples, prompt_parts = [], None
+        name, about = theme.name, with_about(theme)
+    rep.info(f"Asking for {count} {'ideas built on what works' if mode == 'proven' else 'new ideas'} for “{name}”"
+             + (f", leaning towards: {hint}" if hint.strip() else "")
+             + (f", from {len(examples)} proven example{'s' if len(examples) != 1 else ''}" if examples else ""))
+    rep.progress(0.1)
+    with llm.attribute(f"theme:{params['theme_id']}"):
+        if prompt_parts:
+            theme_name, description, examples_text, lessons, rejected = prompt_parts
+            drafts = generate_proven(theme_name, description, count, existing, examples_text, lessons, rejected, hint)
+        else:
+            drafts = generate(about + (f"\nLean towards: {hint.strip()}" if hint.strip() else ""), count, existing)
+    rep.progress(0.9)
+    by_number = {e["n"]: e for e in examples}
+    with session_scope() as db:
+        theme = db.get(Theme, params["theme_id"])
+        if theme is None:
+            raise RuntimeError("The theme was deleted while the ideas were being written")
+        for draft in drafts:
+            idea = Idea(theme=theme.name, theme_id=theme.id, origin="claude", status="inbox")   # waits until kept
+            apply_draft(idea, draft)
+            if examples:
+                idea.inspired_by = [{"kind": by_number[n]["kind"], "id": by_number[n]["id"],
+                                     "title": by_number[n]["title"], "evidence": by_number[n]["evidence"]}
+                                    for n in dict.fromkeys(getattr(draft, "inspired_by", [])) if n in by_number][:3]
+                if getattr(draft, "why_now", ""):
+                    idea.notes = f"Builds on: {draft.why_now}"
+            db.add(idea)
+        if drafts:
+            theme.updated_at = utcnow()
+    for draft in drafts:
+        rep.info(f"“{draft.title}”")
+    log.info("ideas generated", extra={"theme_id": params["theme_id"], "count": len(drafts), "mode": mode})
+    return f"{len(drafts)} new idea{'s' if len(drafts) != 1 else ''} waiting to be sorted"
+
+
 def judge(idea: Idea, research: dict | None) -> Judgement:
     lines = []
     for v in (research or {}).get("videos", []):

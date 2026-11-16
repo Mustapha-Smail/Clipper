@@ -28,6 +28,23 @@
     </div>
   </div>
 
+  @if (ideaJob(); as j) {
+    <div class="writing" role="status" aria-live="polite">
+      <span class="pen" aria-hidden="true"></span>
+      <div class="grow">
+        <strong>{{ j.label }}</strong>
+        <span class="small muted">
+          @if (j.state === 'queued') {
+            @if (blockedBy(); as b) { Waiting for “{{ b.label }}” to finish first } @else { Starting… }
+          } @else {
+            Writing… usually under a minute · {{ since() }}
+          }
+        </span>
+      </div>
+      <a class="btn sm quiet" routerLink="/activity">Details</a>
+    </div>
+  }
+
   @if (tab() === 'generate') {
   <section class="card start">
     <div class="modes" role="radiogroup" aria-label="Kind of ideas">
@@ -76,8 +93,8 @@
                [placeholder]="genMode() === 'proven' ? 'For example: more about kings' : 'For example: food and kitchens'" /></label>
       <label class="field count"><span>Ideas</span>
         <input type="number" min="1" max="20" [(ngModel)]="count" /></label>
-      <button class="primary" (click)="generate()" [disabled]="generating() || target() === null">
-        {{ generating() ? 'Thinking… about a minute' : genMode() === 'proven' ? 'Build ideas' : 'Suggest ideas' }}</button>
+      <button class="primary" (click)="generate()" [disabled]="busy() || target() === null">
+        {{ busy() ? 'Writing ideas…' : genMode() === 'proven' ? 'Build ideas' : 'Suggest ideas' }}</button>
     </div>
     <label class="field audience"><span>Written for</span>
       <select [ngModel]="audience()" (ngModelChange)="setAudience($event)">
@@ -127,6 +144,9 @@
     }
 
     <div class="stack" style="margin-top:12px">
+      @if (tab() === 'generate' && ideaJob()) {
+        @for (n of [1, 2, 3]; track n) { <div class="skeleton idea-skeleton" aria-hidden="true"></div> }
+      }
       @for (group of groups(); track group.theme) {
         @if (!embedded() && (groups().length > 1 || !themeFilter())) {
           <h2 class="theme-head">{{ group.theme }} <span class="muted num">{{ group.ideas.length }}</span></h2>
@@ -303,6 +323,7 @@
         </article>
         }
       } @empty {
+        @if (!(tab() === 'generate' && ideaJob())) {
         <div class="empty">
           @if (tab() === 'generate') {
             No new ideas waiting. Ask for some above.
@@ -312,6 +333,7 @@
             Nothing in this list{{ themeFilter() ? ' for this theme' : '' }}.
           }
         </div>
+        }
       }
     </div>
   } @else {

@@ -2,9 +2,9 @@ import { Component, computed, effect, inject, input, output, signal, untracked }
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
-import { AgoPipe } from '../core/format';
+import { AgoPipe, elapsed } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo, ProvenExample } from '../core/models';
+import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo, Job, ProvenExample } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { ThemesStore } from '../core/themes-store';
@@ -80,7 +80,23 @@ export class IdeasPage {
     return hint.charAt(0).toUpperCase() + hint.slice(1);
   });
   protected readonly count = signal(8);
+  /** The request that queues a batch is on its way (a second or so). */
   protected readonly generating = signal(false);
+  /** The batch being written for this theme, found again whenever you come back to the page. */
+  protected readonly ideaJob = computed<Job | null>(() => this.store.jobs().find((j) => j.kind === 'ideas'
+    && j.theme_id === this.target() && (j.state === 'queued' || j.state === 'running')) ?? null);
+  protected readonly busy = computed(() => this.generating() || this.ideaJob() !== null);
+  /** A queued batch waits for the job the worker is on (one job at a time). */
+  protected readonly blockedBy = computed(() => {
+    const job = this.ideaJob();
+    return job?.state === 'queued' ? this.store.active().find((j) => j.state === 'running' && j.id !== job.id) ?? null : null;
+  });
+  protected readonly since = computed(() => {
+    this.store.tick();
+    const job = this.ideaJob();
+    return job ? elapsed(job.started_at ?? job.created_at, null) : '';
+  });
+  private watchedJob: number | null = null;
   protected readonly ownText = signal('');
   protected readonly adding = signal(false);
   /** Ideas being checked right now, and the progress of a "check all" run. */
@@ -132,6 +148,29 @@ export class IdeasPage {
       }
     });
     this.themesStore.load();
+    // A batch finished (seen here or while you were elsewhere on the site): show what it made.
+    effect(() => {
+      const running = this.ideaJob();
+      if (running) {
+        this.watchedJob = running.id;
+        return;
+      }
+      const id = this.watchedJob;
+      if (id === null) return;
+      const job = this.store.jobs().find((j) => j.id === id);
+      if (!job || job.state === 'queued' || job.state === 'running') return;
+      this.watchedJob = null;
+      untracked(() => {
+        if (job.state === 'succeeded') {
+          this.toasts.ok(`${job.message}. Keep the ones you like; they move to To review.`);
+          this.tab.set('generate');
+        } else if (job.state === 'failed') {
+          this.toasts.error(`The ideas could not be written: ${job.error ?? 'unknown error'}`);
+        }
+        this.load();
+        this.changed.emit();
+      });
+    });
     // the All ideas page starts on the theme you used last, once both the themes and Settings are in
     effect(() => {
       const themes = this.themesStore.active();
@@ -178,6 +217,7 @@ export class IdeasPage {
       this.toasts.error('Choose a theme first, or create one under Themes');
       return;
     }
+    if (this.ideaJob()) return;
     this.generating.set(true);
     // The theme is remembered in Settings, so the next visit starts from it.
     const name = this.targetName();
@@ -193,12 +233,11 @@ export class IdeasPage {
     }
     this.api.generateIdeas(this.count(), theme, this.genMode(), this.hint().trim(),
                            proven ? this.ticked().map((p) => p.key) : []).subscribe({
-      next: (made) => {
+      next: (job) => {
         this.generating.set(false);
-        this.toasts.ok(`${made.length} new ideas under Generate. Keep the ones you like; they move to To review.`);
-        this.tab.set('generate');
-        this.load();
-        this.changed.emit();
+        this.watchedJob = job.id;
+        this.store.refresh();
+        this.toasts.ok('Writing the ideas. You can leave this page: they will be waiting under Generate.');
       },
       error: (err) => {
         this.generating.set(false);

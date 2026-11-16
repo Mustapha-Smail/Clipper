@@ -115,8 +115,8 @@ export class Api {
     return this.http.get<Idea[]>(`${BASE}/ideas`, { params: themeId ? { theme_id: themeId } : {} });
   }
   generateIdeas(count: number, themeId: number, mode: 'fresh' | 'proven' = 'fresh', hint = '',
-                examples: string[] = []): Observable<Idea[]> {
-    return this.http.post<Idea[]>(`${BASE}/ideas/generate`, { count, theme_id: themeId, mode, hint, examples });
+                examples: string[] = []): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/ideas/generate`, { count, theme_id: themeId, mode, hint, examples });
   }
   suggestThemes(hint: string): Observable<{ theme: string; why: string; example: string }[]> {
     return this.http.post<{ theme: string; why: string; example: string }[]>(`${BASE}/ideas/themes`, { hint });

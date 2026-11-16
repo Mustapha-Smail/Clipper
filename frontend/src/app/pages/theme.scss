@@ -423,3 +423,9 @@
     margin: -20px -16px 14px;
   }
 }
+
+.writing-note {
+  color: var(--text);
+  font-weight: 600;
+  animation: pulse 1.6s infinite ease-in-out;
+}

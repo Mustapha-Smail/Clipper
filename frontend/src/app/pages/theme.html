@@ -37,7 +37,10 @@
               <span class="dot num">{{ count(st.value) }}</span>
               <span class="txt">
                 <strong>{{ st.label }}</strong>
-                <small>{{ st.value === 'ideas' && t.inbox ? t.inbox + ' new to sort' : st.hint }}</small>
+                <small>
+                  @if (st.value === 'ideas' && writing()) { <span class="writing-note">Writing new ideas…</span> }
+                  @else { {{ st.value === 'ideas' && t.inbox ? t.inbox + ' new to sort' : st.hint }} }
+                </small>
               </span>
             </button>
           </li>
