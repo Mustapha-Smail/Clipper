@@ -29,7 +29,7 @@ import os
 import re
 from pathlib import Path
 
-VERSION = "1.12.1"
+VERSION = "1.13.0"
 
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parent.parent
