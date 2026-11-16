@@ -718,6 +718,24 @@ video that never got a clip goes with it, files included.
 
 Set `CLIPPER_LOG_LEVEL=DEBUG` to also log the UI's polling requests.
 
+## Updating a server to a release
+
+On a machine that runs the Docker stack from a git checkout (the homelab LXC):
+
+```bash
+./deploy.sh v1.12.1      # or just ./deploy.sh to list the latest releases
+```
+
+It fetches the tags, refuses to run over local changes to tracked files,
+checks the release out, runs `docker compose up -d --build` (migrations
+included), then waits until the app answers with that version. On failure it
+prints the containers and their last log lines. `.env`, the override file and
+the data folders are untracked and left alone. To keep the command even when an
+older release is checked out, install a copy:
+`install -m 755 deploy.sh /usr/local/bin/clipper-deploy`, then
+`clipper-deploy v1.12.1` from anywhere (it uses `CLIPPER_DIR`, default
+`/opt/clipper`).
+
 ## Moving to a VM
 
 1. Copy the project folder and your `.env`. Set a real `POSTGRES_PASSWORD`.
