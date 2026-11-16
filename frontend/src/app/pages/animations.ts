@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe, UntilPipe } from '../core/format';
@@ -10,6 +10,7 @@ import { PostsStore, handedOver, lastSent, nextDue, postLine } from '../core/pos
 import { PostScheduler } from '../shared/post-scheduler';
 
 /** Ready Shorts handed to Buffer and manually published long videos leave Approved for Published. */
+export type VideoTab = Tab;
 type Tab = 'review' | 'approved' | 'published' | 'rejected' | 'unrendered';
 const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'];
 
@@ -18,14 +19,18 @@ const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'
   selector: 'app-animations-page',
   imports: [RouterLink, AgoPipe, UntilPipe, PostScheduler],
   template: `
-    <div class="page">
+    <div class="page" [class.embedded]="themeId() != null">
       <div class="page-head">
-        <div>
-          <h1>Animations</h1>
-          <p class="muted">Review every Studio video here. Ready Shorts are scheduled from Approved and can be undone
-            from Published; long videos are published manually from their Publish tab.</p>
-        </div>
+        @if (themeId() == null) {
+          <div>
+            <h1>Videos</h1>
+            <p class="muted">Review every Studio video here. Ready Shorts are scheduled from Approved and can be undone
+              from Published; long videos are published manually from their Publish tab.</p>
+          </div>
+        }
         <div class="head-tools">
+        <input class="find" type="search" placeholder="Find a video" [value]="query()"
+               (input)="query.set($any($event.target).value)" aria-label="Find a video" />
         <div class="tabs" role="tablist">
           @for (t of tabs; track t.value) {
             <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
@@ -90,7 +95,9 @@ const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'
     </div>
   `,
   styles: `
-    .head-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .head-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%; }
+    .find { flex: 1 1 180px; width: auto; }
+    .page.embedded { max-width: none; padding: 0; animation: none; .page-head { margin-bottom: 14px; } }
     .sort { width: auto; }
     .posted { color: var(--good); font-weight: 600; }
     .grid {
@@ -135,7 +142,12 @@ const TABS: Tab[] = ['review', 'approved', 'published', 'rejected', 'unrendered'
   `,
 })
 export class AnimationsPage {
-  private readonly api = inject(Api);
+  /** Inside a theme: only its videos, opening on the given tab. */
+  readonly themeId = input<number | null | undefined>(null);
+  readonly startTab = input<Tab | null | undefined>(null);
+  protected readonly query = signal('');
+
+  protected readonly api = inject(Api);
   private readonly store = inject(JobsStore);
   private readonly toasts = inject(Toasts);
   private readonly posts = inject(PostsStore);
@@ -189,11 +201,17 @@ export class AnimationsPage {
     [t.value, rememberedSort(`clipper.animations.sort.${t.value}`, this.sorts[t.value])])) as Record<Tab, ReturnType<typeof rememberedSort>>;
   protected readonly sort = computed(() => this.sortChoice[this.tab()]());
 
+  private matches(b: StoryboardListItem): boolean {
+    const words = this.query().toLowerCase().split(/\s+/).filter(Boolean);
+    return words.every((w) => `${b.title} ${b.script_title}`.toLowerCase().includes(w));
+  }
+
   protected readonly shown = computed(() => sortBy(
-    (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab()), this.sorts[this.tab()], this.sort()));
+    (this.boards() ?? []).filter((b) => this.bucket(b) === this.tab() && this.matches(b)),
+    this.sorts[this.tab()], this.sort()));
   protected readonly counts = computed(() => {
     const counts: Record<Tab, number> = { review: 0, approved: 0, published: 0, rejected: 0, unrendered: 0 };
-    for (const b of this.boards() ?? []) counts[this.bucket(b)]++;
+    for (const b of this.boards() ?? []) if (this.matches(b)) counts[this.bucket(b)]++;
     return counts;
   });
 
@@ -201,10 +219,15 @@ export class AnimationsPage {
     this.posts.load(5_000);
     let known: string | null = null;      // null, so the list loads even when no job has ever run
     effect(() => {
-      const signature = this.store.jobs().filter((j) => j.storyboard_id).map((j) => `${j.id}:${j.state}`).join();
+      const tab = this.startTab();
+      if (tab) untracked(() => this.tab.set(tab));
+    });
+    effect(() => {
+      const theme = this.themeId();
+      const signature = `${theme}|` + this.store.jobs().filter((j) => j.storyboard_id).map((j) => `${j.id}:${j.state}`).join();
       if (signature !== known) {
         known = signature;
-        untracked(() => this.api.allStoryboards().subscribe({
+        untracked(() => this.api.allStoryboards(theme).subscribe({
           next: (list) => this.boards.set(list), error: (err) => this.toasts.error(err) }));
       }
     });
@@ -216,7 +239,9 @@ export class AnimationsPage {
 
   protected setTab(tab: Tab): void {
     this.tab.set(tab);
-    this.router.navigate([], { queryParams: { tab: tab === 'review' ? null : tab }, replaceUrl: true });
+    if (this.themeId() == null) {
+      this.router.navigate([], { queryParams: { tab: tab === 'review' ? null : tab }, replaceUrl: true });
+    }
   }
 
   protected postsOf(b: StoryboardListItem) {

@@ -38,7 +38,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel, Field
 
-from .. import config, llm
+from .. import config, llm, prompts
 from ..ai_errors import AiUnavailable
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, utcnow
@@ -111,58 +111,13 @@ class Looks(BaseModel):
     verdicts: list[Verdict]
 
 
-SYSTEM = """\
-You plan YouTube thumbnails for an educational animated video, for YouTube's A/B \
-test, which shows each thumbnail to a share of viewers and keeps the one watched most. \
-{count}
+SYSTEM = prompts.Prompt("thumbnail_plan")
 
-The angles:
-- reaction: {reaction}.
-- stakes: {stakes}.
-- mystery: {mystery}.
+INK_PICTURE = prompts.Prompt("thumbnail_ink_picture")
 
-Rules (YouTube's and the channel's):
-- Honest: show and say only what the video shows and says. No number, name or claim \
-that is not in the narration; never promise what the video does not deliver.
-- Headline: at most four words, big enough to read on a phone in a glance. It adds \
-to its title instead of repeating it. Put *stars* around the one word to colour. No \
-clickbait words (shocking, insane, you won't believe, crazy), no emoji, no question \
-marks stacked. The mystery thumbnail may have no headline at all.
-- One idea per picture: one person at most and one or two things, large. Nothing small, \
-no clutter, no extra text in the picture.
-- Nothing graphic, violent, sexual or frightening: the audience is {audience}.
-- Each thumbnail goes with one of the title options; spread them over the titles when \
-they fit.
+FRAME_PICTURE = prompts.Prompt("thumbnail_frame_picture")
 
-{picture}"""
-
-INK_PICTURE = """\
-The picture is drawn in the video's ink style from beat lines, one per line, in the \
-order things appear, without word numbers. Write 2 to 5 lines:
-  actor NAME [SLOT] [POSE] [EXPRESSION] [SIZE]     a person: one of {cast}
-  do NAME POSE [TARGET] [EXPRESSION]               a person takes a pose, reaching for TARGET
-  draw PROP [SLOT] [SIZE]                          a prop of this video: {props}
-{shown}  arrow FROM TO | circle THING [COLOUR] | underline THING | cross THING | tick THING
-Slots: left, center, right. Sizes: small, medium, large. Colours: warm, bad, good, gold.
-Poses: {poses}. Expressions: {expressions}.
-Use only the people, props, flags and pictures listed: they are the video's own. Set shot to 0.
-Example:
-  actor narrator left surprised
-  draw wall_calendar right large
-  do narrator point wall_calendar surprised
-  circle wall_calendar bad"""
-
-FRAME_PICTURE = """\
-The picture is a frame of the video. Give the number of the shot whose picture fits \
-the angle best (each thumbnail a different shot, the picture large and clear), and \
-leave beats empty. The shots:
-{shots}"""
-
-LOOK = """\
-You judge YouTube thumbnails of an educational video at the small size viewers first \
-see them. For each one say whether it is clear (you can tell at once what it shows and \
-read every word) and honest (it promises nothing the titles and narration do not \
-deliver), and what to change in one sentence when it is not both."""
+LOOK = prompts.Prompt("thumbnail_check")
 
 
 # --- files ---------------------------------------------------------------------------------

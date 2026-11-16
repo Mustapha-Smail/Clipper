@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .. import config, llm
+from .. import config, llm, prompts
 from ..db.models import Idea, utcnow
 from . import plain, youtube
 
@@ -70,34 +70,9 @@ class Judgement(BaseModel):
                                              "the last 2 years, that covers the same angle; empty if none")
 
 
-GENERATE = """\
-You come up with video ideas for a faceless YouTube channel of short animated videos: \
-simple drawn characters, light comic narration, one surprising idea per video or per \
-chapter. The channel sticks to one theme, given below.
+GENERATE = prompts.Prompt("idea_generate")
 
-{audience_rules}
-
-A good idea is about something specific that viewers use, see or do every day, and turns \
-on one surprising fact the viewer can repeat to a friend. The working title is a claim or \
-question that creates curiosity ("Your fridge doesn't make cold"), never a flat "How X \
-works". The answer must be explainable with an everyday comparison, in a few short steps.
-
-The facts must be true and well established. Do not build an idea on a popular myth or \
-an anecdote you cannot verify; if a famous story is disputed, the dispute can be the idea. \
-Avoid topics that YouTube limits ads on (violence, tragedy, drugs, divisive politics).
-
-Do not repeat or lightly reword any idea in the <already_have> list."""
-
-JUDGE = """\
-You assess one video idea for a faceless animated YouTube channel (simple drawn \
-characters, comic narration) before any work is done on it. You get the idea and the top \
-YouTube search results for its topic, with views, channel size, age and length.
-
-The videos are for {audience}.
-
-Be strict and calibrated: 5 is an ordinary idea, 8 or more is rare. Give each reason in \
-one sentence that names what you saw. Judge the angle against the result titles you were \
-given, not against videos you imagine exist."""
+JUDGE = prompts.Prompt("idea_check")
 
 
 def _format_existing(existing: list[str]) -> str:
@@ -112,6 +87,33 @@ def generate(theme: str, count: int, existing: list[str], seed: str = "") -> lis
     drafts = llm.ask("ideas", GENERATE.format(audience_rules=plain.idea_rules()), prompt, Drafts,
                      effort="medium").ideas
     return drafts[:1] if seed else drafts[:count]
+
+
+class ProvenDraft(Draft):
+    inspired_by: list[int] = Field(description="The numbers of the proven examples this idea builds on, 1 to 3")
+    why_now: str = Field(description="One sentence: the proven pattern this idea follows")
+
+
+class ProvenDrafts(BaseModel):
+    ideas: list[ProvenDraft]
+
+
+GENERATE_PROVEN = prompts.Prompt("idea_from_theme")
+
+
+def generate_proven(theme: str, about: str, count: int, existing: list[str], examples: str, lessons: str,
+                    rejected: list[str], hint: str = "") -> list[ProvenDraft]:
+    """`count` ideas built on what already worked in the theme (see learning.proven for the examples)."""
+    rejected_text = "\n".join(f"- {t}" for t in rejected) or "(none)"
+    ask = f"Propose {count} different ideas." + (f" The creator would like them to lean towards: {hint}"
+                                                  if hint.strip() else "")
+    prompt = (f"<theme>{theme}</theme>\n" + (f"<about>{about}</about>\n" if about else "")
+              + f"\n<proven>\n{examples}\n</proven>\n\n<lessons>\n{lessons}\n</lessons>\n\n"
+              f"<rejected>\n{rejected_text}\n</rejected>\n\n"
+              f"<already_have>\n{_format_existing(existing)}\n</already_have>\n\n{ask}")
+    drafts = llm.ask("ideas_proven", GENERATE_PROVEN.format(audience_rules=plain.idea_rules()), prompt,
+                     ProvenDrafts, effort="medium").ideas
+    return drafts[:count]
 
 
 def judge(idea: Idea, research: dict | None) -> Judgement:
@@ -130,7 +132,7 @@ def judge(idea: Idea, research: dict | None) -> Judgement:
 
 
 def apply_draft(idea: Idea, draft: Draft) -> None:
-    for field, value in draft.model_dump().items():
+    for field, value in draft.model_dump(exclude={"inspired_by", "why_now"}).items():
         setattr(idea, field, value)
 
 
@@ -158,26 +160,7 @@ class ThemeIdeas(BaseModel):
     themes: list[ThemeIdea]
 
 
-THEMES = """\
-You suggest themes for a faceless YouTube channel of short animated videos: simple drawn \
-characters, deadpan comic narration, one surprising idea per video or per chapter. A \
-theme is what every video of the channel is about, narrow enough to build an audience, \
-wide enough for hundreds of videos.
-
-{audience_rules}
-
-Good themes:
-- are about things most people meet in daily life, so anyone gets the first sentence of any \
-video, with no background;
-- turn on surprising, true, explainable facts that a viewer repeats to friends;
-- can be drawn with stick figures, objects and diagrams, without footage;
-- lean towards topics advertisers pay more for (technology, science, money and \
-business, health, how things work, history) over ones they avoid (violence, tragedy, \
-divisive politics);
-- are not already crowded by huge channels doing the same thing in the same tone.
-
-Vary them: do not give five versions of one idea. Do not repeat or lightly reword the \
-themes the creator already has."""
+THEMES = prompts.Prompt("theme_suggest")
 
 
 def suggest_themes(existing: list[str], hint: str = "") -> list[ThemeIdea]:

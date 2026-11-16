@@ -26,7 +26,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import config, llm
+from .. import config, llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
@@ -81,46 +81,9 @@ class Plan(BaseModel):
 
 # --- planning ----------------------------------------------------------------------------
 
-PLAN = """\
-You storyboard a narrated animated video for a faceless YouTube channel. The look is \
-simple doodles: stick figures with expressive faces, bold flat props with thick black \
-outlines, big words on screen. The humour is deadpan: the pictures take the narration \
-literally, react to it, or undercut it.
+PLAN = prompts.Prompt("storyboard_flat")
 
-You get the narration as numbered words with their times. Cut it into scenes, usually \
-one per sentence or idea, 2 to 5 seconds each; change scenes more often in the first 5 \
-seconds to hold attention. Each scene starts on a word number. Inside a scene, elements \
-can appear later on the word that introduces them (enter_word), which keeps the picture \
-in step with the voice.
-
-Composition rules:
-- At most {max_elements} elements per scene, and leave space: one clear idea per picture.
-- Slots: top, center and bottom run down the middle; left/right and the corner slots \
-sit beside them. {format_rules}
-- The narrator (glasses) is the host: use him to react, point at things, shrug at \
-absurd facts. Use other cast members for people in the story (scientist, royal, \
-fancy for anyone historical, worker, kid, chef, person).
-- Props are single objects (a light bulb, a fridge, a human eye, a coin), not scenes. \
-Reuse library props by their exact name; invent a new snake_case name for anything \
-else and describe it in new_props.
-- Text elements show key words or short phrases the viewer should remember, written \
-exactly as displayed (capitals for punch, correct case for names and formulas such as \
-InGaN); number elements show a striking figure ("450 nm", "1993", "x8"). Do not \
-repeat the whole narration on screen: captions already do that.
-- Arrows link two slots (slot to to_slot), to show causes, flows or labels.
-- Motion sparingly: bounce for excitement, shake for alarm, pulse for emphasis, float \
-for things in the air, spin for anything turning, grow for something getting bigger.
-- Vary backgrounds a little (paper, grid, floor, sky, yellow, blue) but keep \
-the same one for scenes that belong together."""
-
-FORMAT_RULES = {
-    "short": "The frame is vertical (9:16). Captions cover the bottom third, so keep everything in the "
-             "top, center and side slots; use bottom slots only for small things.",
-    "long": "The frame is horizontal (16:9), a long YouTube video. Use left, center and right for the main "
-            "row, top for titles; bottom slots are free since there are no burned-in captions. This is one "
-            "chapter of a longer video: pace it a little slower than a Short (3 to 6 seconds per scene), and "
-            "open the chapter with a picture that sets up its topic.",
-}
+FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_flat_{fmt}") for fmt in ("short", "long")}
 
 CAST = "\n".join(f"- {name}: {description}" for name, description in art.CHARACTERS.items())
 
@@ -264,149 +227,11 @@ class InkPlan(BaseModel):
                                             description="Every setting used on shot lines that is not in the library")
 
 
-INK_PLAN = """\
-You storyboard a narrated explainer for a faceless YouTube channel. It is drawn in \
-black ink on one long sheet of paper: stick-figure actors, simple props with a \
-watercolour wash, a few handwritten words. The camera travels across the sheet from \
-shot to shot, so the video is one continuous drawing, not a run of slides.
-
-How to think about each idea in the narration:
-1. Find the action in it: something gets stuck, leaks, grows, is hidden, measured, \
-sorted, swapped, pushed uphill, cracked open, falls apart.
-2. Give that action one simple physical object (from the prop library when one fits).
-3. Have an actor do the action to the object: push it, hold it, point at it, walk to \
-it, react to it. If you could delete the actor and lose nothing, the shot is \
-decoration: think again.
-Then make things happen to objects with marks (circle, cross, tick, underline, arrow) \
-and motions (shake, bounce, grow...). Do not just illustrate nouns: a picture of the \
-word the narrator is saying is the weakest choice. Words on screen are rare: a number, \
-a name or a short label the viewer must remember; the narration is already heard.
-
-Show what is named, the way a good editor cuts in a visual:
-- A country, a city or a region: its flag, or a map of it (with its neighbours). For an \
-empire or an old region, map the countries it covered today, with a label.
-- A real person: define them once with who, giving the traits people know them by \
-(era, job, famous look), then bring them on as an actor: they get their name written \
-under them. Define each person once, with the same ID all video long. Never stand an \
-anonymous figure in for a named person.
-- Years, dates, a period or an order of events: a timeline (have an actor point at \
-it, or circle it).
-- A specific, named, real thing whose real look matters to the story (a famous \
-portrait, a named building, a manuscript, a named machine, a famous event): a photo from \
-the archives, taped to the page, or full to fill the frame for a moment. Mark it in ink: \
-circle a detail, point at it, write a label next to it. Photos are rare seasoning: the \
-drawings carry the video. Everyday and generic things (a brain, a hand, a glove, a \
-machine in general, an experiment, a room, food) are always drawn, never a photo. Stay \
-within the photo budget given with the length; none is fine.
-These are where a viewer's eye goes; use them whenever the narration names one.
-
-The beat language. Each line starts with the number of the narration word on which it \
-happens. A shot line opens each shot; beat lines follow it:
-  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut] [in SETTING]
-  N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
-  N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [as ID]
-  N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
-  N flag COUNTRY [PLACE] [small|large] [as ID]          (COUNTRY: two-letter code, like ro or it)
-  N map COUNTRY [COUNTRY...] [PLACE] [large] [COLOUR] [as ID]   (those countries in colour, labelled)
-  N timeline "label" "label"... [PLACE] [COLOUR] [as ID]        (2 to 7 moments, in order, left to right)
-  N who ID "Full Name" TRAIT...                          (defines a person; then: N actor ID ...)
-  N photo "search words" [PLACE] [small|large|full] [as ID]   (a real picture from Wikimedia Commons)
-  N do ACTOR POSE|ACTION [TARGET] [FACE]
-  N face ACTOR FACE
-  N move ACTOR|PROP PLACE|TARGET [GAIT]   (to a thing: walks up to it, or lands on it)
-  N arrow FROM TO [COLOUR]
-  N circle|underline|cross|tick TARGET [COLOUR]
-  N shake|bounce|pulse|spin|grow|shrink TARGET
-  N erase TARGET|all
-  N look TARGET|all          (the camera moves in on something, or back out)
-PLACE: left center right top bottom top_left top_right bottom_left bottom_right
-POSE (held until the next one): stand point hold push pull carry drop shrug think facepalm cheer wave \
-surprised sad crossed hips present scared. point, hold, push, pull and carry take a TARGET, and \
-the actor walks up to it by itself; carry picks a prop up, and it goes wherever the actor \
-moves until drop (or any other pose) lets it fall.
-ACTION (a recorded movement, played once, about 1 to 3 seconds): {actions}. kick and throw \
-take a TARGET, which flies off.
-GAIT (how a move gets there): walk (default) run march zombie
-TRAIT (for who; give 2 to 5): hair {hair}; hair colour {colours}; face {facial}; head {hats}; \
-eyes {eyes}; clothes {outfits}; skin {skins}. A monk: tonsure robe. A pope or bishop: mitre robe. \
-A Roman emperor: laurel toga. A king or queen: crown. A scientist: lab_coat.
-Photo search words: 2 to 5 plain words that would be in the title of a museum or Wikimedia \
-file, the name first ("Pope Gregory XIII portrait", "Hagia Sophia", "Gutenberg Bible", \
-"Easter table manuscript"); nothing abstract ("confusion", "time passing").
-FACE: {faces}
-COLOUR: warm (flow, emphasis), bad (problems, myths), good (answers, truth), gold, green
-TARGET and FROM/TO: an actor's name, a prop's name, an ID given with `as`, or a PLACE.
-SETTING: where the shot happens, drawn behind it in the cartoon look. Give one on the first \
-shot; later shots stay there until a shot names another. Change it only when the story \
-moves (about 2 to 5 settings in a Short, one or two per chapter of a long video). Use the \
-setting library's names when they fit; for anywhere else (a Roman forum, a laboratory) \
-invent a snake_case name and describe it in new_settings. Prefer a concrete place where \
-the people or things of the shot would really be. idea (an abstract colour field) is only \
-for a single shot of pure explanation, at most one shot in five; the shot after it names \
-a real place again.
-`talk` makes the actor's mouth move with the narration: use it for the narrator when he \
-is the one speaking to the viewer.
-Things stay until erased or until their shot ends; an actor mentioned in the next shot \
-walks along to it with the camera.
-
-Rules:
-- A new shot every 2 to 4 sentences, or when the subject changes; inside a shot, \
-something new every 2 to 4 seconds, spread evenly: never more than 4 seconds without a \
-new beat. Something happens within the first 2 seconds.
-- Bring an actor on with an actor line before anything else mentions them.
-- At most 5 things on stage at once: erase what is finished before adding more.
-- The narrator (glasses) is the host who handles things and reacts; other cast members \
-play people in the story ({cast}). Prefer hands-on poses (hold, push, pull, carry), \
-actions and motions over pointing: point at most once per shot. An action is a strong \
-beat: use one where the narration has energy (a jump for a surprise, a stumble for a \
-mistake, a dance for a win), not in every shot: about one every 20 to 40 seconds, and \
-two or three in a Short. Have actors walk or run between places with move.
-- Write at most one word or number per shot, and only when it must be remembered.
-- Camera: wide is the default; push slowly moves in, for a key moment; drift for calm \
-stretches; close frames small things tightly. Use look for a reveal.
-- Editing: by default the camera glides to the next shot; add cut to a shot for a hard \
-cut instead. Mix both: cut on a surprise, a change of place or a punchline, glide when \
-the story flows on. A map, a flag or a timeline often deserves its own short shot.
-- Vary the patterns: no two shots in a row with the same beats.
-- Props are single objects (a coin, a fridge, a human eye), never scenes. Reuse a library \
-prop by its exact name only when it is exactly the object this moment needs (the same \
-thing, era and look); otherwise invent a specific snake_case name (roman_denarius, not \
-coin), use it in a draw line and describe it in new_props for the illustrator.
-- {format_rules}
-
-A short example, for a different video:
-0 shot "The narrator drops toast; it lands butter side down" in kitchen
-0 actor narrator left deadpan talk
-2 draw toast center
-3 do narrator carry toast
-5 move narrator center
-6 do narrator drop
-7 do narrator stumble
-7 write "butter side down" top bad as myth
-9 do narrator facepalm
-12 shot "A table is exactly the wrong height" push
-12 draw kitchen_table center large
-14 arrow kitchen_table toast warm
-16 circle kitchen_table
-18 do narrator point kitchen_table surprised
-21 shot "Murphy, the engineer behind the law" cut in air_base
-21 who murphy "Edward Murphy" short brown_hair uniform
-22 actor murphy right crossed
-24 flag us top_left small
-26 timeline "1949" "1952" "today" top
-29 do murphy point timeline
-"""
+INK_PLAN = prompts.Prompt("storyboard_ink")
 
 BEAT_SECONDS = {"long": 2.2, "short": 1.6}    # a beat line this often: lively without crowding
 
-INK_FORMAT_RULES = {
-    "short": "The frame is vertical (9:16) and captions cover the bottom third: keep things in the top, center "
-             "and side places, and use the bottom places only for small things. Shots are short: one to three "
-             "sentences each.",
-    "long": "The frame is horizontal (16:9) and this is one chapter of a longer video. Pace it a little slower "
-            "than a Short: a new shot every 3 to 5 sentences, something new every 2 to 5 seconds. Open the "
-            "chapter with a shot that sets up its subject.",
-}
+INK_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_ink_{fmt}") for fmt in ("short", "long")}
 
 
 def ink_system(fmt: str, props: str) -> str:
@@ -418,7 +243,7 @@ def ink_system(fmt: str, props: str) -> str:
                             colours=" ".join(ink.HAIR_COLOURS), facial=" ".join(ink.FACIAL),
                             hats=" ".join(ink.HEADWEAR), eyes=" ".join(ink.EYEWEAR), outfits=" ".join(ink.OUTFITS),
                             skins=" ".join(ink.SKINS))
-            + f"\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>"
+            + f"\n\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>"
             + f"\n\n<setting_library>\n{places_mod.listing()}\n</setting_library>")
 
 
@@ -534,95 +359,11 @@ class FilmPlan(BaseModel):
     beats: str = Field(description="The storyboard: shot lines and beat lines, one per line")
 
 
-FILM_PLAN = """\
-You storyboard a narrated documentary for a faceless YouTube channel, in the style of \
-an evidence wall. One camera travels over one big wall where things get pinned as the \
-story is told: archive photos, index cards, typeset pages, maps, big type and numbers. \
-Every hit (a print landing, a stamp, a highlighter swipe, a number rolling up) lands on \
-the word the narrator says. Code lays out the wall and moves the camera: you decide \
-what appears, and on which word.
-
-The beat language. Each line starts with the number of the narration word on which it \
-happens. A shot line opens each shot (a cluster of things about one idea); beat lines \
-follow it:
-  N shot "what this cluster shows, in one sentence" [cut]
-  N photo "search words" [label "NAME BAR"] [as ID]   a real picture from Wikimedia Commons, pinned
-  N flag COUNTRY [label "TEXT"] [as ID]               (COUNTRY: two-letter code, like fr or us)
-  N map COUNTRY [COUNTRY...] [label "TEXT"] [as ID]   a map print of those countries and their neighbours
-  N pin COUNTRY "LABEL" [on MAP_ID]                   a pin on a map where something happens
-  N route COUNTRY COUNTRY [on MAP_ID]                  a journey drawn on a map
-  N big "1 TO 4 WORDS" [bar] [as ID]                  big type: a title, a year, a name, a verdict
-  N count "NUMBER" "CAPTION" [as ID]                  a number rolling up ("$50,000", "35", "12%")
-  N card "TITLE" "line" "line"... [as ID]             an index card, typed: a rule, a list, a comparison \
-(up to 4 lines)
-  N doc "SOURCE" "DATE LINE" "the exact words" [as ID]  a typeset page quoting a real document
-  N stamp "WORD" on ID                                a verdict slammed onto a thing
-  N highlight ID ["phrase"]                           a highlighter on a phrase of a card or a page \
-(on big type: a yellow block behind it)
-  N circle|underline|cross ID                         pen marks
-  N string ID ID                                      red string: this leads to that
-  N look ID                                           the camera goes back to something already on the wall
-  N wide                                              the camera pulls back to the whole cluster
-
-How to do it well:
-- One hero per sentence: each sentence of narration gets one new thing or one mark, on the \
-word it is about (the name as it is said, the year, the verdict word, the number). \
-Something new every 2 to 3 seconds; never more than 4 seconds without a beat.
-- A new shot every 2 to 4 sentences, when the story moves to a new idea, person or time. \
-2 to 6 things per shot. The camera follows a red string from one shot to the next; add \
-cut to a shot line for a hard jump instead (a surprise, a turn).
-- A specific, named, real person, place, building, document, machine or event whose real \
-look matters: a photo, with 2 to 5 plain words that would be in a museum or Wikimedia \
-file title, the name first ("Pope Gregory XIII portrait", "Hagia Sophia", "Gutenberg \
-Bible"); give people a label with their name. Photos are the strongest hits on the wall, \
-so keep them for the moments that need a real face or place: big type, counts and cards \
-carry the rest. Never a photo of a generic or everyday thing (a brain, a hand, a glove, \
-an experiment, a lab, food) or anything abstract ("confusion", "time passing"): use a \
-card or big type. Stay within the photo budget given with the length; none is fine.
-- Numbers the viewer should feel (money, counts, distances, durations): count. Years and \
-titles: big. One big with bar per shot at most.
-- Rules, steps, lists, comparisons, two dates side by side: cards. Keep card lines short \
-(under 30 characters).
-- doc only quotes words a real document really said (a letter, a newspaper, a law, a \
-decree), word for word, from the narration or the script: it is shown as a recreation. \
-Never invent or paraphrase a quote; when unsure, use a card.
-- Places and journeys: a map of the countries involved, then pins on the word each place \
-is said, and route for a journey.
-- stamp is for a verdict (FAILED, BANNED, SKIPPED, SOLD): about one every 15 seconds at \
-most. highlight picks out the phrase that matters on a card or a page. string ties two \
-things when one leads to the other.
-- Show a phrase one way: never type on screen words the narrator is saying in full; type \
-only names, numbers, dates and short labels.
-- Nothing invented that looks real: drawn things are cards and type; real-looking things \
-are real photos.
-- IDs: snake_case, given with `as`; refer only to things already made.
-- {format_rules}
-
-A short example, for a different video:
-0 shot "The first flight, on the date it happened"
-0 big "DECEMBER 17, 1903" bar as date
-4 photo "Wright Flyer first flight 1903" label "KITTY HAWK" as flight
-9 count "12" "SECONDS" as secs
-12 count "120" "FEET" as feet
-14 string secs feet
-17 shot "The rival with government money" cut
-18 photo "Samuel Langley portrait" label "SAMUEL LANGLEY" as langley
-22 count "$50,000" "WAR DEPARTMENT" as money
-26 photo "Langley Aerodrome Potomac" as crash
-30 stamp "FAILED" on crash
-33 doc "THE NEW YORK TIMES" "9 OCTOBER 1903" "one million to ten million years" as nyt
-36 highlight nyt "ten million years"
-"""
+FILM_PLAN = prompts.Prompt("storyboard_film")
 
 FILM_SECONDS = {"long": 3.2, "short": 2.4}       # a beat line this often
 
-FILM_FORMAT_RULES = {
-    "short": "The frame is vertical (9:16) and captions cover the lower third; the camera frames one thing at a "
-             "time. A Short is 4 to 9 shots.",
-    "long": "The frame is horizontal (16:9) and this is one chapter of a longer video. A new shot every 3 to 5 "
-            "sentences; something new every 3 to 4 seconds. Open the chapter with big type or a photo that sets up "
-            "its subject.",
-}
+FILM_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_film_{fmt}") for fmt in ("short", "long")}
 
 
 def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter) -> None:
@@ -682,32 +423,7 @@ class Drawing(BaseModel):
 
 SHADE_LIST = "; ".join(f"{k} {art.PALETTE[k]} (shadow {d}, light {li})" for k, (d, li) in art.SHADES.items())
 
-DRAW = f"""\
-You illustrate one prop for an animated explainer channel, as SVG. Aim for a good editorial \
-or picture-book illustration: the viewer recognises this exact object at a glance and it \
-looks crafted, not like an icon or clip art.
-- viewBox="0 0 512 512"; the object centred and filling about 80 percent of it; a \
-three-quarter view when that shows its form better than a flat front view. No background, \
-ground, shadow on the ground or scenery: the object alone.
-- Accurate: true proportions, and the specific parts that make it this object (its era, \
-material and details as described). Draw what the description says, not a generic version: \
-its pose and orientation (lying flat, open, tilted) and its real colours (the nearest \
-colours below; skin and beige for flesh, rubber, paper and wood that is pale).
-- Volume: each main part has its base colour, then a shadow shape (on the side away from \
-a light at the top left) and a light shape (on the side towards it), as separate shapes \
-with no outline, drawn on top of the base. A few thin white highlight strokes on shiny \
-parts. Texture where the material calls for it (wood grain, stitching, rivets) as thin lines.
-- Lines: the silhouette and each main part outlined in {art.INK}, stroke-width {art.STROKE}; \
-inner details in {art.INK} at stroke-width {art.DETAIL_STROKE}; stroke-linecap="round" and \
-stroke-linejoin="round". Shadow and light shapes have no stroke.
-- Colours, only these: ink {art.INK}, white #ffffff, and {SHADE_LIST}.
-- About 40 to 150 shapes. Allowed elements: path, rect, circle, ellipse, line, polyline, \
-polygon, g, with opacity if useful. No text or letters, gradients, filters, masks, images, \
-styles, scripts or links.
-- A face on an object only if asked.
-- It must also read as a line drawing: the channel's ink style keeps only the outlined \
-shapes as black lines over a pale wash of the colours. So every part that matters has its \
-own outline, and the silhouette is clear."""
+DRAW = prompts.Prompt("prop_draw")
 
 
 class Look(BaseModel):
@@ -716,12 +432,7 @@ class Look(BaseModel):
     fix: str = Field(description="The most important things to change, in one or two sentences; empty if none")
 
 
-LOOK = """\
-You art-direct illustrations for an animated explainer channel. You see one drawn prop and \
-the brief it was drawn from. Judge it as a viewer would on a phone: is it clearly the object \
-in the brief, with the details that matter, and is it a crafted illustration (proportions, \
-volume, clean shapes) rather than a crude icon? Name concrete fixes (a missing part, wrong \
-proportions, a confusing shape, a flat look)."""
+LOOK = prompts.Prompt("prop_check")
 
 GOOD_ENOUGH = 7       # below this, or not the object, the prop is drawn once more with the critique
 
@@ -756,7 +467,8 @@ def draw_prop(name: str, description: str, instruction: str = "") -> str:
         prompt += f"\nChange requested by the creator: {instruction}"
     note, best, looked = "", None, False
     for _ in range(4):
-        svg = llm.ask("props", DRAW, prompt + note, Drawing, effort=effort).svg
+        brief = DRAW.format(ink=art.INK, stroke=art.STROKE, detail_stroke=art.DETAIL_STROKE, shades=SHADE_LIST)
+        svg = llm.ask("props", brief, prompt + note, Drawing, effort=effort).svg
         try:
             svg = art.check_prop_svg(svg)
         except Exception as err:  # noqa: BLE001 - any rendering failure means: draw it again

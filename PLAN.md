@@ -1,5 +1,7 @@
 # Clipping pipeline: plan
 
+Version 2 (2026-11-16, branch `v2`, waiting for review): the Studio is organised by theme, from the first idea to the published video; each theme reads its videos' statistics (Buffer for posted Shorts, YouTube for long videos linked by hand), ranks them with shown arithmetic, draws lessons on request, and can generate ideas built on what worked. Every system prompt is a file the Prompts page can edit and reset. New navigation (Themes home, theme workspace, ⌘K switcher) and a refreshed design.
+
 Status (2026-11-12): Phases 1 to 3 are done. Campaigns can be pasted or scouted from public listings, are ranked with an explained score, and feed their rules into a video's brief. Open in Phase 3: running the scout on a daily schedule. Next: Phase 4 (tracking views and payouts).
 
 Studio (animated YouTube channel), started 2026-11-12: S1 to S5 are built, and Studio 2 phases 1 to 4 (ink style, acting characters, montage, archive pictures, three looks and the "Before you publish" checks): ideas, scripts, voice, animated Shorts (9:16, 1080x1920) and long videos (16:9, 1920x1080) with chapter banners, music ducked under the voice, sound effects, an .srt subtitle file and YouTube chapters. A 6-minute video renders in about 3.5 minutes in Docker. Next: S7 publishing (title, description, thumbnail, private upload); S6 (Shorts from chapters) is covered by the per-section Shorts. AI calls now run by tier (writing, quick, research) on Claude or OpenAI-compatible models, with a spending log; music can be found on Openverse with credits kept.

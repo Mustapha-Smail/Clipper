@@ -441,7 +441,7 @@ def test_scheduling_through_the_api(ready, clip, world, client, monkeypatch):
 
     draft = client.get("/api/v1/posting/draft", params={"kind": "clip", "ref_id": clip}).json()
     assert draft == {"text": "One", "youtube_text": "One", "title": "First", "ai_label": False,
-                     "short": True, "allowed": True, "reason": ""}
+                     "short": True, "allowed": True, "reason": "", "channels": []}
 
     unknown = client.post("/api/v1/posts", json={"kind": "clip", "ref_id": clip, "channel_ids": ["nope"]})
     assert unknown.status_code == 400

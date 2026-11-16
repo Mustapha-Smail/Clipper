@@ -121,6 +121,58 @@ hidden; nothing is deleted. The menu collapses to a rail of icons on a desktop
 (the arrow next to the logo) and becomes a drawer behind the menu button on a
 phone.
 
+## Themes: one home per channel
+
+Since version 2 the Studio is organised by theme. **Themes** (the first item in
+the menu) shows every channel theme with its work by stage and the one thing
+most worth doing next. Open a theme to work on it:
+
+- **Work**: a pipeline of six steps (Ideas, Script, Voice, Animation, Ready,
+  Published). Each step lists what is there and the button that moves it on;
+  the next step is marked.
+- **Performance**: the theme's published videos ranked by views, with the
+  arithmetic shown (views across networks, engagement, times the theme's
+  median). *Refresh numbers* reads them now; the worker also reads them once a
+  day. Shorts posted through Buffer get Buffer's statistics; a long video you
+  published by hand gets its numbers from YouTube once you paste its link
+  (needs `YOUTUBE_API_KEY`). With three videos that have numbers, *Draw the
+  lessons* asks the AI what the best and worst have in common.
+- **Settings**: name and description (sent to the AI with every idea), colour,
+  status (active, paused, archived), the Buffer channels its Shorts go to by
+  default, merge into another theme.
+
+Ideas come in two kinds: **Fresh ideas** for new subjects, and **Build on what
+works**, which gives the AI the theme's best videos, approved scripts and kept
+ideas (numbered, strongest evidence first), the lessons drawn and the titles you
+rejected. Each idea built this way shows what it builds on.
+
+Each step lists everything, not only what waits there: Script and Voice show
+every script with filters (in progress, approved, needs a voice, voiced), a
+search and a sort; Animation, Ready and Published show the theme's videos with
+their review and posting tabs. When you build on what works, the examples are
+listed with tick boxes, so you choose what the AI builds on; the option is off
+until something is proven.
+
+Themes can have a **banner**: the AI draws one when a theme is created (turn it
+off in Settings, Themes), and you can draw it again with a note or upload your
+own picture from the theme's Settings. **Deleting a theme** deletes everything
+in it (ideas, scripts, voice takes, videos and their files); type its name to
+confirm. Exported copies in the output folder stay.
+
+Press **⌘K** (Ctrl K) anywhere to jump to a theme, a script or a page.
+
+## Prompts
+
+Every instruction the AI receives is a text file in `backend/clipper/prompts/`,
+one per step, with a header saying which step uses it and which values the code
+fills in (`{audience_rules}`, `{format_rules}`...). The **Prompts** page lists
+them by step: read one, edit it, see your changes against the default, or reset
+it. Your edits are saved under `data/prompts/` and are used from the next AI
+call; an update of the app never overwrites them. `{prompt:other}` includes
+another prompt, so shared rules live in one place. Values in braces are listed
+with what they hold; click one to insert it. An edit that drops one or invents
+one cannot be saved, so a prompt never breaks.
+
 ## Studio ideas
 
 The Ideas page (under Studio) is the first step of the animated channel. No theme in mind? The magic wand next to the theme field suggests five,

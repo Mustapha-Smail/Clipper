@@ -20,7 +20,8 @@ from .db.models import Job, Worker, utcnow
 from .ingest import find_video, source_dir
 from .log import configure
 from .studio import animate as animate_mod
-from .studio import compliance, retention
+from .studio import banner as banner_mod
+from .studio import compliance, learning, retention
 from .studio import director as director_mod
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
@@ -32,6 +33,7 @@ SWEEP_SECONDS = 3600        # how often an idle worker looks for renders past th
 SCOUT_CHECK_SECONDS = 300   # how often an idle worker checks whether a scheduled campaign scout is due
 POSTS_DUE_SECONDS = 600     # how often an idle worker asks Buffer about posts whose time has come
 POSTS_ALL_SECONDS = 86400   # ... and about every waiting post (Buffer counts requests: see posting.py)
+STATS_SECONDS = 86400       # how often an idle worker reads views and reactions (learning.refresh)
 log = logging.getLogger("clipper.worker")
 
 
@@ -79,6 +81,10 @@ def run_job(job_id: int) -> None:
                 done = posting.schedule(params["post_ids"], rep)
             elif stage == "sync":
                 posting.sync(rep)
+            elif stage == "banner":
+                done = banner_mod.draw(params["theme_id"], rep, params.get("note", ""))
+            elif stage == "stats":
+                done = learning.refresh(rep, force=params.get("force", False))
             elif stage == "research":
                 script_mod.research(params["script_id"], rep)
             elif stage == "write":
@@ -170,6 +176,7 @@ def main() -> None:
 
     next_sweep = next_scout = next_due = 0.0
     next_all = time.monotonic() + 60
+    next_stats = time.monotonic() + 120
     while not stop.is_set():
         try:
             job_id = jobs.claim_next(worker_id)
@@ -203,6 +210,13 @@ def main() -> None:
                         log.info("scheduled posts changed on Buffer")
                 except Exception:  # noqa: BLE001
                     log.warning("could not ask Buffer about scheduled posts", exc_info=True)
+            # Once a day: views and reactions of published videos, so each theme learns from its own.
+            if time.monotonic() >= next_stats:
+                next_stats = time.monotonic() + STATS_SECONDS
+                try:
+                    learning.refresh()
+                except Exception:  # noqa: BLE001
+                    log.warning("could not read video statistics", exc_info=True)
             stop.wait(1.0)
         else:
             run_job(job_id)

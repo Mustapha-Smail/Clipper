@@ -8,30 +8,33 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/video-detail').then((m) => m.VideoDetailPage),
   },
   {
+    path: 'themes',
+    title: 'Themes · Clipper',
+    loadComponent: () => import('./pages/themes').then((m) => m.ThemesPage),
+  },
+  {
+    path: 'themes/:id',
+    title: 'Theme · Clipper',
+    loadComponent: () => import('./pages/theme').then((m) => m.ThemePage),
+  },
+  {
+    path: 'prompts',
+    title: 'Prompts · Clipper',
+    loadComponent: () => import('./pages/prompts').then((m) => m.PromptsPage),
+  },
+  {
     path: 'campaigns',
     title: 'Campaigns · Clipper',
     loadComponent: () => import('./pages/campaigns').then((m) => m.CampaignsPage),
   },
-  {
-    path: 'ideas',
-    title: 'Ideas · Clipper',
-    loadComponent: () => import('./pages/ideas').then((m) => m.IdeasPage),
-  },
-  {
-    path: 'scripts',
-    title: 'Scripts · Clipper',
-    loadComponent: () => import('./pages/scripts').then((m) => m.ScriptsPage),
-  },
+  { path: 'ideas', redirectTo: 'themes' },
+  { path: 'scripts', redirectTo: 'themes' },
   {
     path: 'scripts/:id',
     title: 'Script · Clipper',
     loadComponent: () => import('./pages/script').then((m) => m.ScriptPage),
   },
-  {
-    path: 'animations',
-    title: 'Animations · Clipper',
-    loadComponent: () => import('./pages/animations').then((m) => m.AnimationsPage),
-  },
+  { path: 'animations', redirectTo: 'themes' },
   {
     path: 'storyboards/:id',
     title: 'Storyboard · Clipper',

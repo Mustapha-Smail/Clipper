@@ -1,0 +1,248 @@
+<div class="page">
+  @if (theme(); as t) {
+    <div [class]="'head hue-' + t.color" [class.with-banner]="!!api.bannerUrl(t)">
+      @if (api.bannerUrl(t); as src) {
+        <div class="hero" aria-hidden="true"><img [src]="src" alt="" /></div>
+      } @else {
+        <div class="glow" aria-hidden="true"></div>
+      }
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a routerLink="/themes">Themes</a><span class="sep">/</span><span>{{ t.status === 'active' ? 'Active' : t.status }}</span>
+      </nav>
+      <div class="title-row">
+        <span class="swatch big" aria-hidden="true"></span>
+        <div class="grow">
+          <h1>{{ t.name }}</h1>
+          @if (t.description) { <p class="muted about">{{ t.description }}</p> }
+        </div>
+        <div class="tabs views" role="tablist" aria-label="View">
+          <button role="tab" [class.on]="view() === 'work'" [attr.aria-selected]="view() === 'work'" (click)="setView('work')">Work</button>
+          <button role="tab" [class.on]="view() === 'performance'" [attr.aria-selected]="view() === 'performance'"
+                  (click)="setView('performance')">Performance</button>
+          <button role="tab" [class.on]="view() === 'settings'" [attr.aria-selected]="view() === 'settings'"
+                  (click)="setView('settings')">Settings</button>
+        </div>
+      </div>
+    </div>
+
+    @if (view() === 'work') {
+      <div class="work">
+      <!-- The pipeline: one step per stage; the number is what waits there, the next one is marked. -->
+      <ol [class]="'stepper hue-' + t.color" role="tablist" aria-label="Stages">
+        @for (st of stages; track st.value) {
+          <li role="presentation">
+            <button role="tab" [class.on]="shownStage() === st.value" [class.has]="count(st.value) > 0"
+                    [class.next]="t.next.stage === st.value" [attr.aria-selected]="shownStage() === st.value"
+                    (click)="setStage(st.value)">
+              <span class="dot num">{{ count(st.value) }}</span>
+              <span class="txt">
+                <strong>{{ st.label }}</strong>
+                <small>{{ st.value === 'ideas' && t.inbox ? t.inbox + ' new to sort' : st.hint }}</small>
+              </span>
+            </button>
+          </li>
+        }
+      </ol>
+
+      @if (t.next.stage === shownStage() && t.next.text) {
+        <p class="nextline"><span class="spark" aria-hidden="true"></span><strong>Next:</strong> {{ t.next.text }}</p>
+      }
+
+      @switch (shownStage()) {
+        @case ('ideas') {
+          <app-ideas-page [themeId]="t.id" [themeName]="t.name" [mode]="ideaMode()" [proven]="board()?.proven ?? []"
+                          (changed)="load()" />
+        }
+        @case ('animation') { <app-animations-page [themeId]="t.id" startTab="review" /> }
+        @case ('ready') { <app-animations-page [themeId]="t.id" startTab="approved" /> }
+        @case ('published') { <app-animations-page [themeId]="t.id" startTab="published" /> }
+        @default {
+          <!-- Script and Voice: every script of the theme, with what waits here first. -->
+          <div class="list-tools">
+            <input class="find" type="search" placeholder="Find a script" [ngModel]="query()" (ngModelChange)="query.set($event)"
+                   aria-label="Find a script" />
+            <div class="tabs" role="radiogroup" aria-label="Show">
+              @for (f of filters(); track f.value) {
+                <button role="radio" [class.on]="filter() === f.value" [attr.aria-checked]="filter() === f.value"
+                        (click)="filter.set(f.value)">{{ f.label }} <span class="muted num">{{ f.count }}</span></button>
+              }
+            </div>
+            <select class="sort" [ngModel]="sort()" (ngModelChange)="sort.set($event)" aria-label="Sort scripts">
+              @for (o of sorts; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+            </select>
+          </div>
+          <div class="items stagger">
+            @for (item of items(); track item.id) {
+              <article class="card item">
+                <div class="item-main">
+                  <div class="row spread">
+                    <h3>{{ item.title }}</h3>
+                    @if (item.job; as j) {
+                      <span class="pill running">{{ j.stage ? j.message : 'Queued' }}</span>
+                    } @else {
+                      <span class="pill" [class.approved]="stageDone(item)">{{ stateLabel(item) }}</span>
+                    }
+                  </div>
+                  <p class="small muted">
+                    {{ item.video === 'short' ? 'Short' : 'Long video' }} · {{ item.words }} words
+                    @if (item.take; as tk) { · voice: {{ tk.source }}{{ tk.duration ? ', ' + duration(tk.duration) : '' }} }
+                    · updated {{ item.updated_at | ago }}
+                  </p>
+                  @if (item.storyboards.length) {
+                    <div class="boards">
+                      @for (b of item.storyboards; track b.id) {
+                        <a class="chip" [routerLink]="['/storyboards', b.id]">
+                          <span class="kind">{{ b.format === 'short' ? 'Short' : 'Long' }}</span>
+                          <span class="title">{{ boardTitle(item, b.title) }}</span>
+                          <span class="pill" [class.approved]="boardLabel(b) === 'approved' || boardLabel(b) === 'out'"
+                                [class.review]="boardLabel(b) === 'to review' || boardLabel(b) === 'scheduled'">{{ boardLabel(b) }}</span>
+                        </a>
+                      }
+                    </div>
+                  }
+                </div>
+                <button [class]="waiting(item) ? 'primary sm' : 'sm'" (click)="open(item)">{{ actionLabel(item) }} →</button>
+              </article>
+            } @empty {
+              <div class="empty">
+                @if (query() || filter() !== 'all') {
+                  Nothing matches. <button class="sm quiet" (click)="query.set(''); filter.set('all')">Show all</button>
+                } @else if (shownStage() === 'script') {
+                  No script yet. Approve an idea and press <strong>Write the script</strong>.
+                } @else {
+                  No approved script yet: the voice comes once a script is approved.
+                }
+              </div>
+            }
+          </div>
+        }
+      }
+      </div>
+    }
+
+    @if (view() === 'performance') {
+      <app-theme-performance [themeId]="t.id" (buildOn)="buildOnWins()" />
+    }
+
+    @if (view() === 'settings') {
+      <div class="settings">
+        <section class="card">
+          <h3>About this theme</h3>
+          <p class="small muted">The name and description go to the AI with every idea of this theme.</p>
+          <label class="field"><span>Name</span>
+            <input type="text" maxlength="300" [ngModel]="form().name" (ngModelChange)="setForm('name', $event)" /></label>
+          <label class="field"><span>What it is about</span>
+            <textarea rows="3" maxlength="2000" [ngModel]="form().description" (ngModelChange)="setForm('description', $event)"
+                      placeholder="Who it is for, the tone, subjects to favour or avoid"></textarea></label>
+          <label class="field"><span>Notes</span>
+            <textarea rows="2" maxlength="5000" [ngModel]="form().notes" (ngModelChange)="setForm('notes', $event)"
+                      placeholder="For you only"></textarea></label>
+          <div><button class="primary" (click)="saveText()">Save</button></div>
+        </section>
+
+        <section class="card">
+          <h3>Banner</h3>
+          @if (api.bannerUrl(t); as src) {
+            <div class="banner-preview"><img [src]="src" alt="The theme's banner" /></div>
+            <p class="small muted">{{ t.banner?.by === 'you' ? 'Your picture' : 'Drawn by the AI' }}, {{ t.banner?.made_at ?? null | ago }}</p>
+          } @else if (t.banner_job) {
+            <div class="banner-preview drawing"><span class="small">Drawing the banner… about a minute</span></div>
+          } @else {
+            <div class="banner-preview empty-banner"><span class="small muted">No banner yet</span></div>
+          }
+          @if (banners()) {
+            <div class="row">
+              <input class="grow" type="text" maxlength="300" [ngModel]="bannerNote()" (ngModelChange)="bannerNote.set($event)"
+                     placeholder="Optional: what to change, e.g. warmer colours, a desert" aria-label="What to change" />
+              <button (click)="drawBanner()" [disabled]="!!t.banner_job">{{ t.banner ? 'Draw again' : 'Draw a banner' }}</button>
+            </div>
+          } @else {
+            <p class="small muted">The AI does not draw banners: turn them on in <a routerLink="/settings" fragment="studio-themes">Settings</a>.</p>
+          }
+          <div class="row">
+            <label class="btn sm">Upload a picture
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden (change)="uploadBanner($event)" /></label>
+            @if (t.banner) { <button class="sm quiet danger" (click)="removeBanner()">Remove</button> }
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Colour</h3>
+          <div class="colors" role="radiogroup" aria-label="Colour">
+            @for (c of colors; track c) {
+              <button [class]="'color hue-' + c" [class.on]="t.color === c" role="radio" [attr.aria-checked]="t.color === c"
+                      [attr.aria-label]="c" (click)="setColor(c)"><span class="swatch"></span></button>
+            }
+          </div>
+          <h3 class="spaced">Status</h3>
+          <div class="tabs" role="radiogroup" aria-label="Status">
+            @for (s of ['active', 'paused', 'archived']; track s) {
+              <button role="radio" [class.on]="t.status === s" [attr.aria-checked]="t.status === s" (click)="setStatus($any(s))">
+                {{ s === 'active' ? 'Active' : s === 'paused' ? 'Paused' : 'Archived' }}</button>
+            }
+          </div>
+          <p class="small muted">Paused and archived themes are hidden from the Themes page unless you ask for them; their work is kept.</p>
+        </section>
+
+        <section class="card">
+          <h3>Buffer channels</h3>
+          <p class="small muted">Where this theme's Shorts go by default when you schedule them.</p>
+          @if (channels(); as list) {
+            @if (list.length) {
+              <div class="channels">
+                @for (c of list; track c.id) {
+                  <label class="check">
+                    <input type="checkbox" [checked]="t.channels.includes(c.id)" (change)="toggleChannel(c.id)" />
+                    <span><strong>{{ c.name }}</strong> <small>{{ c.service }}</small></span>
+                  </label>
+                }
+              </div>
+            } @else {
+              <p class="small muted">{{ channelsNote() || 'No channel connected in Buffer yet.' }}</p>
+            }
+          } @else {
+            <div class="skeleton" style="height:40px"></div>
+          }
+        </section>
+
+        <section class="card danger-zone wide">
+          <h3>Merge or delete</h3>
+          @if (others().length) {
+            <div class="row">
+              <select class="grow" [ngModel]="mergeInto()" (ngModelChange)="mergeInto.set(+$event)" aria-label="Theme to merge into">
+                <option [ngValue]="null" disabled>Merge into…</option>
+                @for (o of others(); track o.id) { <option [value]="o.id">{{ o.name }}</option> }
+              </select>
+              <button (click)="merge()" [disabled]="!mergeInto()">Merge</button>
+            </div>
+            <p class="small muted">Two themes that are really one: its ideas and scripts move to the other theme.</p>
+          }
+          @if (contents(); as c) {
+            <div class="delete-box">
+              <p><strong>Delete this theme and everything in it:</strong>
+                {{ c.ideas }} ideas, {{ c.scripts }} scripts, {{ c.takes }} voice takes and {{ c.videos }} videos, with their
+                files. Copies you exported to the output folder stay. This cannot be undone.</p>
+              @for (b of c.blockers; track b) { <div class="notice small">{{ b }}</div> }
+              @if (!c.blockers.length) {
+                @if (c.ideas || c.scripts) {
+                  <label class="field"><span>Type <em>{{ t.name }}</em> to confirm</span>
+                    <input type="text" [ngModel]="confirmName()" (ngModelChange)="confirmName.set($event)" autocomplete="off" /></label>
+                }
+                <div class="row">
+                  <button class="on-bad" (click)="remove()" [disabled]="deleting() || ((c.ideas || c.scripts) && !nameTyped())">
+                    {{ deleting() ? 'Deleting…' : 'Delete the theme' }}</button>
+                  <button class="quiet" (click)="contents.set(null)">Cancel</button>
+                </div>
+              }
+            </div>
+          } @else {
+            <div><button class="quiet danger" (click)="askDelete()">Delete this theme…</button></div>
+          }
+        </section>
+      </div>
+    }
+  } @else {
+    <div class="skeleton" style="height:120px"></div>
+    <div class="skeleton" style="height:84px;margin-top:16px"></div>
+  }
+</div>

@@ -386,6 +386,54 @@ def sync(rep: Reporter | None = None, due_only: bool = False) -> int:
     return changed
 
 
+METRICS_DAYS = 60                    # statistics are followed this long after a post goes out
+METRICS_EVERY = timedelta(hours=20)  # and asked at most this often per post (Buffer counts requests)
+
+
+def sync_metrics(rep: Reporter | None = None, force: bool = False) -> int:
+    """Ask Buffer for the statistics of sent posts, batched per account. Returns how many it reported.
+
+    Run with the daily pass and from the Refresh button; a post is asked about at most once per
+    METRICS_EVERY unless `force`, and only for METRICS_DAYS after it went out."""
+    since = utcnow() - timedelta(days=METRICS_DAYS)
+    due = utcnow() - METRICS_EVERY
+    with session_scope() as db:
+        query = select(Post).where(Post.buffer_id.is_not(None), Post.status == "sent",
+                                   (Post.sent_at.is_(None)) | (Post.sent_at >= since))
+        ids_by_kind: dict[str, dict[str, int]] = {}
+        for post in db.scalars(query):
+            if not force and post.metrics is not None and post.checked_at and as_utc(post.checked_at) > due:
+                continue
+            ids_by_kind.setdefault(post.kind, {})[post.buffer_id] = post.id
+    reported = 0
+    for kind, ids in ids_by_kind.items():
+        if not buffer.configured(kind):
+            continue
+        try:
+            found = buffer.metrics(list(ids), kind)
+        except buffer.BufferError as err:
+            if rep:
+                rep.warn(f"Buffer statistics not read: {err}")
+            continue
+        with session_scope() as db:
+            for buffer_id, post_id in ids.items():
+                post = db.get(Post, post_id)
+                post.checked_at = utcnow()
+                state = found.get(buffer_id)
+                if state is None:
+                    continue
+                post.metrics = {"values": state["values"]}
+                if state.get("at"):
+                    post.metrics_at = datetime.fromisoformat(state["at"].replace("Z", "+00:00"))
+                reported += 1 if state["values"] else 0
+    if rep:
+        asked = sum(len(ids) for ids in ids_by_kind.values())
+        rep.info(f"Asked Buffer for the statistics of {asked} sent post{'s' if asked != 1 else ''}: "
+                 f"{reported} reported numbers" + ("" if reported or not asked else
+                                                   " (the networks may not have reported them to Buffer yet)"))
+    return reported
+
+
 def cancel(db: Session, post: Post) -> None:
     """Take a post back: delete it on Buffer, then the hosted copy if nothing else needs it.
 

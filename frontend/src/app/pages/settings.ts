@@ -1,6 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
+import { APPEARANCES, AppearanceStore } from '../core/appearance';
 import { JobsStore } from '../core/jobs-store';
 import { AiModel, AiModels, AiProvider, AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -9,17 +11,27 @@ import { Toasts } from '../core/toast';
   selector: 'app-settings-page',
   imports: [FormsModule],
   template: `
-    <div class="page">
+    <div class="page wide">
       <div class="page-head">
         <div>
+          <span class="eyebrow">Project</span>
           <h1>Settings</h1>
           <p class="muted">Changes apply to jobs started after you save.</p>
         </div>
       </div>
 
       @if (form(); as f) {
-        <div class="stack">
-          <section class="card">
+        <div class="layout">
+        <nav class="sections" aria-label="Sections">
+          @for (g of groups(); track g.title) {
+            <span class="nav-group">{{ g.title }}</span>
+            @for (item of g.items; track item.id) {
+              <a [href]="'#' + item.id" [class.on]="activeSection() === item.id" (click)="jump($event, item.id)">{{ item.label }}</a>
+            }
+          }
+        </nav>
+        <div class="stack" (input)="touched()" (change)="touched()">
+          <section class="card" id="features">
             <h3>Features</h3>
             <p class="small muted">Turn off what you do not use: its pages leave the menu and its settings are hidden here.
               Nothing is deleted, and you can turn it back on at any time.</p>
@@ -33,11 +45,40 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
+          <section class="card" id="appearance">
+            <h3>Appearance</h3>
+            <p class="small muted">How the app looks on this screen. Applied at once and kept in this browser, so each
+              device can have its own.</p>
+            <div class="looks" role="radiogroup" aria-label="Appearance">
+              @for (a of appearances; track a.value) {
+                <button role="radio" [class]="'look ' + a.value" [class.on]="appearance.mode() === a.value"
+                        [attr.aria-checked]="appearance.mode() === a.value" (click)="appearance.set(a.value)">
+                  <span class="preview" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span class="look-name">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="a.icon" /></svg>
+                    {{ a.label }}@if (a.value === 'system') { <small>default</small> }
+                  </span>
+                </button>
+              }
+            </div>
+          </section>
+
           @if (f.feature_studio) {
 
           <h2 class="group-title">Studio</h2>
 
-          <section class="card">
+          <section class="card" id="studio-themes">
+            <h3>Themes</h3>
+            <p class="small muted">Each theme can have a banner: a wide illustration on its card and at the top of its page.</p>
+            <div class="form-grid">
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.theme_banners" />
+                <span>Draw a banner for each new theme<small>The writing model draws it once when the theme is created
+                  (a few cents on the API, free on a Claude or ChatGPT plan). You can draw it again or upload your own
+                  picture from the theme's Settings. Off: nothing is drawn, uploads still work.</small></span></label>
+            </div>
+          </section>
+
+          <section class="card" id="studio-drawings">
             <h3>Studio drawings</h3>
             <p class="small muted">New props are drawn by Claude (the writing model) as shaded illustrations, then looked at
               and drawn once more if they miss the brief. Props are kept and reused by later videos.</p>
@@ -55,7 +96,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="studio-voice">
             <h3>Studio voice</h3>
             <p class="small muted">Defaults for AI voices on the script page. You can still record your own voice.</p>
             <div class="form-grid">
@@ -120,7 +161,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="studio-ink">
             <h3>Ink style</h3>
             <p class="small muted">How hand-drawn the ink videos feel.</p>
             <div class="form-grid">
@@ -142,7 +183,7 @@ import { Toasts } from '../core/toast';
 
           <h2 class="group-title">Clipping</h2>
 
-          <section class="card">
+          <section class="card" id="clip-channel">
             <h3>Your channel</h3>
             <p class="small muted">Used to rank campaigns. It does not change how clips are made.</p>
             <div class="form-grid">
@@ -168,7 +209,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="clip-scout">
             <h3>Campaign scout</h3>
             <p class="small muted">Reads public listings on Content Rewards and adds them to Campaigns: the ones you
               marked interested or joined, new ones that fit your theme, and a few of the best paid. Plain page
@@ -192,7 +233,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="clip-moments">
             <h3>Moments and brief checks</h3>
             <p class="small muted">Defaults for new videos. Each video can override the numbers.</p>
             <div class="form-grid">
@@ -226,7 +267,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="clip-download">
             <h3>Download</h3>
             <p class="small muted">How source videos are fetched from links.</p>
             <div class="form-grid">
@@ -245,10 +286,10 @@ import { Toasts } from '../core/toast';
 
           }
 
-          <h2 class="group-title">Both</h2>
+          <h2 class="group-title">Everything</h2>
           <p class="small muted group-note">Used by the Studio and by Clipping.</p>
 
-          <section class="card">
+          <section class="card" id="storage">
             <h3>Storage</h3>
             <p class="small muted">Where finished clips and exported Studio videos are written, and how long unapproved work is kept.</p>
             <div class="form-grid">
@@ -282,7 +323,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="ai">
             <h3>AI models</h3>
             <p class="small muted">Every AI task belongs to one of three tiers. Put the quick tier on a small model to spend
               far less; keep a strong model for writing. OpenAI needs OPENAI_API_KEY in .env (or OPENAI_BASE_URL for an
@@ -360,7 +401,7 @@ import { Toasts } from '../core/toast';
             }
           </section>
 
-          <section class="card">
+          <section class="card" id="transcription">
             <h3>Transcription</h3>
             <p class="small muted">Speech is transcribed on this machine. No audio leaves it.</p>
             <div class="form-grid">
@@ -385,7 +426,7 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" id="render">
             <h3>Render</h3>
             <p class="small muted">How videos are encoded, and how burned-in captions look (clips and Shorts).</p>
             <div class="form-grid">
@@ -427,7 +468,7 @@ import { Toasts } from '../core/toast';
           </section>
 
           @if (store.status(); as status) {
-            <section class="card">
+            <section class="card" id="installation">
               <h3>This installation</h3>
               <p class="small muted">Read-only. These are set when the app starts.</p>
               <dl class="facts">
@@ -447,11 +488,19 @@ import { Toasts } from '../core/toast';
             </section>
           }
 
-          <div class="card savebar">
-            @if (error()) { <span class="small error-text">{{ error() }}</span> }
+          <div class="card savebar" [class.dirty]="dirty()">
+            @if (error()) {
+              <span class="small error-text">{{ error() }}</span>
+            } @else if (dirty()) {
+              <span class="small state"><span class="spark" aria-hidden="true"></span>Unsaved changes</span>
+            } @else {
+              <span class="small muted state">All changes saved</span>
+            }
             <button class="quiet" (click)="reset()">Restore defaults</button>
-            <button class="primary" (click)="save()" [disabled]="saving()">Save settings</button>
+            @if (dirty()) { <button class="quiet" (click)="discard()">Discard</button> }
+            <button class="primary" (click)="save()" [disabled]="saving() || !dirty()">{{ saving() ? 'Saving…' : 'Save settings' }}</button>
           </div>
+        </div>
         </div>
       } @else {
         <div class="stack"><div class="skeleton" style="height:160px"></div><div class="skeleton" style="height:160px"></div></div>
@@ -459,9 +508,57 @@ import { Toasts } from '../core/toast';
     </div>
   `,
   styles: `
+    .page.wide { max-width: 1180px; }
+    .layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; align-items: start; }
+    .sections {
+      position: sticky; top: 24px; display: grid; gap: 1px; max-height: calc(100vh - 48px); overflow-y: auto;
+      .nav-group { font-size: 11px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);
+        padding: 14px 10px 4px; &:first-child { padding-top: 0; } }
+      a { padding: 6px 10px; border-radius: 8px; text-decoration: none; color: var(--muted); font-size: 14px;
+        transition: background var(--fast), color var(--fast);
+        &:hover { background: var(--sunken); color: var(--text); }
+        &.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow-sm), 0 0 0 1px var(--line); } }
+    }
+    section.card { scroll-margin-top: 20px; }
+    .state { margin-right: auto; display: inline-flex; align-items: center; gap: 8px; font-weight: 550; }
+    .spark { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+    .savebar.dirty { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: var(--shadow-lg); }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; gap: 12px; }
+      .sections {
+        position: sticky; top: 56px; z-index: 5; display: flex; gap: 4px; overflow-x: auto; max-height: none;
+        padding: 6px; margin: 0 -4px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px);
+        scrollbar-width: none;
+        .nav-group { display: none; }
+        a { flex: none; white-space: nowrap; }
+      }
+    }
     .group-title {
       margin: 18px 0 -4px;
     }
+    .looks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .look {
+      display: grid; gap: 10px; padding: 10px; border-radius: 12px; white-space: normal; justify-items: stretch;
+      &.on { border-color: var(--accent); box-shadow: var(--ring); }
+    }
+    .preview {
+      height: 64px; border-radius: 8px; display: grid; grid-template-columns: 28% 1fr; grid-template-rows: 1fr 1fr;
+      gap: 5px; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.08);
+      i { border-radius: 4px; }
+      i:first-child { grid-row: 1 / 3; }
+    }
+    .look.light .preview { background: #f6f5f1; i { background: #fff; box-shadow: 0 0 0 1px #e5e2d9; } i:first-child { background: #efede7; } }
+    .look.dark .preview { background: #0e0e0c; i { background: #1e1d1a; } i:first-child { background: #171714; } }
+    .look.system .preview {
+      background: linear-gradient(135deg, #f6f5f1 50%, #0e0e0c 50%);
+      i { background: color-mix(in srgb, #fff 50%, #1e1d1a); }
+    }
+    .look-name {
+      display: flex; align-items: center; gap: 6px; font-weight: 600;
+      svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      small { color: var(--muted); font-weight: 500; font-size: 12px; }
+    }
+    @media (max-width: 520px) { .looks { grid-template-columns: 1fr; } .look { grid-template-columns: 90px 1fr; align-items: center; } }
     .group-note {
       margin: -6px 0 0;
     }
@@ -550,6 +647,8 @@ import { Toasts } from '../core/toast';
 export class SettingsPage {
   private readonly api = inject(Api);
   protected readonly store = inject(JobsStore);
+  protected readonly appearance = inject(AppearanceStore);
+  protected readonly appearances = APPEARANCES;
   private readonly toasts = inject(Toasts);
 
   protected readonly bundle = signal<SettingsBundle | null>(null);
@@ -644,7 +743,80 @@ export class SettingsPage {
   }
   protected readonly error = signal('');
 
+  // --- v2: sections, unsaved changes ---------------------------------------------------------
+
+  /** Bumped by any edit in the form, so `dirty` re-checks (the inputs write into the object directly). */
+  private readonly edits = signal(0);
+  protected readonly dirty = computed(() => {
+    this.edits();
+    const form = this.form();
+    const saved = this.bundle()?.settings;
+    return !!form && !!saved && JSON.stringify(form) !== JSON.stringify(saved);
+  });
+  protected readonly activeSection = signal('features');
+  private observer: IntersectionObserver | null = null;
+
+  protected readonly groups = computed(() => {
+    this.edits();               // the feature switches are edited in place
+    const f = this.form();
+    const groups: { title: string; items: { id: string; label: string }[] }[] = [
+      { title: 'General', items: [{ id: 'features', label: 'Features' }, { id: 'appearance', label: 'Appearance' }] },
+    ];
+    if (f?.feature_studio) {
+      groups.push({ title: 'Studio', items: [{ id: 'studio-themes', label: 'Themes' }, { id: 'studio-drawings', label: 'Drawings' },
+        { id: 'studio-voice', label: 'Voice' }, { id: 'studio-ink', label: 'Ink style' }] });
+    }
+    if (f?.feature_clipping) {
+      groups.push({ title: 'Clipping', items: [{ id: 'clip-channel', label: 'Your channel' }, { id: 'clip-scout', label: 'Campaign scout' },
+        { id: 'clip-moments', label: 'Moments and checks' }, { id: 'clip-download', label: 'Download' }] });
+    }
+    groups.push({ title: 'Everything', items: [{ id: 'storage', label: 'Storage' }, { id: 'ai', label: 'AI models and spending' },
+      { id: 'transcription', label: 'Transcription' }, { id: 'render', label: 'Render' },
+      { id: 'installation', label: 'This installation' }] });
+    return groups;
+  });
+
+  protected touched(): void {
+    this.edits.update((n) => n + 1);
+  }
+
+  protected discard(): void {
+    const bundle = this.bundle();
+    if (bundle) this.form.set({ ...bundle.settings });
+    this.error.set('');
+  }
+
+  protected jump(event: Event, id: string): void {
+    event.preventDefault();
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.activeSection.set(id);
+  }
+
+  /** The menu follows the section you are reading. */
+  private watchSections(): void {
+    this.observer?.disconnect();
+    this.observer = new IntersectionObserver((entries) => {
+      const seen = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      if (seen[0]) this.activeSection.set(seen[0].target.id);
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    for (const g of this.groups()) {
+      for (const item of g.items) {
+        const el = document.getElementById(item.id);
+        if (el) this.observer.observe(el);
+      }
+    }
+  }
+
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.observer?.disconnect());
+    effect(() => {
+      this.groups();
+      if (this.form()) setTimeout(() => this.watchSections());
+    });
+    const fragment = inject(ActivatedRoute).snapshot.fragment;
+    if (fragment) {
+      setTimeout(() => document.getElementById(fragment)?.scrollIntoView({ block: 'start' }), 400);
+    }
     this.loadUsage(30);
     this.loadModels();
     this.api.settings().subscribe({ next: (bundle) => this.apply(bundle), error: (err) => this.toasts.error(err) });
@@ -659,6 +831,7 @@ export class SettingsPage {
   protected reset(): void {
     const bundle = this.bundle();
     if (bundle) this.form.set({ ...bundle.defaults });
+    this.touched();
     this.toasts.ok('Defaults restored. Save to keep them.');
   }
 

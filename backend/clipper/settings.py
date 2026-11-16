@@ -46,6 +46,9 @@ class Settings(BaseModel):
     # After a storyboard is planned, the AI director looks at stills of its shots and rewrites the weak ones
     # (studio/director.py): one writing-tier call per 4 to 6 shots, free on a subscription tier.
     director_pass: bool = False
+    # Each new theme gets a banner drawn by the writing model (one call, a few cents; free on a plan).
+    # Off: no banner is drawn and the option is hidden on the theme's page.
+    theme_banners: bool = True
     # Who the videos are for: ideas, research and scripts are written for them (see studio/plain.py).
     audience: Literal["everyone", "curious", "enthusiasts"] = "everyone"
     # AI voice. Kokoro and Chatterbox run on this machine for free (Chatterbox is expressive and slower);

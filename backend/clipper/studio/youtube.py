@@ -83,3 +83,25 @@ def research(query: str) -> dict:
             "duration_s": seconds(v.get("contentDetails", {}).get("duration", "")),
         })
     return {"query": query, "checked_at": datetime.now(UTC).isoformat(), "videos": rows}
+
+
+VIDEO_ID = re.compile(r"(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})")
+
+
+def video_id(url: str) -> str | None:
+    """The video id in a YouTube link (watch, youtu.be, shorts, live or embed); None if it is not one."""
+    match = VIDEO_ID.search(url or "")
+    return match.group(1) if match else None
+
+
+def stats(ids: list[str]) -> dict[str, dict]:
+    """Public statistics of your own published videos, {id: {views, likes, comments}}. One unit per 50 videos."""
+    out: dict[str, dict] = {}
+    for start in range(0, len(ids), 50):
+        group = ids[start:start + 50]
+        for item in _get("videos", part="statistics", id=",".join(group)).get("items", []):
+            data = item.get("statistics", {})
+            out[item["id"]] = {"views": int(data.get("viewCount", 0)),
+                               "likes": int(data["likeCount"]) if "likeCount" in data else None,
+                               "comments": int(data["commentCount"]) if "commentCount" in data else None}
+    return out

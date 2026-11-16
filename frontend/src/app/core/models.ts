@@ -194,6 +194,7 @@ export interface MomentInput {
 export interface AppSettings {
   theme: string;
   studio_theme: string;
+  theme_banners: boolean;
   /** Who the videos are for: ideas, research and scripts are written for them. */
   audience: Audience;
   voice_engine: VoiceEngine;
@@ -378,6 +379,9 @@ export interface IdeaVideo {
 export interface Idea {
   id: number;
   theme: string;
+  theme_id: number | null;
+  /** Generated from a proven theme: what it builds on. */
+  inspired_by: { kind: 'video' | 'script' | 'idea'; id: number; title: string; evidence: string }[] | null;
   title: string;
   hook: string;
   answer: string;
@@ -437,6 +441,7 @@ export interface ScriptClaim {
 export interface ScriptSummary {
   id: number;
   idea_id: number | null;
+  theme_id: number | null;
   title: string;
   format: 'single' | 'list';
   target_minutes: number;
@@ -924,4 +929,152 @@ export interface CostOf {
   script?: number;
   storyboard?: number;
   video?: string;
+}
+
+
+// --- themes (v2) -------------------------------------------------------------------
+
+export type ThemeColor = 'amber' | 'coral' | 'violet' | 'teal' | 'sky' | 'lime' | 'rose' | 'indigo';
+export const THEME_COLORS: ThemeColor[] = ['amber', 'coral', 'violet', 'teal', 'sky', 'lime', 'rose', 'indigo'];
+export type ThemeStage = 'ideas' | 'script' | 'voice' | 'animation' | 'ready' | 'published';
+export const THEME_STAGES: { value: ThemeStage; label: string; hint: string }[] = [
+  { value: 'ideas', label: 'Ideas', hint: 'Sort, check and approve ideas' },
+  { value: 'script', label: 'Script', hint: 'Research, write and approve the narration' },
+  { value: 'voice', label: 'Voice', hint: 'Record or generate the voice' },
+  { value: 'animation', label: 'Animation', hint: 'Plan, render and review the video' },
+  { value: 'ready', label: 'Ready', hint: 'Approved: schedule or publish' },
+  { value: 'published', label: 'Published', hint: 'Out, with its numbers' },
+];
+
+export interface Theme {
+  id: number;
+  name: string;
+  description: string;
+  color: ThemeColor;
+  status: 'active' | 'paused' | 'archived';
+  channels: string[];
+  notes: string;
+  insights: ThemeInsights | null;
+  banner: { made_at: string; by: 'ai' | 'you'; note: string } | null;
+  banner_job: Job | null;
+  created_at: string;
+  updated_at: string;
+  counts: Record<ThemeStage, number>;
+  inbox: number;
+  performance: {
+    published: number; with_views: number; total_views: number; median_views: number | null;
+    best_title: string | null; best_views: number | null;
+  };
+  next: { stage: ThemeStage; text: string };
+}
+
+export interface ThemeInsights {
+  summary: string;
+  works: string[];
+  avoid: string[];
+  try_next: string[];
+  confidence: 'low' | 'medium' | 'high';
+  made_at: string;
+  based_on: number;
+  median_views: number | null;
+}
+
+export interface ThemeBoardItem {
+  kind: 'script';
+  id: number;
+  title: string;
+  stage: ThemeStage;
+  video: 'long' | 'short';
+  status: 'draft' | 'approved';
+  updated_at: string;
+  idea_id: number | null;
+  words: number;
+  voiced: boolean;
+  take: { source: string; voice: string; duration: number | null } | null;
+  storyboards: { id: number; title: string; format: 'short' | 'long'; review: string; has_video: boolean;
+    published: boolean; post: string | null }[];
+  job: Job | null;
+}
+
+export interface ProvenExample {
+  key: string;
+  n: number;
+  kind: 'video' | 'script' | 'idea';
+  id: number;
+  title: string;
+  evidence: string;
+}
+
+export interface ThemeBoard {
+  theme: Theme;
+  items: ThemeBoardItem[];
+  ideas: Idea[];
+  proven: ProvenExample[];
+}
+
+export interface ThemeContents {
+  ideas: number;
+  scripts: number;
+  takes: number;
+  videos: number;
+  blockers: string[];
+}
+
+export interface ThemeVideo {
+  storyboard_id: number;
+  script_id: number;
+  idea_id: number | null;
+  title: string;
+  hook: string;
+  format: 'short' | 'long';
+  style: string;
+  seconds: number | null;
+  published_at: string | null;
+  published_url: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  engagement: number | null;
+  vs_median: number | null;
+  lines: string[];
+  networks: { service: string; name: string; link: string | null; views: number | null; status: string }[];
+}
+
+export interface ThemeLearning {
+  videos: ThemeVideo[];
+  median_views: number | null;
+  with_views: number;
+  total_views: number;
+  insights: ThemeInsights | null;
+  can_learn: boolean;
+  proven: { n: number; kind: string; id: number; title: string; evidence: string }[];
+  stats_sources: { buffer: boolean; youtube: boolean };
+}
+
+export interface ThemePatch {
+  name?: string;
+  description?: string;
+  color?: ThemeColor;
+  status?: Theme['status'];
+  channels?: string[];
+  notes?: string;
+}
+
+export interface PromptInfo {
+  name: string;
+  title: string;
+  step: string;
+  task: string;
+  tier: string;
+  used_in: string;
+  about: string;
+  variables: string[];
+  variable_help: Record<string, string>;
+  includes: string[];
+  overridden: boolean;
+  text: string;
+  default: string;
+  problems: string[];
 }

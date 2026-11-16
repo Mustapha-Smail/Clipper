@@ -12,7 +12,7 @@ from .. import config
 from ..db import session_scope
 from ..ffutil import ToolError
 from ..log import configure
-from . import campaigns, ideas, posts, routes, scripts, storyboards, videos, voice
+from . import campaigns, ideas, posts, prompts, routes, scripts, storyboards, themes, videos, voice
 
 access = logging.getLogger("clipper.api.access")
 # Polled every second or so by the UI; logging each one would drown everything else.
@@ -55,7 +55,8 @@ def create_app() -> FastAPI:
             db.execute(text("SELECT 1"))
         return {"status": "ok"}
 
-    for router in (videos.router, campaigns.router, ideas.router, scripts.router, voice.router, storyboards.router,
+    for router in (videos.router, campaigns.router, themes.router, prompts.router, ideas.router, scripts.router,
+                   voice.router, storyboards.router,
                    routes.clips, posts.router,
                    routes.jobs_router, routes.activity, routes.settings_router, routes.system):
         app.include_router(router, prefix="/api/v1")

@@ -181,6 +181,7 @@ const LIMITS: Record<string, number> = { instagram: 2196, tiktok: 2200, youtube:
     .link {
       border: 0;
       background: none;
+      box-shadow: none;
       padding: 0;
       color: inherit;
       text-decoration: underline;
@@ -313,6 +314,7 @@ export class PostScheduler {
         if (!this.title()) this.title.set(draft.title);
         this.ai.set(draft.ai_label);
         this.short.set(draft.short);
+        this.preferred = draft.channels ?? [];
         this.chooseAvailable();
         this.refused.set(draft.allowed ? '' : draft.reason);
       },
@@ -346,11 +348,15 @@ export class PostScheduler {
     return this.short();
   }
 
+  /** The theme's usual channels; when it has some, only those start ticked. */
+  private preferred: string[] = [];
+
   private chooseAvailable(): void {
     if (!this.channels()) return;
     const waiting = new Set(this.mine().filter((p) => WAITING.has(p.status)).map((p) => p.channel_id));
-    this.chosen.set(new Set(this.channels()!
-      .filter((c) => this.channelAllowed(c) && !c.disconnected && !c.locked && !waiting.has(c.id)).map((c) => c.id)));
+    const open = this.channels()!.filter((c) => this.channelAllowed(c) && !c.disconnected && !c.locked && !waiting.has(c.id));
+    const mine = open.filter((c) => this.preferred.includes(c.id));
+    this.chosen.set(new Set((mine.length ? mine : open).map((c) => c.id)));
   }
 
   protected async undoAll(): Promise<void> {

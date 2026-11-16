@@ -27,7 +27,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from .. import config, llm
+from .. import config, llm, prompts
 from ..jobs import Reporter
 
 PACKAGES = ["chatterbox-tts==0.1.7", "setuptools<81"]     # setuptools: its watermarker still imports pkg_resources
@@ -120,27 +120,16 @@ class Marks(BaseModel):
     marks: list[Mark]
 
 
-DIRECT = f"""\
-You direct the narrator of a short explainer video. For each numbered sentence, choose how \
-it is said: a mood, and now and then a sound.
-
-Moods: {", ".join(MOODS)}. Most sentences are narration: an engaged storyteller already \
-sounds alive. Use the others where the words call for them: dramatic for a reveal, a \
-stake or a turn; surprised for something unexpected; sarcastic for irony or a myth being \
-mocked; whispering for a secret or an aside; happy for a win or a fun fact; fear for \
-danger; angry for an injustice. Vary them: never the same strong mood on more than two \
-sentences in a row.
-Sounds: {", ".join(s for s in SOUNDS if s != "none")}, or none. A sound must fit the line \
-(a gasp before a shock, a chuckle after a joke, a sigh before a letdown). At most one \
-sound every {SOUND_EVERY} sentences; none in the first sentence.
-Answer with one mark per sentence, by its number."""
+DIRECT = prompts.Prompt("voice_direction")
 
 
 def direct(sentences: list[str], rep: Reporter) -> list[str]:
     """The sentences with their tags, as Claude directs them; plain sentences if the AI cannot be reached."""
     numbered = "\n".join(f"{n}. {s}" for n, s in enumerate(sentences))
     try:
-        marks = llm.ask("delivery", DIRECT, f"<sentences>\n{numbered}\n</sentences>", Marks, effort="low").marks
+        brief = DIRECT.format(moods=", ".join(MOODS), sounds=", ".join(s for s in SOUNDS if s != "none"),
+                              sound_every=SOUND_EVERY)
+        marks = llm.ask("delivery", brief, f"<sentences>\n{numbered}\n</sentences>", Marks, effort="low").marks
     except Exception as err:  # noqa: BLE001 - a voice without direction is still a voice
         rep.warn(f"Could not direct the delivery ({str(err)[:160]}): every sentence is read as plain narration")
         return list(sentences)

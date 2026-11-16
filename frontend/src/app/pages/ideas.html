@@ -1,11 +1,13 @@
-<div class="page">
+<div class="page" [class.embedded]="embedded()">
   <div class="page-head">
-    <div>
-      <h1>Ideas</h1>
-      <p class="muted">Ideas for your animated channel, ranked by demand on YouTube, room for a small channel, and how strong the idea is.</p>
-    </div>
+    @if (!embedded()) {
+      <div>
+        <h1>All ideas</h1>
+        <p class="muted">Every theme's ideas, ranked by demand on YouTube, room for a small channel, and how strong the idea is.</p>
+      </div>
+    }
     <div class="head-tools">
-      @if (themes().length > 1) {
+      @if (!embedded() && themes().length > 1) {
         <select class="theme-filter" [ngModel]="themeFilter()" (ngModelChange)="themeFilter.set($event)" aria-label="Theme">
           <option value="">All themes</option>
           @for (th of themes(); track th.name) { <option [value]="th.name">{{ th.name }} ({{ th.count }})</option> }
@@ -28,18 +30,54 @@
 
   @if (tab() === 'generate') {
   <section class="card start">
+    <div class="modes" role="radiogroup" aria-label="Kind of ideas">
+      <button role="radio" class="mode" [class.on]="genMode() === 'fresh'" [attr.aria-checked]="genMode() === 'fresh'"
+              (click)="genMode.set('fresh')">
+        <strong>Fresh ideas</strong><span class="small muted">New subjects for the theme</span></button>
+      <button role="radio" class="mode" [class.on]="genMode() === 'proven'" [attr.aria-checked]="genMode() === 'proven'"
+              (click)="genMode.set('proven')" [disabled]="!proven().length">
+        <strong>Build on what works</strong>
+        <span class="small muted">{{ proven().length
+          ? 'From your best videos, approved scripts and kept ideas (' + proven().length + ')'
+          : 'Nothing proven yet: keep or approve ideas, or publish a video, first' }}</span></button>
+    </div>
+    @if (genMode() === 'proven' && proven().length) {
+      <div class="proven">
+        <div class="row spread">
+          <span class="small"><strong>Build on</strong> <span class="muted">{{ ticked().length }} of {{ proven().length }},
+            strongest evidence first</span></span>
+          <span class="row">
+            <button class="sm quiet" (click)="tickAll(true)">All</button>
+            <button class="sm quiet" (click)="tickAll(false)">None</button>
+          </span>
+        </div>
+        <ul>
+          @for (p of proven(); track p.key) {
+            <li>
+              <label class="check">
+                <input type="checkbox" [checked]="!unticked().has(p.key)" (change)="tick(p.key)" />
+                <span><span class="kind" [class]="'kind ' + p.kind">{{ p.kind }}</span> {{ p.title }}
+                  <small>{{ p.evidence }}</small></span>
+              </label>
+            </li>
+          }
+        </ul>
+      </div>
+    }
     <div class="theme-row">
-      <label class="field grow"><span>Theme for this batch</span>
-        <span class="theme-input">
-          <input type="text" maxlength="300" [(ngModel)]="theme" placeholder="For example: how everyday things secretly work" />
-          <button type="button" class="wand" (click)="wand()" [disabled]="wanding()"
-                  [attr.aria-label]="'Suggest themes'" title="No inspiration? Suggest themes (uses what you typed as a direction)">
-            {{ wanding() ? '…' : '🪄' }}</button>
-        </span></label>
+      @if (!embedded()) {
+        <label class="field grow"><span>Theme</span>
+          <select [ngModel]="pickedTheme()" (ngModelChange)="pickedTheme.set(+$event)">
+            @for (t of themesStore.active(); track t.id) { <option [ngValue]="t.id">{{ t.name }}</option> }
+          </select></label>
+      }
+      <label class="field grow"><span>Direction <em class="muted">(optional)</em></span>
+        <input type="text" maxlength="300" [(ngModel)]="hint"
+               [placeholder]="genMode() === 'proven' ? 'For example: more about kings' : 'For example: food and kitchens'" /></label>
       <label class="field count"><span>Ideas</span>
         <input type="number" min="1" max="20" [(ngModel)]="count" /></label>
-      <button class="primary" (click)="generate()" [disabled]="generating()">
-        {{ generating() ? 'Thinking… about a minute' : 'Suggest ideas' }}</button>
+      <button class="primary" (click)="generate()" [disabled]="generating() || target() === null">
+        {{ generating() ? 'Thinking… about a minute' : genMode() === 'proven' ? 'Build ideas' : 'Suggest ideas' }}</button>
     </div>
     <label class="field audience"><span>Written for</span>
       <select [ngModel]="audience()" (ngModelChange)="setAudience($event)">
@@ -47,23 +85,6 @@
       </select>
       <small>{{ audienceHint() }}. Ideas, research and scripts are all written for them, and scripts get a
         plain-language check.</small></label>
-    @if (themeIdeas(); as list) {
-      <div class="theme-ideas">
-        <div class="row spread">
-          <span class="small muted">Click a theme to use it{{ hintUsed() ? ' (suggested around “' + hintUsed() + '”)' : '' }}.</span>
-          <button class="sm quiet" (click)="themeIdeas.set(null)">Close</button>
-        </div>
-        <div class="theme-list">
-          @for (t of list; track t.theme) {
-            <button type="button" class="theme-card" (click)="useTheme(t.theme)">
-              <strong>{{ t.theme }}</strong>
-              <span class="small muted">{{ t.why }}</span>
-              <span class="small"><em>e.g. “{{ t.example }}”</em></span>
-            </button>
-          }
-        </div>
-      </div>
-    }
     <details class="fold" #own>
       <summary class="small muted">Add an idea of your own</summary>
       <div class="stack">
@@ -81,8 +102,7 @@
         </span></div>
       }
     }
-    <p class="small muted">New ideas wait here. Keep the ones worth a closer look: they move to To review. Try other themes
-      freely; the filter above shows one theme at a time.</p>
+    <p class="small muted">New ideas wait here. Keep the ones worth a closer look: they move to To review.</p>
   </section>
   }
 
@@ -108,7 +128,7 @@
 
     <div class="stack" style="margin-top:12px">
       @for (group of groups(); track group.theme) {
-        @if (groups().length > 1 || !themeFilter()) {
+        @if (!embedded() && (groups().length > 1 || !themeFilter())) {
           <h2 class="theme-head">{{ group.theme }} <span class="muted num">{{ group.ideas.length }}</span></h2>
         }
         @for (idea of group.ideas; track idea.id) {
@@ -138,6 +158,13 @@
             </div>
 
             <p class="hook">“{{ idea.hook }}”</p>
+            @if (idea.inspired_by?.length) {
+              <p class="builds small"><span class="muted">Builds on</span>
+                @for (b of idea.inspired_by; track b.kind + b.id) {
+                  <span class="chip" [title]="b.evidence">{{ b.title }}</span>
+                }
+              </p>
+            }
             <p class="small"><strong>The answer:</strong> {{ idea.answer }}</p>
 
             @if (idea.demand; as d) {
@@ -278,7 +305,7 @@
       } @empty {
         <div class="empty">
           @if (tab() === 'generate') {
-            No new ideas waiting. Write a theme above and ask for ideas.
+            No new ideas waiting. Ask for some above.
           } @else if (!all.length) {
             No ideas yet. Open Generate to ask for your first ones.
           } @else {

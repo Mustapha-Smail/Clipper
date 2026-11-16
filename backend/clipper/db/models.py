@@ -101,6 +101,30 @@ class Campaign(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Theme(Base):
+    """A channel theme: the home of its ideas, scripts, videos and what was learnt from them.
+
+    One theme per account. `insights` is the last reading of how its published videos
+    did (studio/learning.py); `channels` the Buffer channels its Shorts go to by default.
+    """
+
+    __tablename__ = "themes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")        # what the channel is about, for the AI
+    color: Mapped[str] = mapped_column(String(16), default="amber")
+    status: Mapped[str] = mapped_column(String(12), default="active", index=True)  # active|paused|archived
+    channels: Mapped[list] = mapped_column(JSON, default=list)        # Buffer channel ids; empty = choose each time
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # The last lessons drawn from performance: {made_at, by, based_on, summary, works, avoid, try_next}.
+    insights: Mapped[dict | None] = mapped_column(JSON)
+    # The banner picture (studio/banner.py), {made_at, by: ai|you, note}; NULL = none.
+    banner: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Idea(Base):
     """A video idea for the animated channel (the Studio), and how it was judged.
 
@@ -112,7 +136,11 @@ class Idea(Base):
     __tablename__ = "ideas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    theme: Mapped[str] = mapped_column(Text, default="")              # the channel theme it was made for
+    theme: Mapped[str] = mapped_column(Text, default="")              # the theme's name when it was made
+    theme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("themes.id", ondelete="SET NULL", name="fk_ideas_theme_id"), index=True)
+    # Generated from a proven theme: the ideas and videos it builds on, [{id, title, why}].
+    inspired_by: Mapped[list | None] = mapped_column(JSON)
     title: Mapped[str] = mapped_column(Text)
     hook: Mapped[str] = mapped_column(Text, default="")               # the question that opens the video
     answer: Mapped[str] = mapped_column(Text, default="")             # the surprising answer, in one line
@@ -146,6 +174,8 @@ class Script(Base):
         ForeignKey("ideas.id", ondelete="SET NULL", name="fk_scripts_idea_id"), index=True)
     title: Mapped[str] = mapped_column(Text)
     theme: Mapped[str] = mapped_column(Text, default="")
+    theme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("themes.id", ondelete="SET NULL", name="fk_scripts_theme_id"), index=True)
     format: Mapped[str] = mapped_column(String(16), default="single")      # single|list
     target_minutes: Mapped[int] = mapped_column(Integer, default=6)
     video: Mapped[str] = mapped_column(String(8), default="long")      # long | short (a Short only)
@@ -161,6 +191,7 @@ class Script(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     idea: Mapped["Idea | None"] = relationship()
+    theme_ref: Mapped["Theme | None"] = relationship()
     takes: Mapped[list["VoiceTake"]] = relationship(
         back_populates="script", cascade="all, delete-orphan", order_by="VoiceTake.id")
     storyboards: Mapped[list["Storyboard"]] = relationship(
@@ -294,6 +325,10 @@ class Storyboard(Base):
     director: Mapped[dict | None] = mapped_column(JSON)
     # Long videos: three thumbnails for YouTube's A/B test (studio/thumbnail.py), {options, made_at, by}.
     thumbnails: Mapped[dict | None] = mapped_column(JSON)
+    # Published by hand (long videos): the public link, and its statistics from YouTube's Data API,
+    # {views, likes, comments, at}.
+    published_url: Mapped[str | None] = mapped_column(Text)
+    stats: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -452,6 +487,10 @@ class Post(Base):
     error: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # last asked Buffer
+    # Statistics Buffer reports for a sent post ({views, likes, comments, shares, saves, ...}), and when
+    # Buffer last updated them; NULL = not asked yet. See posting.sync_metrics.
+    metrics: Mapped[dict | None] = mapped_column(JSON)
+    metrics_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

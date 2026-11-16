@@ -163,6 +163,27 @@ def posts(ids: list[str], kind: str) -> dict[str, dict | None]:
     return found
 
 
+METRIC_FIELDS = "id metricsUpdatedAt metrics { type value }"
+
+
+def metrics(ids: list[str], kind: str) -> dict[str, dict]:
+    """The statistics Buffer has for sent posts, {post id: {"at": ISO time or None, "values": {type: value}}},
+    batched like `posts`. A post Buffer no longer has, or one it reports nothing for, is left out."""
+    found: dict[str, dict] = {}
+    for start in range(0, len(ids), BATCH):
+        group = ids[start:start + BATCH]
+        query = "query(" + ", ".join(f"$p{i}: PostId!" for i in range(len(group))) + ") { " + " ".join(
+            f"p{i}: post(input: {{id: $p{i}}}) {{ {METRIC_FIELDS} }}" for i in range(len(group))) + " }"
+        answer = call(query, {f"p{i}": post_id for i, post_id in enumerate(group)}, kind)
+        data = answer.get("data") or {}
+        for i, post_id in enumerate(group):
+            node = data.get(f"p{i}")
+            if node and node.get("metrics") is not None:
+                values = {m["type"]: m["value"] for m in node["metrics"] if m.get("value") is not None}
+                found[post_id] = {"at": node.get("metricsUpdatedAt"), "values": values}
+    return found
+
+
 def _one(post_id: str, kind: str) -> dict[str, dict | None]:
     answer = call(f"query($p: PostId!) {{ post(input: {{id: $p}}) {{ {POST_FIELDS} }} }}", {"p": post_id}, kind)
     node = (answer.get("data") or {}).get("post")

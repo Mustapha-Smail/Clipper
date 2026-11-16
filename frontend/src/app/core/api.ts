@@ -6,7 +6,7 @@ import {
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
-  SystemStatus, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
+  SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -111,17 +111,79 @@ export class Api {
   }
 
   // Studio ideas
-  ideas(): Observable<Idea[]> {
-    return this.http.get<Idea[]>(`${BASE}/ideas`);
+  ideas(themeId?: number | null): Observable<Idea[]> {
+    return this.http.get<Idea[]>(`${BASE}/ideas`, { params: themeId ? { theme_id: themeId } : {} });
   }
-  generateIdeas(count: number, theme: string): Observable<Idea[]> {
-    return this.http.post<Idea[]>(`${BASE}/ideas/generate`, { count, theme });
+  generateIdeas(count: number, themeId: number, mode: 'fresh' | 'proven' = 'fresh', hint = '',
+                examples: string[] = []): Observable<Idea[]> {
+    return this.http.post<Idea[]>(`${BASE}/ideas/generate`, { count, theme_id: themeId, mode, hint, examples });
   }
   suggestThemes(hint: string): Observable<{ theme: string; why: string; example: string }[]> {
     return this.http.post<{ theme: string; why: string; example: string }[]>(`${BASE}/ideas/themes`, { hint });
   }
-  addIdea(text: string): Observable<Idea> {
-    return this.http.post<Idea>(`${BASE}/ideas`, { text });
+  addIdea(text: string, themeId: number | null): Observable<Idea> {
+    return this.http.post<Idea>(`${BASE}/ideas`, { text, theme_id: themeId });
+  }
+
+  // Themes (v2): the home of the work, from idea to published video
+  themes(): Observable<Theme[]> {
+    return this.http.get<Theme[]>(`${BASE}/themes`);
+  }
+  createTheme(name: string, description = ''): Observable<Theme> {
+    return this.http.post<Theme>(`${BASE}/themes`, { name, description });
+  }
+  themeBoard(id: number): Observable<ThemeBoard> {
+    return this.http.get<ThemeBoard>(`${BASE}/themes/${id}`);
+  }
+  updateTheme(id: number, patch: ThemePatch): Observable<Theme> {
+    return this.http.patch<Theme>(`${BASE}/themes/${id}`, patch);
+  }
+  mergeTheme(id: number, into: number): Observable<Theme> {
+    return this.http.post<Theme>(`${BASE}/themes/${id}/merge`, { into });
+  }
+  themeContents(id: number): Observable<ThemeContents> {
+    return this.http.get<ThemeContents>(`${BASE}/themes/${id}/contents`);
+  }
+  deleteTheme(id: number, confirm = ''): Observable<void> {
+    return this.http.delete<void>(`${BASE}/themes/${id}`, { params: { confirm } });
+  }
+  drawBanner(id: number, note = ''): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/themes/${id}/banner`, { note });
+  }
+  uploadBanner(id: number, file: File): Observable<Theme> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.put<Theme>(`${BASE}/themes/${id}/banner`, form);
+  }
+  removeBanner(id: number): Observable<Theme> {
+    return this.http.delete<Theme>(`${BASE}/themes/${id}/banner`);
+  }
+  /** The banner picture; the date in the address makes a new drawing show at once. */
+  bannerUrl(theme: Theme): string | null {
+    return theme.banner ? `${BASE}/themes/${theme.id}/banner.jpg?v=${encodeURIComponent(theme.banner.made_at)}` : null;
+  }
+  themeLearning(id: number): Observable<ThemeLearning> {
+    return this.http.get<ThemeLearning>(`${BASE}/themes/${id}/learning`);
+  }
+  drawLessons(id: number): Observable<ThemeLearning> {
+    return this.http.post<ThemeLearning>(`${BASE}/themes/${id}/insights`, {});
+  }
+  refreshStats(): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/themes/stats/refresh`, {});
+  }
+  linkPublished(storyboardId: number, url: string): Observable<Storyboard> {
+    return this.http.patch<Storyboard>(`${BASE}/storyboards/${storyboardId}`, { published_url: url });
+  }
+
+  // Prompts (v2): the system prompt of every AI step
+  prompts(): Observable<PromptInfo[]> {
+    return this.http.get<PromptInfo[]>(`${BASE}/prompts`);
+  }
+  savePrompt(name: string, text: string): Observable<PromptInfo> {
+    return this.http.put<PromptInfo>(`${BASE}/prompts/${name}`, { text });
+  }
+  resetPrompt(name: string): Observable<PromptInfo> {
+    return this.http.delete<PromptInfo>(`${BASE}/prompts/${name}`);
   }
   validateIdea(id: number): Observable<Idea> {
     return this.http.post<Idea>(`${BASE}/ideas/${id}/validate`, {});
@@ -308,8 +370,8 @@ export class Api {
   aiModels(refresh = false): Observable<AiModels> {
     return this.http.get<AiModels>(`${BASE}/system/ai-models`, { params: { refresh } });
   }
-  allStoryboards(): Observable<StoryboardListItem[]> {
-    return this.http.get<StoryboardListItem[]>(`${BASE}/storyboards`);
+  allStoryboards(themeId?: number | null): Observable<StoryboardListItem[]> {
+    return this.http.get<StoryboardListItem[]>(`${BASE}/storyboards`, { params: themeId ? { theme_id: themeId } : {} });
   }
   photoImageUrl(id: number, version: string | number, size = 320): string {
     return `${BASE}/photos/${id}/image?size=${size}&v=${version}`;
@@ -406,9 +468,11 @@ export class Api {
   }
   postDraft(kind: 'clip' | 'storyboard', refId: number): Observable<{
     text: string; youtube_text: string; title: string; ai_label: boolean; short: boolean; allowed: boolean; reason: string;
+    channels?: string[];
   }> {
     return this.http.get<{
       text: string; youtube_text: string; title: string; ai_label: boolean; short: boolean; allowed: boolean; reason: string;
+    channels?: string[];
     }>(
       `${BASE}/posting/draft`, { params: { kind, ref_id: refId } });
   }

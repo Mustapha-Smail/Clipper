@@ -20,7 +20,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .. import llm
+from .. import llm, prompts
 from ..db import session_scope
 from ..db.models import Script
 from ..jobs import Reporter
@@ -87,31 +87,7 @@ def _load(script_id: int) -> Script:
 
 # --- 1. research ----------------------------------------------------------------------
 
-RESEARCH = """\
-You research one video for a faceless animated YouTube channel (simple drawn characters, \
-deadpan comic narration). A writer will script the video from your notes alone, so the \
-notes must hold every fact the video needs, and nothing you could not source.
-
-Search the web. Prefer primary and reference sources: manufacturers and standards \
-bodies, universities, museums, encyclopedias, established science outlets. Avoid \
-content farms and other YouTube channels.
-
-Start with "The one thing to understand": the single idea the video must leave the \
-viewer with, in one plain sentence the audience would get.
-
-Then write the notes as short bullet points grouped under one heading per beat, then:
-- "Simple explanations": everyday comparisons that make the mechanism easy to picture for \
-the audience, the best first.
-- "Plain words": every technical term the topic needs, each with a plain replacement or a \
-one-line everyday explanation.
-- "Surprising details": numbers, names, dates and odd facts a viewer would repeat. Put the \
-three to five best first; mark the rest "(optional)": the writer leaves out what the \
-story does not need.
-- "Myths and disputes": popular claims on this topic that are false or contested, and \
-what is actually known. The script must not repeat a myth as fact.
-
-Every factual bullet must be backed by a source you found. If you cannot confirm \
-something, leave it out or list it under Myths and disputes as unconfirmed."""
+RESEARCH = prompts.Prompt("script_research")
 
 
 def research(script_id: int, rep: Reporter) -> None:
@@ -140,39 +116,10 @@ class Draft(BaseModel):
     sections: list[Section]
 
 
-SPOKEN = """\
-Write for the ear, as a person talking to one viewer, not as an article read aloud:
-- Talk to the viewer: "you", "your", and now and then a rhetorical question.
-- Contractions everywhere a person would use them (it's, you'd, that's, doesn't).
-- Vary the rhythm: some two-word sentences, some long ones that run on with commas and "and".
-- Signpost like someone explaining across a table: "So.", "Now,", "Here's the thing:", "Okay, but".
-- Mark a beat with an ellipsis (…) before a punchline, and put asides between em dashes.
-- At most one light filler per paragraph ("well,", "honestly,", "basically"); never "um" or "uh".
-- One idea per paragraph; a new paragraph is where the narrator takes a breath."""
+SPOKEN = prompts.Prompt("script_spoken")
 
 
-WRITE = """\
-You write narration for a faceless animated YouTube channel: simple drawn characters on \
-screen, one narrator. The voice is friendly and lightly funny, with jokes that come from \
-the facts themselves and quick asides, never from mocking the viewer. No stage \
-directions, no music cues, no source markers, no emojis.
-
-{plain}
-
-""" + SPOKEN + """
-
-Structure:
-- A cold open of at most 20 seconds that states the hook and makes the viewer need the answer.
-- The body, in sections: for a list video, one section per item; for a single topic, \
-3 to 6 sections that each move the explanation forward and end on a small payoff.
-- A short outro that lands the final surprise. One light line asking to subscribe is \
-fine; no begging.
-
-Use only facts from the research notes, and only those the one idea needs: leaving a \
-true detail out is better than crowding the viewer. Do not add numbers, dates, names or \
-claims that the notes do not contain, and never present an item from "Myths and disputes" as true; \
-the myth itself can be a joke or a setup if the script corrects it. Hit the target length \
-within about 10 percent."""
+WRITE = prompts.Prompt("script_write")
 
 
 def write(script_id: int, rep: Reporter) -> None:
@@ -200,11 +147,7 @@ class Rewrite(BaseModel):
     text: str
 
 
-REWRITE = WRITE + """
-
-You are rewriting one section of an existing script following the creator's instruction. \
-Keep its facts, keep the voice of the rest of the script, and return only the new \
-narration for that section."""
+REWRITE = prompts.Prompt("script_rewrite")
 
 
 def rewrite_section(script: Script, key: str, instruction: str) -> str:
@@ -226,15 +169,7 @@ class SpokenScript(BaseModel):
     sections: list[SpokenSection]
 
 
-MAKE_SPOKEN = """\
-You turn an existing narration, written to be read, into narration written to be spoken \
-by the friendly, lightly funny narrator of a faceless animated YouTube channel.
-
-""" + SPOKEN + """
-
-Keep every fact exactly as it is: no new facts, numbers, names or claims, none dropped. \
-Keep the jokes and keep each section's job. Return every section with its key, in order; \
-the length may grow by at most 15 percent."""
+MAKE_SPOKEN = prompts.Prompt("script_make_spoken")
 
 
 def make_spoken(script_id: int, rep: Reporter) -> None:
@@ -259,20 +194,7 @@ def make_spoken(script_id: int, rep: Reporter) -> None:
     rep.info(f"Done: {before} words before, {after} after. Check the facts again before recording.")
 
 
-MAKE_SIMPLER = """\
-You make an existing narration easy to follow for the audience of a faceless animated \
-YouTube channel, without changing what it says is true.
-
-{plain}
-
-""" + SPOKEN + """
-
-Every fact you keep stays exactly as true as it was: no new facts, numbers, names or \
-claims. You may leave out names, dates, numbers and details the main idea does not need, \
-replace a term with plain words, round a number, and add an everyday comparison (a \
-comparison is not a fact: "like a spreadsheet"). Keep each section's job and the jokes \
-that land for everyone. Return every section with its key, in order; it may get shorter, \
-and grow by at most 10 percent."""
+MAKE_SIMPLER = prompts.Prompt("script_make_simpler")
 
 
 def make_simpler(script_id: int, rep: Reporter) -> None:
@@ -326,15 +248,7 @@ class Claims(BaseModel):
     claims: list[Claim]
 
 
-CHECK = """\
-You fact-check the narration of an educational YouTube video against research notes \
-whose facts carry numbered sources like [3].
-
-List every factual claim in the script: numbers, dates, names, causes, mechanisms, \
-"firsts", superlatives and anything a viewer could repeat as true. Skip pure jokes \
-unless they could be mistaken for fact. For each claim give its verdict and the source \
-numbers from the notes. Be strict: a claim that goes beyond what the notes say (a bigger \
-number, a stronger word like "always" or "invented") is not supported."""
+CHECK = prompts.Prompt("script_factcheck")
 
 
 class WebVerdict(BaseModel):
@@ -348,14 +262,9 @@ class WebVerdicts(BaseModel):
     verdicts: list[WebVerdict]
 
 
-VERIFY = """\
-You verify factual claims from the script of an educational YouTube video. Search the \
-web for each claim. Prefer primary and reference sources. For each numbered claim, say \
-whether reliable sources support it, contradict it, or leave it unclear, and cite them."""
+VERIFY = prompts.Prompt("script_verify")
 
-READ_VERDICTS = """\
-You turn fact-check notes into one verdict per numbered claim. Use only what the notes \
-say; when they do not settle a claim, its verdict is unclear."""
+READ_VERDICTS = prompts.Prompt("script_read_verdicts")
 
 
 def factcheck(script_id: int, rep: Reporter) -> None:

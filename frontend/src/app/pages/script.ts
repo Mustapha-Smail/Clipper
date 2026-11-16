@@ -5,6 +5,7 @@ import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { ClaimVerdict, Script, ScriptClaim, ScriptSection } from '../core/models';
+import { ThemesStore } from '../core/themes-store';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
@@ -31,6 +32,7 @@ interface Proposal {
 })
 export class ScriptPage {
   private readonly api = inject(Api);
+  protected readonly themes = inject(ThemesStore);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
@@ -314,7 +316,7 @@ export class ScriptPage {
     if (!(await this.confirm.ask({ title: 'Delete this script?', message: 'Its research and fact check go with it.',
       confirm: 'Delete', danger: true }))) return;
     this.api.deleteScript(this.id).subscribe({
-      next: () => this.router.navigate(['/scripts']),
+      next: () => this.router.navigate(this.script()?.theme_id ? ['/themes', this.script()!.theme_id] : ['/themes']),
       error: (err) => this.toasts.error(err),
     });
   }

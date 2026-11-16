@@ -1,12 +1,13 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo } from '../core/models';
+import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo, ProvenExample } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
+import { ThemesStore } from '../core/themes-store';
 
 type Tab = 'generate' | 'review' | 'approved' | 'parked' | 'skipped';
 
@@ -18,7 +19,33 @@ type Tab = 'generate' | 'review' | 'approved' | 'parked' | 'skipped';
   styleUrl: './ideas.scss',
 })
 export class IdeasPage {
+  /** Set when the page sits inside a theme: only that theme's ideas, and new ones go to it. */
+  readonly themeId = input<number | null>(null);
+  readonly themeName = input('');
+  /** Open the Generate tab in this mode (from a theme's Performance view). */
+  readonly mode = input<'fresh' | 'proven' | null>(null);
+  /** What "Build on what works" can build on, strongest evidence first. Empty: the mode is off. */
+  readonly proven = input<ProvenExample[]>([]);
+  /** Examples you untick are left out of the next batch. */
+  protected readonly unticked = signal<Set<string>>(new Set());
+  protected readonly ticked = computed(() => this.proven().filter((p) => !this.unticked().has(p.key)));
+
+  protected tick(key: string): void {
+    this.unticked.update((set) => {
+      const next = new Set(set);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  protected tickAll(on: boolean): void {
+    this.unticked.set(on ? new Set() : new Set(this.proven().map((p) => p.key)));
+  }
+  /** Something changed that moves the theme's counts. */
+  readonly changed = output<void>();
+
   private readonly api = inject(Api);
+  protected readonly themesStore = inject(ThemesStore);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
   protected readonly store = inject(JobsStore);
@@ -36,7 +63,16 @@ export class IdeasPage {
   protected readonly ideas = signal<Idea[] | null>(null);
 
   private settings: AppSettings | null = null;
-  protected readonly theme = signal('');
+  /** All ideas page: the theme new ideas go to. */
+  protected readonly pickedTheme = signal<number | null>(null);
+  /** Inside a theme page (the router leaves the input undefined on the All ideas page). */
+  protected readonly embedded = computed(() => this.themeId() != null);
+  protected readonly target = computed(() => this.themeId() ?? this.pickedTheme());
+  protected readonly targetName = computed(() =>
+    this.themeName() || this.themesStore.byId(this.target() ?? -1)?.name || '');
+  private readonly lastTheme = signal<string | null>(null);
+  protected readonly genMode = signal<'fresh' | 'proven'>('fresh');
+  protected readonly hint = signal('');
   protected readonly audiences = AUDIENCES;
   protected readonly audience = signal<Audience>('everyone');
   protected readonly audienceHint = computed(() => {
@@ -50,35 +86,6 @@ export class IdeasPage {
   /** Ideas being checked right now, and the progress of a "check all" run. */
   protected readonly checking = signal<Set<number>>(new Set());
   protected readonly batch = signal<{ done: number; total: number } | null>(null);
-
-  /** The magic wand: theme suggestions when inspiration runs out. */
-  protected readonly themeIdeas = signal<{ theme: string; why: string; example: string }[] | null>(null);
-  protected readonly wanding = signal(false);
-  protected readonly hintUsed = signal('');
-
-  protected wand(): void {
-    // What is already typed is taken as a direction, unless it is just the current saved theme.
-    const typed = this.theme().trim();
-    const hint = typed && typed !== this.settings?.studio_theme ? typed : '';
-    this.wanding.set(true);
-    this.api.suggestThemes(hint).subscribe({
-      next: (list) => {
-        this.wanding.set(false);
-        this.hintUsed.set(hint);
-        this.themeIdeas.set(list);
-      },
-      error: (err) => {
-        this.wanding.set(false);
-        this.toasts.error(err);
-      },
-    });
-  }
-
-  protected useTheme(theme: string): void {
-    this.theme.set(theme);
-    this.themeIdeas.set(null);
-    this.toasts.ok('Theme set. Choose how many ideas, then Suggest ideas.');
-  }
 
   /** '' shows every theme. */
   protected readonly themeFilter = signal('');
@@ -113,12 +120,30 @@ export class IdeasPage {
   protected readonly unchecked = computed(() => this.shown().filter((i) => i.score === null));
 
   constructor() {
-    this.load();
+    effect(() => {
+      this.themeId();
+      untracked(() => this.load());
+    });
+    effect(() => {
+      const mode = this.mode();
+      if (mode) {
+        this.genMode.set(mode === 'proven' && !untracked(() => this.proven().length) ? 'fresh' : mode);
+        this.tab.set('generate');
+      }
+    });
+    this.themesStore.load();
+    // the All ideas page starts on the theme you used last, once both the themes and Settings are in
+    effect(() => {
+      const themes = this.themesStore.active();
+      const last = this.lastTheme();
+      if (this.embedded() || last === null || !themes.length || untracked(() => this.pickedTheme()) !== null) return;
+      this.pickedTheme.set((themes.find((t) => t.name === last) ?? themes[0]).id);
+    });
     this.api.settings().subscribe({
       next: (bundle) => {
         this.settings = bundle.settings;
-        this.theme.set(bundle.settings.studio_theme);
         this.audience.set(bundle.settings.audience ?? 'everyone');
+        this.lastTheme.set(bundle.settings.studio_theme);
       },
       error: (err) => this.toasts.error(err),
     });
@@ -139,7 +164,7 @@ export class IdeasPage {
   }
 
   private load(): void {
-    this.api.ideas().subscribe({ next: (list) => this.ideas.set(list), error: (err) => this.toasts.error(err) });
+    this.api.ideas(this.themeId() ?? null).subscribe({ next: (list) => this.ideas.set(list), error: (err) => this.toasts.error(err) });
   }
 
   /** Replace one idea in the list without reloading the rest. */
@@ -148,23 +173,32 @@ export class IdeasPage {
   }
 
   protected generate(): void {
-    const theme = this.theme().trim();
-    if (!theme) {
-      this.toasts.error('Write the theme of your channel first');
+    const theme = this.target();
+    if (theme === null) {
+      this.toasts.error('Choose a theme first, or create one under Themes');
       return;
     }
     this.generating.set(true);
     // The theme is remembered in Settings, so the next visit starts from it.
-    if (this.settings && theme !== this.settings.studio_theme) {
-      const updated = { ...this.settings, studio_theme: theme };
+    const name = this.targetName();
+    if (this.settings && name && name !== this.settings.studio_theme) {
+      const updated = { ...this.settings, studio_theme: name };
       this.api.saveSettings(updated).subscribe({ next: () => (this.settings = updated), error: () => undefined });
     }
-    this.api.generateIdeas(this.count(), theme).subscribe({
+    const proven = this.genMode() === 'proven';
+    if (proven && !this.ticked().length) {
+      this.generating.set(false);
+      this.toasts.error('Tick at least one example to build on');
+      return;
+    }
+    this.api.generateIdeas(this.count(), theme, this.genMode(), this.hint().trim(),
+                           proven ? this.ticked().map((p) => p.key) : []).subscribe({
       next: (made) => {
         this.generating.set(false);
         this.toasts.ok(`${made.length} new ideas under Generate. Keep the ones you like; they move to To review.`);
         this.tab.set('generate');
         this.load();
+        this.changed.emit();
       },
       error: (err) => {
         this.generating.set(false);
@@ -180,7 +214,7 @@ export class IdeasPage {
       return;
     }
     this.adding.set(true);
-    this.api.addIdea(text).subscribe({
+    this.api.addIdea(text, this.target()).subscribe({
       next: (idea) => {
         this.adding.set(false);
         this.ownText.set('');
@@ -241,6 +275,7 @@ export class IdeasPage {
       next: (updated) => {
         if (done) this.toasts.ok(done);
         this.put(updated);
+        this.changed.emit();
       },
       error: (err) => this.toasts.error(err),
     });

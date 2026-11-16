@@ -60,13 +60,18 @@ def draft(kind: str = Query(pattern="^(clip|storyboard)$"), ref_id: int = Query(
         src = posting.source(db, kind, ref_id)
     except posting.PostingError as err:
         raise HTTPException(404, str(err)) from err
+    channels: list[str] = []
+    if kind == "storyboard":     # the theme's usual channels, chosen first in the Schedule panel
+        board = db.get(Storyboard, ref_id)
+        theme = board.script.theme_ref if board is not None and board.script is not None else None
+        channels = list(theme.channels or []) if theme is not None else []
+    base = {"text": src.text, "youtube_text": src.youtube_text, "title": src.title, "ai_label": src.ai,
+            "short": src.short, "channels": channels}
     try:
         posting.check(src)
     except posting.PostingError as err:
-        return {"text": src.text, "youtube_text": src.youtube_text, "title": src.title,
-                "ai_label": src.ai, "short": src.short, "allowed": False, "reason": str(err)}
-    return {"text": src.text, "youtube_text": src.youtube_text, "title": src.title,
-            "ai_label": src.ai, "short": src.short, "allowed": True}
+        return {**base, "allowed": False, "reason": str(err)}
+    return {**base, "allowed": True}
 
 
 @router.get("/posts", response_model=list[s.PostOut])

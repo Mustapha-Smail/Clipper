@@ -12,7 +12,14 @@ roadmap and the owner's setup checklist; README.md has run and ops instructions.
   `studio/` is the animated-channel side (ideas now; script, voice, storyboard
   and renderer later), one module per step, same rules as the pipeline.
 - `frontend/` Angular 22 app. Standalone components, signals, zoneless, plain
-  SCSS (design tokens in `src/styles.scss`). No UI library.
+  SCSS (design tokens in `src/styles.scss`: surfaces, ink for actions, gold for
+  attention, `.hue-*` per theme, motion tokens). No UI library. Navigation is
+  theme-first: Themes home, a workspace per theme (pipeline stepper, Performance,
+  Settings), then the Workshop pages; ⌘K opens the quick switcher (`shared/palette.ts`).
+  Appearance is System (default), Light or Dark (`core/appearance.ts`, kept in
+  localStorage, applied before paint by the script in `index.html`): dark tokens
+  live in the `dark-tokens` mixin, used for `prefers-color-scheme: dark` unless
+  `data-theme="light"`, and for `data-theme="dark"`. New colours go in both sets.
 - `docker-compose.yml`: db (Postgres), migrate, api, worker, web (nginx).
 
 ## Commands
@@ -37,6 +44,18 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   It must work on both SQLite and Postgres.
 - Media stays on disk; the database holds metadata. A clip row stores its
   absolute path, so clips survive a change of output folder.
+- Prompts (`prompts.py`, `clipper/prompts/*.md`): every system prompt is a
+  Markdown file with a header (title, step, task, used_in, about, variables);
+  a module holds `prompts.Prompt("name")`, read at call time. Overrides from the
+  Prompts page live in `<data>/prompts/` and win until reset. In a prompt,
+  `{name}` is a value the code passes (only those are replaced, so other braces
+  stay literal) and `{prompt:other}` includes another prompt (shared rules live
+  once: `script_spoken`, `music_tone`). New AI work gets a prompt file, never an
+  inline system prompt; keep the header's `variables` in step with the code
+  (a test checks every default). Each variable has a `var.<name>:` line in the
+  header that explains it on the Prompts page. An edit that drops a variable,
+  adds an unknown `{name}` or includes a missing prompt is refused (`problems`,
+  checked again in the page as you type), so a prompt can never break.
 - AI calls go through `llm.py` only: `llm.ask(task, ...)` / `llm.search(task, ...)`.
   A task maps to a tier (writing, quick, research) whose provider and model come
   from Settings; providers live in `claude.py` (Anthropic) and
@@ -244,6 +263,33 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   `InkComposer.sound_events()`, which knows the real timing of walks and moves.
 - `studio/music_search.py`: Openverse only, filtered to cc0, pdm and by; never
   scrape the YouTube Audio Library. Keep the attribution of CC BY tracks.
+- Themes (`studio/themes.py`, `api/themes.py`, table `themes`): the home of the
+  Studio. Every idea and script has a `theme_id` (scripts follow their idea);
+  `theme` text columns keep the name sent to the AI and follow a rename. A
+  script's stage (ideas, script, voice, animation, ready, published) is read
+  from what exists, never stored. Merge moves everything and deletes the
+  source; a theme with work is archived, not deleted. `channels` are the Buffer
+  channels the Schedule panel ticks first. Deleting a theme deletes everything
+  in it (`themes.delete_everything`: ideas, scripts, takes, videos, posts, the
+  hosted copies and the files under `studio/script-N`), only with its name typed
+  to confirm, and is refused while a post still waits on Buffer or a job of the
+  theme runs; exported copies stay. Banners (`studio/banner.py`, task `banner`,
+  prompt `theme_banner`): an SVG drawn on the writing tier, checked like props,
+  rasterised to a 1600x480 JPEG in `studio/themes/theme-N/`, queued as a `banner`
+  job when a theme is created if `Settings.theme_banners`; uploads work either
+  way. The UI has no cross-theme lists any more: ideas, scripts and videos live
+  in their theme (`/ideas`, `/scripts`, `/animations` redirect to `/themes`).
+- Learning (`studio/learning.py`): statistics come from Buffer for sent posts
+  (`posting.sync_metrics`, batched like `posts`, at most once per post per 20 h,
+  60 days after sending) and from the YouTube Data API for long videos linked by
+  hand (`storyboards.published_url`). The idle worker reads them once a day; the
+  manual refresh is a `stats` job refused within 15 minutes of the last. The
+  ranking is arithmetic (views, engagement, x median) with its lines shown; the
+  model only reads the table (`theme_insights`, needs 3 videos with views, never
+  "high" confidence under 6). "Build on what works" (`ideas.generate_proven`,
+  task `ideas_proven`) gets numbered proven examples (videos by views, approved
+  scripts, kept ideas scoring 45+), the lessons and the rejected titles, and
+  answers with example numbers stored as `ideas.inspired_by`.
 - Ideas generated by the model start in status `inbox` (the Generate tab);
   your own ideas start as `new`.
 - Audience (`studio/plain.py`, `Settings.audience`): ideas, themes, the idea

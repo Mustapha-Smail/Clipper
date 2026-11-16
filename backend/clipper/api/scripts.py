@@ -85,7 +85,7 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
     video = (body.video if body else None) or idea.video or "long"
     minutes = (body.target_minutes if body else None) or DEFAULT_MINUTES.get(idea.format, 6)
     seconds = (body.target_seconds if body else None) or 50
-    script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, format=idea.format,
+    script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, theme_id=idea.theme_id, format=idea.format,
                     target_minutes=1 if video == "short" else minutes, video=video, target_seconds=seconds,
                     sections=[])
     db.add(script)

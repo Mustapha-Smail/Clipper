@@ -316,10 +316,114 @@ code {
   button {
     border: 0;
     border-radius: 0;
+    box-shadow: none;
 
     &.on {
       background: var(--text);
       color: var(--bg);
+    }
+  }
+}
+
+// Inside a theme: the theme page gives the frame.
+.page.embedded {
+  max-width: none;
+  padding: 0;
+  animation: none;
+
+  .page-head {
+    margin-bottom: 14px;
+  }
+}
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mode {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  text-align: left;
+  white-space: normal;
+  padding: 12px 14px;
+  background: var(--bg);
+  box-shadow: none;
+
+  &.on {
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+}
+
+.builds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+
+  .chip {
+    padding: 2px 10px;
+    border-radius: 99px;
+    background: var(--accent-soft);
+    font-weight: 550;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .modes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mode:disabled {
+  opacity: 0.6;
+}
+
+.proven {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--line);
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .kind {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 5px;
+    margin-right: 4px;
+    background: var(--sunken);
+    color: var(--muted);
+
+    &.video {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+
+    &.script {
+      background: var(--accent-soft);
+      color: var(--text);
     }
   }
 }

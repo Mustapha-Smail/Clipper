@@ -2,49 +2,93 @@
 // that is specific to them.
 
 :root {
-  --bg: #f5f4f0;
+  // Surfaces: warm paper in light mode, warm graphite in dark mode.
+  --bg: #f6f5f1;
   --surface: #ffffff;
-  --sunken: #eeece6;
-  --line: #dedbd2;
-  --line-strong: #c4c0b4;
-  --text: #17160f;
-  --muted: #6a685f;
-  --accent: #ffd400;
-  --accent-ink: #17160f;
+  --raised: #ffffff;                 // popovers, the command palette
+  --sunken: #efede7;
+  --line: #e5e2d9;
+  --line-strong: #cdc8ba;
+  --text: #15140f;
+  --muted: #6b675c;
+  --faint: #9a968a;
+  // Brand: ink for actions, gold for what asks for attention.
+  --ink: #17150f;
+  --on-ink: #fbfaf6;
+  --accent: #f2c12e;
+  --accent-ink: #1d1700;
+  --accent-soft: #fbf0c8;
   --good: #1c7f47;
   --good-soft: #e2f3e8;
   --bad: #b93327;
   --bad-soft: #fae6e3;
-  --warn: #9a5b00;
+  --warn: #965a00;
   --warn-soft: #fbefd5;
-  --info-soft: #e8ecf5;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 2px rgba(22, 20, 10, 0.05), 0 8px 24px rgba(22, 20, 10, 0.05);
+  --info-soft: #ebeef6;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow-sm: 0 1px 2px rgba(24, 20, 8, 0.06);
+  --shadow: 0 1px 2px rgba(24, 20, 8, 0.05), 0 6px 20px -6px rgba(24, 20, 8, 0.08);
+  --shadow-lg: 0 2px 6px rgba(24, 20, 8, 0.06), 0 24px 60px -12px rgba(24, 20, 8, 0.22);
+  --ring: 0 0 0 3px rgba(242, 193, 46, 0.45);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fast: 120ms;
+  --med: 220ms;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sans: 'Inter var', Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
   color-scheme: light;
 }
 
+// Dark tokens. They follow the system unless you chose Light or Dark (data-theme on <html>,
+// set by core/appearance.ts and, before the app starts, by the script in index.html).
+@mixin dark-tokens {
+  --bg: #0e0e0c;
+  --surface: #171714;
+  --raised: #1e1d1a;
+  --sunken: #201f1c;
+  --line: #2b2a26;
+  --line-strong: #44423b;
+  --text: #f3f1ea;
+  --muted: #a3a094;
+  --faint: #75736a;
+  --ink: #f3f1ea;
+  --on-ink: #15140f;
+  --accent: #f5c842;
+  --accent-ink: #1d1700;
+  --accent-soft: #3a3013;
+  --good: #55c684;
+  --good-soft: #15291c;
+  --bad: #ff8073;
+  --bad-soft: #361915;
+  --warn: #f2b54a;
+  --warn-soft: #30250f;
+  --info-soft: #1c2130;
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 30px 70px -10px rgba(0, 0, 0, 0.75);
+  --ring: 0 0 0 3px rgba(245, 200, 66, 0.35);
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f0f0e;
-    --surface: #191917;
-    --sunken: #232320;
-    --line: #30302c;
-    --line-strong: #47473f;
-    --text: #f2f0e9;
-    --muted: #a19f95;
-    --good: #55c684;
-    --good-soft: #17301f;
-    --bad: #ff8073;
-    --bad-soft: #3a1b17;
-    --warn: #f2b54a;
-    --warn-soft: #33270f;
-    --info-soft: #1e2330;
-    --shadow: none;
-    color-scheme: dark;
+  :root:not([data-theme='light']) {
+    @include dark-tokens;
   }
 }
+
+:root[data-theme='dark'] {
+  @include dark-tokens;
+}
+
+// Each theme has a hue; components read --hue and --hue-soft.
+.hue-amber { --hue: #e0a10b; --hue-soft: color-mix(in srgb, #e0a10b 14%, transparent); }
+.hue-coral { --hue: #e5604a; --hue-soft: color-mix(in srgb, #e5604a 14%, transparent); }
+.hue-violet { --hue: #8b5cf6; --hue-soft: color-mix(in srgb, #8b5cf6 14%, transparent); }
+.hue-teal { --hue: #14a38b; --hue-soft: color-mix(in srgb, #14a38b 14%, transparent); }
+.hue-sky { --hue: #2f8fe0; --hue-soft: color-mix(in srgb, #2f8fe0 14%, transparent); }
+.hue-lime { --hue: #6aa312; --hue-soft: color-mix(in srgb, #6aa312 14%, transparent); }
+.hue-rose { --hue: #e0457b; --hue-soft: color-mix(in srgb, #e0457b 14%, transparent); }
+.hue-indigo { --hue: #5b6cf0; --hue-soft: color-mix(in srgb, #5b6cf0 14%, transparent); }
 
 * {
   box-sizing: border-box;
@@ -59,19 +103,27 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  font: 15px/1.55 var(--sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 a {
   color: inherit;
 }
 
+::selection {
+  background: var(--accent-soft);
+}
+
 h1 {
-  font-size: 26px;
-  line-height: 1.2;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 720;
   margin: 0;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.028em;
   text-wrap: balance;
 }
 
@@ -114,9 +166,99 @@ p {
 // --- layout helpers -----------------------------------------------------------
 
 .page {
-  max-width: 1080px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 36px 32px 96px;
+  padding: 36px 36px 96px;
+  animation: page-in var(--med) var(--ease) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+// A row of items that appear one after another on first paint.
+.stagger > * {
+  animation: page-in 0.32s var(--ease) both;
+
+  @for $i from 1 through 12 {
+    &:nth-child(#{$i}) {
+      animation-delay: #{($i - 1) * 30}ms;
+    }
+  }
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+
+  a {
+    text-decoration: none;
+    border-radius: 6px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+
+    &:hover {
+      color: var(--text);
+      background: var(--sunken);
+    }
+  }
+
+  .sep {
+    color: var(--faint);
+  }
+
+  .crumb-theme {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    .swatch {
+      width: 8px;
+      height: 8px;
+      box-shadow: 0 0 0 2px var(--hue-soft);
+    }
+  }
+}
+
+// A theme named inline, with its dot.
+.theme-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-weight: 550;
+
+  .swatch {
+    width: 7px;
+    height: 7px;
+    box-shadow: 0 0 0 2px var(--hue-soft);
+  }
+}
+
+// A theme's coloured dot.
+.swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hue, var(--accent));
+  box-shadow: 0 0 0 3px var(--hue-soft, var(--accent-soft));
 }
 
 .page-head {
@@ -173,6 +315,25 @@ img {
   padding: 20px;
 }
 
+// A whole card that opens something.
+a.card,
+.card.link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--med) var(--ease), box-shadow var(--med) var(--ease), border-color var(--fast);
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-lg);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
 .empty {
   text-align: center;
   padding: 48px 24px;
@@ -206,13 +367,24 @@ textarea {
   padding: 9px 11px;
   font: inherit;
   color: var(--text);
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  transition: border-color 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--fast), box-shadow var(--fast);
 
   &:hover {
     border-color: var(--line-strong);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--ring);
+  }
+
+  &::placeholder {
+    color: var(--faint);
   }
 }
 
@@ -230,8 +402,8 @@ input[type='color'] {
   background: var(--bg);
 }
 
-:is(input, select, textarea, button, a, summary):focus-visible {
-  outline: 2px solid var(--text);
+:is(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -286,11 +458,17 @@ button,
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
-  transition: background 0.12s, border-color 0.12s;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--fast), border-color var(--fast), transform var(--fast) var(--ease),
+    box-shadow var(--fast), filter var(--fast);
 
   &:hover:not(:disabled) {
     background: var(--sunken);
     border-color: var(--line-strong);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
   }
 
   &:disabled {
@@ -299,19 +477,33 @@ button,
   }
 
   &.primary {
+    background: var(--ink);
+    color: var(--on-ink);
+    border-color: transparent;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+
+    &:hover:not(:disabled) {
+      background: var(--ink);
+      filter: brightness(1.18);
+    }
+  }
+
+  // The one call to action that should be found first on a page.
+  &.accent {
     background: var(--accent);
     color: var(--accent-ink);
     border-color: transparent;
 
     &:hover:not(:disabled) {
       background: var(--accent);
-      filter: brightness(0.94);
+      filter: brightness(0.95);
     }
   }
 
   &.quiet {
     border-color: transparent;
     background: none;
+    box-shadow: none;
     color: var(--muted);
     font-weight: 500;
 
@@ -371,21 +563,27 @@ details.fold {
   overflow-x: auto;           // on a phone, tabs that do not fit scroll sideways inside the bar
   scrollbar-width: none;
   background: var(--sunken);
-  border-radius: 10px;
+  border-radius: 11px;
 
   button {
     border: 0;
     background: none;
+    box-shadow: none;
     color: var(--muted);
     padding: 6px 12px;
     font-weight: 600;
     flex: none;
     white-space: nowrap;
 
+    &:hover:not(:disabled) {
+      background: none;
+      color: var(--text);
+    }
+
     &.on {
       background: var(--surface);
       color: var(--text);
-      box-shadow: var(--shadow);
+      box-shadow: var(--shadow-sm), 0 0 0 1px var(--line);
     }
   }
 }
@@ -599,13 +797,13 @@ details.fold {
 
   .toast {
     pointer-events: auto;
-    background: var(--text);
-    color: var(--bg);
-    padding: 11px 16px;
-    border-radius: 10px;
+    background: var(--ink);
+    color: var(--on-ink);
+    padding: 12px 16px;
+    border-radius: 12px;
     font-weight: 500;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-    animation: rise 0.18s ease-out;
+    box-shadow: var(--shadow-lg);
+    animation: rise var(--med) var(--ease);
     cursor: pointer;
 
     &.error {
@@ -620,6 +818,12 @@ details.fold {
     opacity: 0;
     transform: translateY(10px);
   }
+}
+
+// thin, quiet scrollbars
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

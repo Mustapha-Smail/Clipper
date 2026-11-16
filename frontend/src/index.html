@@ -8,7 +8,14 @@
   <link rel="icon" href="favicon.ico" sizes="48x48">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <meta name="theme-color" content="#17160f">
+  <meta name="theme-color" content="#f6f5f1">
+  <script>
+    // Light or dark chosen in this browser, applied before the page paints (no flash). System is the default.
+    try {
+      var mode = localStorage.getItem('clipper.appearance');
+      if (mode === 'light' || mode === 'dark') document.documentElement.setAttribute('data-theme', mode);
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <app-root></app-root>

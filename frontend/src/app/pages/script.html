@@ -1,7 +1,15 @@
 <div class="page">
-  <a class="back small" routerLink="/scripts">← Scripts</a>
-
   @if (script(); as s) {
+    <nav class="crumbs" aria-label="Breadcrumb">
+      @if (s.theme_id && themes.byId(s.theme_id); as t) {
+        <a routerLink="/themes">Themes</a><span class="sep">/</span>
+        <a [class]="'crumb-theme hue-' + t.color" [routerLink]="['/themes', t.id]"><span class="swatch"></span>{{ t.name }}</a>
+      } @else {
+        <a routerLink="/themes">Themes</a>
+      }
+      <span class="sep">/</span><span>Script</span>
+    </nav>
+
     <div class="page-head">
       <div class="grow">
         <textarea class="title-input" rows="1" [value]="s.title" (change)="rename($any($event.target).value)"
@@ -10,7 +18,7 @@
         <p class="muted small">
           {{ s.video === 'short' ? 'Short only, about ' + s.target_seconds + ' s' : s.format === 'list' ? 'List video' : 'Single topic' }}
           · {{ s.theme }} · updated {{ s.updated_at | ago }}
-          @if (s.idea_id) { · <a routerLink="/ideas">from an idea</a> }
+          @if (s.idea_id && s.theme_id) { · <a [routerLink]="['/themes', s.theme_id]" [queryParams]="{ stage: 'ideas' }">from an idea</a> }
         </p>
         <app-cost-report [of]="{ script: s.id }" label="AI cost of this script and its videos" />
       </div>

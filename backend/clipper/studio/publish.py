@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import llm
+from .. import llm, prompts
 from ..db.models import Storyboard, StudioPhoto, utcnow
 from . import film, sound
 
@@ -32,19 +32,7 @@ class Draft(BaseModel):
     tags: list[str] = Field(description="Up to 12 search tags, lowercase, most specific first")
 
 
-SYSTEM = """\
-You write the YouTube title and description for an educational animated video, \
-from its narration. Rules:
-- Use only facts that are in the narration. No new numbers, dates, names or claims.
-- Titles: honest and specific, a question or a surprising fact the video really \
-answers; under 70 characters; no clickbait words (shocking, insane, you won't believe), \
-no ALL CAPS, at most one emoji and preferably none.
-- Opening: the first line works on its own, because YouTube shows only that line \
-before "more": say what the viewer will learn. Then one or two short paragraphs. \
-Plain words, no hype, no "In this video". Do not ask for likes or subscriptions.
-- Hashtags: three, relevant to the topic.
-- Tags: what people would type to find this video.
-Never use the characters < or >."""
+SYSTEM = prompts.Prompt("youtube_text")
 
 
 def credits(db: Session, board: Storyboard) -> str:

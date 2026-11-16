@@ -36,6 +36,8 @@ TASKS = {
     # task: (tier, what it is, for the usage table)
     "moments": ("writing", "Choosing clip moments"),
     "ideas": ("writing", "Suggesting ideas"),
+    "ideas_proven": ("writing", "Ideas from a proven theme"),
+    "theme_insights": ("writing", "Learning from a theme's videos"),
     "script_write": ("writing", "Writing scripts"),
     "rewrite": ("writing", "Rewriting a section"),
     "simplify": ("writing", "Making scripts simpler"),
@@ -56,6 +58,7 @@ TASKS = {
     "thumbnail": ("writing", "Planning thumbnails"),
     "thumbnail_check": ("quick", "Looking at thumbnails"),
     "places": ("writing", "Drawing places"),
+    "banner": ("writing", "Drawing theme banners"),
     "places_assign": ("quick", "Choosing places for shots"),
     "research": ("research", "Researching scripts"),
     "verify": ("research", "Looking up claims"),
@@ -229,7 +232,7 @@ def _record(task: str, tier: str, provider: str, model: str, usage: dict, starte
         log.warning("could not record AI usage", exc_info=True)
 
 
-def ask(task: str, system: str, content, output_format: type[BaseModel], effort: str = "high",
+def ask(task: str, system, content, output_format: type[BaseModel], effort: str = "high",
         cache: bool = False) -> BaseModel:
     """A structured answer for `task`, from whichever model its tier uses.
 
@@ -237,6 +240,7 @@ def ask(task: str, system: str, content, output_format: type[BaseModel], effort:
     provider cache it.
     """
     tier, provider, model = route(task)
+    system = str(system)          # prompts.Prompt is read here, so an edit applies to the next call
     started = time.monotonic()
     try:
         parsed, usage = PROVIDERS[provider].ask_model(model, system, content, output_format, effort, cache=cache)
@@ -285,7 +289,7 @@ class Sources:
         return self._by_url[url]
 
 
-def search(task: str, system: str, prompt: str, max_searches: int = 8, effort: str = "high",
+def search(task: str, system, prompt: str, max_searches: int = 8, effort: str = "high",
            sources: Sources | None = None) -> tuple[str, Sources, int]:
     """Let the research model search the web and write notes.
 
@@ -293,6 +297,7 @@ def search(task: str, system: str, prompt: str, max_searches: int = 8, effort: s
     (extending `sources` when given) and how many searches were made.
     """
     tier, provider, model = route(task)
+    system = str(system)
     started = time.monotonic()
     try:
         pieces, searches, usage = PROVIDERS[provider].search_model(model, system, prompt, max_searches, effort)

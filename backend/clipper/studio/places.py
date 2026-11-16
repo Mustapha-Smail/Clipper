@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import llm
+from .. import llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioPlace, utcnow
 from ..jobs import Reporter
@@ -56,15 +56,7 @@ class Assignment(BaseModel):
     new_places: list[PlaceRequest] = Field(description="Every place used that is not in the library")
 
 
-ASSIGN = """\
-You choose where each shot of an animated explainer happens, for its cartoon backgrounds. \
-Give one place per shot. Keep a place for several shots in a row and change only when the \
-story moves somewhere else: about 2 to 5 places in a Short, 4 to 10 in a long video. Use \
-the library's places by their exact names when they fit; when the story clearly happens \
-somewhere else (a Roman forum, a laboratory, a monastery), invent a snake_case name and \
-describe it in new_places. Prefer a concrete place where the people or things of the shot \
-would really be; idea (an abstract colour field) is only for a single shot of pure explanation, \
-at most one shot in five."""
+ASSIGN = prompts.Prompt("places_assign")
 
 
 def assign(storyboard_id: int, rep: Reporter) -> None:
@@ -120,21 +112,10 @@ def _brief(tall: bool) -> str:
     left, right = round(vw / 2 - seen_w / 2), round(vw / 2 + seen_w / 2)
     actors = (round(vw / 2 - seen_w / 6), round(vw / 2 + seen_w / 6))
     top = round(floor - (vh / cartoon.OVERSCAN) * (0.45 if tall else 0.62))
-    return f"""\
-You draw one background (a place) for a cartoon explainer channel, as SVG. House style:
-- viewBox="0 0 {vw} {vh}" ({'a tall picture, for vertical Shorts' if tall else 'a wide picture'}). \
-The floor or ground meets the wall or horizon at y={floor}; below it is floor or ground only, \
-with low, flat details (a rug, tiles, a path, grass).
-- The camera mostly shows x {left} to {right} and y {top} to {vh}: put the place's best details \
-there, on the wall or horizon between y {top} and {floor}. Beyond it, continue the place more \
-simply, for when the camera moves.
-- Characters stand in front, in the middle (x {actors[0]} to {actors[1]}): nothing tall or busy \
-there, just wall, sky or a calm background.
-- Flat colours, soft and slightly muted so colourful characters stand out; every shape outlined \
-in {OUT}, stroke-width 4, round joins. Depth from overlapping shapes and darker tones.
-- Rich but tidy: 60 to 150 shapes. A clear sense of place and era.
-- Allowed elements: path, rect, circle, ellipse, line, polyline, polygon, g. No text, no people, \
-no gradients, filters, masks, images, styles, scripts or links."""
+    return prompts.render("place_draw", width=vw, height=vh,
+                          shape="a tall picture, for vertical Shorts" if tall else "a wide picture",
+                          floor=floor, left=left, right=right, top=top, actors_left=actors[0], actors_right=actors[1],
+                          outline=OUT)
 
 
 def draw(name: str, description: str, tall: bool, instruction: str = "") -> str:

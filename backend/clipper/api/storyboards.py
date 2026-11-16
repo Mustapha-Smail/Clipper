@@ -16,7 +16,20 @@ from .. import config, jobs, llm, posting
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
-from ..studio import animate, art, beats, cartoon, compliance, film, music_pick, music_search, publish, retention, sound
+from ..studio import (
+    animate,
+    art,
+    beats,
+    cartoon,
+    compliance,
+    film,
+    music_pick,
+    music_search,
+    publish,
+    retention,
+    sound,
+    youtube,
+)
 from ..studio import director as director_mod
 from ..studio import export as export_mod
 from ..studio import places as places_mod
@@ -164,10 +177,13 @@ def list_storyboards(script: Script = Depends(get_script), db: Session = Depends
 
 
 @router.get("/storyboards", response_model=list[s.StoryboardListItem])
-def all_storyboards(db: Session = Depends(get_db)):
-    """Every animated video, newest first, for review across scripts."""
+def all_storyboards(theme_id: int | None = None, db: Session = Depends(get_db)):
+    """Every animated video, newest first, for review; `theme_id` keeps one theme's."""
     running = _board_jobs(db)
-    boards = db.scalars(select(Storyboard).order_by(Storyboard.id.desc())).all()
+    query = select(Storyboard).order_by(Storyboard.id.desc())
+    if theme_id is not None:
+        query = query.join(Script, Storyboard.script_id == Script.id).where(Script.theme_id == theme_id)
+    boards = db.scalars(query).all()
     keep = _keep_days()
     return [s.StoryboardListItem(**summary_out(b, running.get(b.id), keep).model_dump(), script_title=b.script.title)
             for b in boards]
@@ -304,6 +320,21 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
             board.published_at = None
             compliance.record(db, board.script_id, "publish", "you", "Moved the long video back to Approved",
                               storyboard_id=board.id)
+    if body.published_url is not None:
+        url = body.published_url.strip()
+        if url and not youtube.video_id(url):
+            raise HTTPException(400, "Paste the video's YouTube link (watch, youtu.be or shorts)")
+        if url != (board.published_url or ""):
+            board.published_url, board.stats = url or None, None
+            if url and config.youtube_api_key():
+                try:
+                    found = youtube.stats([youtube.video_id(url)])
+                except youtube.YouTubeError as err:
+                    log.info("statistics not read", extra={"error": str(err)[:200]})
+                else:
+                    if found:
+                        board.stats = {**next(iter(found.values())), "at": utcnow().isoformat(),
+                                       "source": "youtube"}
     if body.look is not None and body.look != board.look:
         if body.look not in LOOKS.get(board.style, ()) or board.style == "flat":
             raise HTTPException(400, f"The {board.style} style has no {body.look} look")

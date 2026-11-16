@@ -1,9 +1,12 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
+import { APPEARANCES, AppearanceStore } from './core/appearance';
 import { ConfirmHost } from './core/confirm';
 import { JobsStore } from './core/jobs-store';
+import { ThemesStore } from './core/themes-store';
 import { Toasts } from './core/toast';
+import { Palette } from './shared/palette';
 
 interface NavItem {
   path: string;
@@ -22,7 +25,7 @@ function readCollapsed(): boolean {
 }
 
 @Component({
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ConfirmHost],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ConfirmHost, Palette],
   selector: 'app-root',
   styleUrl: './app.scss',
   templateUrl: './app.html',
@@ -31,7 +34,13 @@ function readCollapsed(): boolean {
 export class App {
   protected readonly store = inject(JobsStore);
   protected readonly toasts = inject(Toasts);
+  protected readonly themes = inject(ThemesStore);
+  protected readonly appearance = inject(AppearanceStore);
+  protected readonly appearances = APPEARANCES;
+  protected readonly currentAppearance = computed(() =>
+    APPEARANCES.find((a) => a.value === this.appearance.mode()) ?? APPEARANCES[0]);
   private readonly router = inject(Router);
+  protected readonly isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   /** Desktop: the menu shrinks to a rail of icons. Remembered in this browser. */
   protected readonly collapsed = signal(readCollapsed());
@@ -40,11 +49,12 @@ export class App {
   /** The page shown, once the router has read the address (empty before that). */
   private readonly url = signal('');
 
+  protected readonly homeItem: NavItem = {
+    path: '/themes', label: 'Themes', icon: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z' };
+  /** The tools behind the work: shared drawings and music, and what the AI is told. */
   protected readonly studioItems: NavItem[] = [
-    { path: '/ideas', label: 'Ideas', icon: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z' },
-    { path: '/scripts', label: 'Scripts', icon: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5' },
-    { path: '/animations', label: 'Animations', icon: 'M4 5h16v14H4zM10 9l5 3-5 3z' },
     { path: '/props', label: 'Library', icon: 'M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5 1 -3 14-3.5-1z' },
+    { path: '/prompts', label: 'Prompts', icon: 'M4 6h16M4 12h10M4 18h7M17 14l3 3-3 3' },
   ];
   protected readonly clippingItems: NavItem[] = [
     { path: '/', label: 'Videos', icon: 'M3 6h13v12H3zM16 10l5-3v10l-5-3' },
@@ -83,14 +93,16 @@ export class App {
 
   constructor() {
     this.store.start();
+    this.themes.load();
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
       this.menuOpen.set(false);
       this.url.set(e.urlAfterRedirects);
+      this.themes.load();       // counts change as you work: keep the menu current
     });
     effect(() => {
       // with Clipping off, its home page is not the place to land (deep links are left alone)
       const clipping = this.features().clipping;
-      if (!clipping && this.store.status() && this.url().split('?')[0] === '/') this.router.navigateByUrl('/ideas');
+      if (!clipping && this.store.status() && this.url().split('?')[0] === '/') this.router.navigateByUrl('/themes');
     });
   }
 

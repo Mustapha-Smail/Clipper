@@ -5,6 +5,9 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
     </button>
     <a class="brand" routerLink="/"><span class="mark"></span>Clipper</a>
+    <button class="icon-btn top-search" (click)="palette.show()" aria-label="Go to">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></svg>
+    </button>
     @if (store.active().length; as count) {
       <a class="count top-count" routerLink="/activity" [attr.aria-label]="count + ' jobs running'">{{ count }}</a>
     }
@@ -21,9 +24,19 @@
       </button>
     </div>
 
+    <button class="search-btn" (click)="palette.show()" title="Go to anything">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></svg>
+      <span class="label">Go to…</span>
+      <kbd class="label">{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
+    </button>
+
     <nav aria-label="Main">
       @if (features().studio) {
-        <span class="group">Studio</span>
+        <a [routerLink]="homeItem.path" routerLinkActive="on" [routerLinkActiveOptions]="{ exact: true }" [title]="homeItem.label">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="homeItem.icon" /></svg>
+          <span class="label">{{ homeItem.label }}</span>
+        </a>
+        <span class="group">Workshop</span>
         @for (item of studioItems; track item.path) {
           <a [routerLink]="item.path" routerLinkActive="on" [title]="item.label">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="item.icon" /></svg>
@@ -57,6 +70,21 @@
       </a>
     </nav>
 
+    <div class="appearance" role="radiogroup" aria-label="Appearance">
+      @for (a of appearances; track a.value) {
+        <button role="radio" [class.on]="appearance.mode() === a.value" [attr.aria-checked]="appearance.mode() === a.value"
+                (click)="appearance.set(a.value)" [title]="a.label + (a.value === 'system' ? ' (default)' : '')"
+                [attr.aria-label]="a.label">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="a.icon" /></svg>
+        </button>
+      }
+    </div>
+    <button class="icon-btn appearance-one" (click)="appearance.cycle()"
+            [title]="'Appearance: ' + currentAppearance().label + '. Click to change'"
+            [attr.aria-label]="'Appearance: ' + currentAppearance().label">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="currentAppearance().icon" /></svg>
+    </button>
+
     <div class="system small">
       @if (store.status(); as status) {
         <div class="row">
@@ -88,6 +116,7 @@
 </div>
 
 <app-confirm-host />
+<app-palette #palette />
 
 <div class="toasts" role="status" aria-live="polite">
   @for (toast of toasts.items(); track toast.id) {

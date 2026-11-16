@@ -176,6 +176,7 @@ interface Cell { key: string; date: Date; day: number; inMonth: boolean; past: b
       border: 1px solid transparent;
       border-radius: 50%;
       background: none;
+      box-shadow: none;
       font-size: 13px;
       font-variant-numeric: tabular-nums;
       cursor: pointer;

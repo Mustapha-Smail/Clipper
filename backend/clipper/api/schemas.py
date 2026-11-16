@@ -223,6 +223,8 @@ class IdeaDemand(BaseModel):
 class IdeaOut(Model):
     id: int
     theme: str
+    theme_id: int | None = None
+    inspired_by: list[dict] | None = None
     title: str
     hook: str
     answer: str
@@ -251,6 +253,12 @@ class IdeaOut(Model):
 class IdeaGenerate(BaseModel):
     count: int = Field(8, ge=1, le=20)
     theme: str | None = Field(None, max_length=300, description="Defaults to the Studio theme in Settings")
+    theme_id: int | None = None
+    # fresh: new ideas for the theme. proven: built on its best videos, approved scripts and kept ideas.
+    mode: Literal["fresh", "proven"] = "fresh"
+    hint: str = Field("", max_length=300)
+    # proven: the examples to build on, by key ("video:12"); empty = all of them
+    examples: list[str] = Field(default_factory=list, max_length=60)
 
 
 class ThemeRequest(BaseModel):
@@ -265,6 +273,7 @@ class ThemeSuggestion(BaseModel):
 
 class IdeaCreate(BaseModel):
     text: str = Field(min_length=3, max_length=2000, description="Your idea, in a few words or sentences")
+    theme_id: int | None = None
 
 
 class IdeaPatch(BaseModel):
@@ -276,6 +285,7 @@ class IdeaPatch(BaseModel):
     angle: str | None = None
     search_query: str | None = Field(None, min_length=2)
     video: Literal["long", "short"] | None = None
+    theme_id: int | None = None
 
 
 # --- videos ---------------------------------------------------------------------
@@ -425,6 +435,7 @@ class PostDraft(BaseModel):
     short: bool
     allowed: bool
     reason: str = ""
+    channels: list[str] = []        # the theme's default Buffer channels, if it has some
 
 
 class PostOut(Model):
@@ -535,6 +546,7 @@ class ScriptClaim(BaseModel):
 class ScriptSummary(Model):
     id: int
     idea_id: int | None
+    theme_id: int | None = None
     title: str
     format: str
     target_minutes: int
@@ -695,6 +707,8 @@ class StoryboardSummary(Model):
     expired_at: UtcDatetime | None = None
     review_at: UtcDatetime | None = None      # when the verdict last changed
     published_at: UtcDatetime | None = None   # long video marked as uploaded/scheduled manually
+    published_url: str | None = None          # its public link, for statistics
+    stats: dict | None = None                 # {views, likes, comments, at} from YouTube's Data API
     created_at: UtcDatetime
     music_id: int | None
     music_db: float
@@ -795,6 +809,8 @@ class StoryboardScenes(BaseModel):
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
     published: bool | None = Field(None, description="Long video was published or scheduled manually")
+    published_url: str | None = Field(None, max_length=300,
+                                      description="Its YouTube link, for statistics; empty to remove")
     look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] | None = Field(
         None, description="Ink style: render again to see it")
     music_id: int | None = None
@@ -928,3 +944,171 @@ class PlaceRedraw(BaseModel):
 class AssetRedraw(BaseModel):
     instruction: str = Field("", max_length=500)
     description: str | None = Field(None, max_length=500)
+
+
+# --- themes -----------------------------------------------------------------------
+
+ThemeColor = Literal["amber", "coral", "violet", "teal", "sky", "lime", "rose", "indigo"]
+ThemeStage = Literal["ideas", "script", "voice", "animation", "ready", "published"]
+
+
+class ThemePerformance(BaseModel):
+    published: int
+    with_views: int
+    total_views: int
+    median_views: int | None
+    best_title: str | None
+    best_views: int | None
+
+
+class ThemeNext(BaseModel):
+    stage: ThemeStage
+    text: str
+
+
+class ThemeOut(Model):
+    id: int
+    name: str
+    description: str
+    color: ThemeColor | str
+    status: Literal["active", "paused", "archived"]
+    channels: list[str] = []
+    notes: str
+    insights: dict | None
+    banner: dict | None = None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+    # Computed:
+    banner_job: JobOut | None = None
+    counts: dict[str, int]
+    inbox: int
+    performance: ThemePerformance
+    next: ThemeNext
+
+
+class ThemeCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=300)
+    description: str = Field("", max_length=2000)
+
+
+class ThemePatch(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=300)
+    description: str | None = Field(None, max_length=2000)
+    color: ThemeColor | None = None
+    status: Literal["active", "paused", "archived"] | None = None
+    channels: list[str] | None = None
+    notes: str | None = Field(None, max_length=5000)
+
+
+class ThemeMerge(BaseModel):
+    into: int
+
+
+class ThemeBoardStoryboard(BaseModel):
+    id: int
+    title: str
+    format: str
+    review: str
+    has_video: bool
+    published: bool
+    post: str | None = None
+
+
+class ThemeBoardItem(BaseModel):
+    kind: Literal["script"]
+    id: int
+    title: str
+    stage: ThemeStage
+    video: str
+    status: str
+    updated_at: UtcDatetime
+    idea_id: int | None
+    words: int = 0
+    voiced: bool = False
+    take: dict | None = None            # the chosen take: {source, voice, duration}
+    storyboards: list[ThemeBoardStoryboard]
+    job: JobOut | None = None
+
+
+class ProvenExample(BaseModel):
+    key: str                            # "video:12", "script:4", "idea:31": what to send back to choose it
+    n: int
+    kind: str
+    id: int
+    title: str
+    evidence: str
+
+
+class ThemeBoard(BaseModel):
+    theme: ThemeOut
+    items: list[ThemeBoardItem]
+    ideas: list[IdeaOut]
+    proven: list[ProvenExample] = []
+
+
+class ThemeContents(BaseModel):
+    ideas: int
+    scripts: int
+    takes: int
+    videos: int
+    blockers: list[str]
+
+
+class BannerRequest(BaseModel):
+    note: str = Field("", max_length=300, description="What to change, in a few words")
+
+
+class ThemeVideo(BaseModel):
+    storyboard_id: int
+    script_id: int
+    idea_id: int | None
+    title: str
+    hook: str
+    format: str
+    style: str
+    seconds: int | None
+    published_at: str | None
+    published_url: str | None
+    views: int | None
+    likes: int | None
+    comments: int | None
+    shares: int | None
+    saves: int | None
+    engagement: float | None
+    vs_median: float | None
+    lines: list[str]
+    networks: list[dict]
+
+
+class ThemeLearning(BaseModel):
+    videos: list[ThemeVideo]
+    median_views: int | None
+    with_views: int
+    total_views: int
+    insights: dict | None
+    can_learn: bool
+    proven: list[dict]
+    stats_sources: dict
+
+
+# --- prompts ----------------------------------------------------------------------
+
+class PromptOut(BaseModel):
+    name: str
+    title: str
+    step: str
+    task: str
+    tier: str = ""
+    used_in: str
+    about: str
+    variables: list[str]
+    variable_help: dict[str, str] = {}
+    includes: list[str]
+    overridden: bool
+    text: str
+    default: str
+    problems: list[str]
+
+
+class PromptSave(BaseModel):
+    text: str = Field(min_length=1, max_length=60_000)

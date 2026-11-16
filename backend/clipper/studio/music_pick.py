@@ -9,7 +9,7 @@ few hundred tokens. "No music" is a valid answer.
 
 from pydantic import BaseModel, Field
 
-from .. import llm
+from .. import llm, prompts
 
 
 class Searches(BaseModel):
@@ -31,24 +31,10 @@ class Pick(BaseModel):
     ranking: list[Fit] = Field(description="The best tracks, best first, at most 8")
 
 
-TONE = """\
-The video belongs to a faceless animated YouTube channel: deadpan comic narration over \
-simple drawn animation. Music sits under the voice, so it must never compete with it: \
-instrumental, steady, not too busy or bright, matching the tone (curious, dry, playful)."""
 
-SEARCH = TONE + """
+SEARCH = prompts.Prompt("music_search")
 
-Give a few search words to find background music for this video in an open music \
-library that matches titles and tags, not moods: use plain genre or instrument words."""
-
-SYSTEM = TONE + """ Judge each track only from what you are told about it. A title \
-that suggests singing (a song name, "feat.", "vocal", a cover) is a bad sign; \
-"instrumental" in a title is a good one. Library tracks are already downloaded; online \
-ones are free to use but CC BY ones need a credit line in the description.
-
-No music is often the better choice: for a Short of under a minute that relies on the \
-punchline and the sound effects, when every track clashes with the tone, or when a track \
-would make a serious or sad passage feel flippant. Say so when it applies."""
+SYSTEM = prompts.Prompt("music_pick")
 
 
 def _words(features: dict | None) -> tuple[str, str]:

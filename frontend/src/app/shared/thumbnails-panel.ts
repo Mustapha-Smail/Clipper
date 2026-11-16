@@ -167,7 +167,7 @@ const ANGLE_HINTS = {
     /* three tiles side by side; a swipeable row on a phone */
     .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
     .tile {
-      position: relative; display: block; padding: 0; border: 2px solid transparent; border-radius: var(--radius-sm);
+      position: relative; display: block; padding: 0; border: 2px solid transparent; border-radius: var(--radius-sm); box-shadow: none;
       background: var(--sunken); overflow: hidden; cursor: pointer; text-align: left;
       transition: border-color 0.15s ease, transform 0.15s ease;
     }

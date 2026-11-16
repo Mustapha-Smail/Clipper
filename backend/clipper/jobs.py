@@ -30,6 +30,8 @@ STAGES = {
     # Scheduling approved videos on Buffer (posting.py)
     "post": ["upload", "schedule"],
     "post_sync": ["sync"],
+    "stats": ["stats"],
+    "banner": ["banner"],
     # Studio scripts
     "script": ["research", "write", "factcheck"],
     "redraft": ["write", "factcheck"],
@@ -55,6 +57,8 @@ STAGE_LABELS = {
     "upload": "Putting the video online for Buffer",
     "schedule": "Scheduling on Buffer",
     "sync": "Asking Buffer what was posted",
+    "stats": "Reading views and reactions",
+    "banner": "Drawing the theme's banner",
     "research": "Researching with web sources",
     "write": "Writing the script",
     "factcheck": "Checking the facts",
