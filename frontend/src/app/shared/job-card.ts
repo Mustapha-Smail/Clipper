@@ -12,7 +12,8 @@ import { Toasts } from '../core/toast';
   selector: 'app-job-card',
   imports: [RouterLink, ClockPipe],
   template: `
-    <div class="card job" [class.failed]="job().state === 'failed'">
+    <div class="card job" [class.inset]="inset()" [class.failed]="job().state === 'failed'"
+         [class.running]="job().state === 'running'" [class.queued]="job().state === 'queued'">
       <div class="head">
         <div class="what">
           <span class="name">{{ job().label }}</span>
@@ -77,8 +78,36 @@ import { Toasts } from '../core/toast';
     </div>
   `,
   styles: `
+    :host { display: block; }
+    .job {
+      display: grid;
+      gap: 12px;
+      padding: 18px 20px;
+    }
+    .job.running, .job.queued {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+    }
     .job.failed {
       border-color: var(--bad);
+    }
+    /* Inside another card (a voice take): no second frame, a soft panel instead. */
+    .job.inset {
+      padding: 14px 16px;
+      border-color: transparent;
+      box-shadow: none;
+      background: var(--sunken);
+    }
+    .job.inset.running, .job.inset.queued {
+      background: color-mix(in srgb, var(--accent-soft) 70%, var(--sunken));
+    }
+    .job.inset.failed {
+      background: var(--bad-soft);
+    }
+    .job.inset .log {
+      background: var(--surface);
+    }
+    .job > p {
+      margin: 0;
     }
     .head {
       display: flex;
@@ -98,8 +127,8 @@ import { Toasts } from '../core/toast';
     }
     .steps {
       display: flex;
-      gap: 6px;
-      margin: 14px 0 8px;
+      gap: 8px;
+      margin: 2px 0 0;
     }
     .step {
       flex: 1;
@@ -147,17 +176,24 @@ import { Toasts } from '../core/toast';
       white-space: pre-wrap;
       word-break: break-word;
       font: 12.5px/1.45 var(--mono);
-      margin: 8px 0 0;
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--bad-soft);
       color: var(--bad);
       max-height: 180px;
       overflow: auto;
     }
     .actions {
-      margin-top: 8px;
       margin-left: -10px;
+      gap: 8px;
     }
     .log {
-      margin-top: 10px;
+      max-height: 280px;
+      padding: 12px 14px;
+    }
+    .log .line + .line {
+      margin-top: 2px;
     }
   `,
 })
@@ -171,6 +207,8 @@ export class JobCard {
   readonly job = input.required<Job>();
   /** Offer a link to the video once the job has succeeded. */
   readonly showLink = input(false);
+  /** Shown inside another card: drawn as a soft panel rather than a second card. */
+  readonly inset = input(false);
   /** Start with the log visible. */
   readonly expanded = input(false);
 

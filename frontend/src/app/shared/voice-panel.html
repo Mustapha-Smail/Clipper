@@ -103,7 +103,7 @@
       </div>
 
       @if (take.job; as j) {
-        <app-job-card [job]="j" />
+        <app-job-card [job]="j" [inset]="true" class="in-take" />
       }
 
       @if (take.duration && !take.job) {

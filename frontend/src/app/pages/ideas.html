@@ -73,7 +73,7 @@
             <li>
               <label class="check">
                 <input type="checkbox" [checked]="!unticked().has(p.key)" (change)="tick(p.key)" />
-                <span><span class="kind" [class]="'kind ' + p.kind">{{ p.kind }}</span> {{ p.title }}
+                <span><span [class]="'ex-kind ' + p.kind">{{ p.kind }}</span> {{ p.title }}
                   <small>{{ p.evidence }}</small></span>
               </label>
             </li>
@@ -143,7 +143,7 @@
       </div>
     }
 
-    <div class="stack" style="margin-top:12px">
+    <div class="stack ideas-list" style="margin-top:12px">
       @if (tab() === 'generate' && ideaJob()) {
         @for (n of [1, 2, 3]; track n) { <div class="skeleton idea-skeleton" aria-hidden="true"></div> }
       }
@@ -220,7 +220,7 @@
               </p>
             }
 
-            <div class="row">
+            <div class="row actions">
               <button class="sm" (click)="check(idea)" [disabled]="checking().has(idea.id) || batch() !== null">
                 {{ checking().has(idea.id) ? 'Checking…' : idea.score === null ? 'Check it' : 'Check again' }}</button>
               @if (idea.status === 'inbox') {

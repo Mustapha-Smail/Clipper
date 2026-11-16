@@ -56,8 +56,12 @@
 
 .take {
   display: grid;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 16px 18px;
+
+  app-job-card.in-take {
+    margin: 2px 0;
+  }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 

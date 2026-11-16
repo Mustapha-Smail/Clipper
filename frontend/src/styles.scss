@@ -356,6 +356,16 @@ a.card,
   }
 }
 
+// A job's progress card sits apart from what is around it; in a list the list's own gap is enough.
+app-job-card {
+  display: block;
+  margin: 16px 0;
+}
+
+:where(.stack, .grid, .items) > app-job-card {
+  margin: 0;
+}
+
 // --- controls -------------------------------------------------------------------
 
 input[type='text'],

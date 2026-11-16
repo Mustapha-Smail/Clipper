@@ -183,7 +183,7 @@ const DAY = 86_400_000;
       .label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
     .actions { display: flex; gap: 4px; }
     .error { color: var(--bad); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .inline-card { flex-basis: 100%; }
+    .inline-card { flex-basis: 100%; padding: 4px 0 6px; }
     .more { margin-top: 8px; }
     .combined .log.full { max-height: 640px; }
     .tag { color: var(--muted); margin-right: 6px; }

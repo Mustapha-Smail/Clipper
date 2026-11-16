@@ -404,7 +404,7 @@ code {
     overflow-y: auto;
   }
 
-  .kind {
+  .ex-kind {
     display: inline-block;
     font-size: 10.5px;
     font-weight: 700;
@@ -471,4 +471,105 @@ code {
 
 .idea-skeleton {
   height: 150px;
+}
+
+// --- cards that fit the room they get --------------------------------------------------------
+// The list is a container: a card goes compact when the list is narrow, whether that comes from a
+// phone or from a narrow window with the menu open.
+
+.ideas-list {
+  container-type: inline-size;
+}
+
+.idea {
+  position: relative;
+}
+
+@container (max-width: 600px) {
+  .idea {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+
+  // the score becomes a badge in the corner, next to the title
+  .score {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    min-width: 56px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    grid-auto-flow: row;
+    gap: 0;
+
+    strong {
+      font-size: 20px;
+    }
+
+    span {
+      font-size: 9.5px;
+      line-height: 1.2;
+    }
+  }
+
+  .top {
+    padding-right: 68px;
+    flex-wrap: nowrap;
+
+    // the tab you are on already says the status
+    > .pill {
+      display: none;
+    }
+  }
+
+  .hook {
+    font-size: 15px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 12px;
+
+    dd {
+      font-size: 17px;
+    }
+  }
+
+  // even buttons, two or three to a row, easy to hit with a thumb
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+
+    > button,
+    > a.btn {
+      justify-content: center;
+      min-height: 38px;
+    }
+
+    .kind,
+    .length {
+      grid-column: 1 / -1;
+    }
+
+    .kind button {
+      flex: 1;
+      justify-content: center;
+    }
+
+    > button.primary:last-child,
+    > a.btn.primary {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .more {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .suggested {
+    font-size: 13px;
+  }
 }
