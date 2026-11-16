@@ -13,6 +13,7 @@ import { Confirm } from '../core/confirm';
 import { CostReportView } from '../shared/cost-report';
 import { PublishCheckView } from '../shared/publish-check';
 import { YoutubeTextView } from '../shared/youtube-text';
+import { ThumbnailsPanel } from '../shared/thumbnails-panel';
 import { JobCard } from '../shared/job-card';
 
 export const SLOTS = ['top_left', 'top', 'top_right', 'left', 'center', 'right', 'bottom_left', 'bottom', 'bottom_right'];
@@ -80,7 +81,7 @@ type BoardTab = (typeof BOARD_TABS)[number];
 /** One storyboard in four tabs: the video and its review, the scenes, the sound, and publishing. */
 @Component({
   selector: 'app-storyboard-page',
-  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView],
+  imports: [FormsModule, RouterLink, JobCard, AgoPipe, UntilPipe, MegabytesPipe, CostReportView, PublishCheckView, YoutubeTextView, ThumbnailsPanel],
   templateUrl: './storyboard.html',
   styleUrl: './storyboard.scss',
 })
@@ -329,6 +330,17 @@ export class StoryboardPage {
   }
 
   /** The YouTube text was written or saved: keep it, and let the checks see it. */
+  /** The board after a thumbnail edit (the plan is unchanged, so unsaved scene edits stay). */
+  protected setBoard(board: Storyboard): void {
+    this.board.set(board);
+  }
+
+  /** A thumbnails job was queued: show it, and reload when it finishes. */
+  protected jobStarted(): void {
+    this.store.refresh();
+    this.load();
+  }
+
   protected setYoutube(text: YoutubeText): void {
     const ready = !!text.title.trim() && !!text.description.trim() && !text.problems.length;
     this.board.update((b) => b && { ...b, youtube: text, publish_ready: ready });

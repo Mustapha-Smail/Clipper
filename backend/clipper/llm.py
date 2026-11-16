@@ -53,6 +53,8 @@ TASKS = {
     "music": ("quick", "Suggesting music"),
     "delivery": ("quick", "Directing the AI voice"),
     "description": ("writing", "Writing YouTube titles and descriptions"),
+    "thumbnail": ("writing", "Planning thumbnails"),
+    "thumbnail_check": ("quick", "Looking at thumbnails"),
     "places": ("writing", "Drawing places"),
     "places_assign": ("quick", "Choosing places for shots"),
     "research": ("research", "Researching scripts"),

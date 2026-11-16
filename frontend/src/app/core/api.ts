@@ -6,7 +6,7 @@ import {
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
-  SystemStatus, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
+  SystemStatus, ThumbnailEdit, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -251,6 +251,17 @@ export class Api {
   }
   saveYoutubeText(id: number, text: { title: string; description: string; tags: string[] }): Observable<YoutubeText> {
     return this.http.put<YoutubeText>(`${BASE}/storyboards/${id}/youtube`, text);
+  }
+  /** Plan and draw the three thumbnails, or plan one again (`only`) with your note. A job. */
+  makeThumbnails(id: number, only?: 'A' | 'B' | 'C', note = ''): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/storyboards/${id}/thumbnails`, only ? { only, note } : {});
+  }
+  /** Your change to one thumbnail: drawn again at once, no AI. */
+  editThumbnail(id: number, key: string, edit: ThumbnailEdit): Observable<Storyboard> {
+    return this.http.put<Storyboard>(`${BASE}/storyboards/${id}/thumbnails/${key}`, edit);
+  }
+  thumbnailUrl(id: number, key: string, version: string): string {
+    return `${BASE}/storyboards/${id}/thumbnails/${key}.jpg?v=${encodeURIComponent(version)}`;
   }
   authorshipUrl(id: number): string {
     return `${BASE}/storyboards/${id}/authorship.txt`;

@@ -744,6 +744,22 @@ class StoryboardOut(StoryboardSummary):
     youtube: YoutubeText | None = None
     director: dict | None = Field(None, description="The AI director's last pass: notes per shot, kept or refused")
     director_undoable: bool = False
+    thumbnails: dict | None = Field(None, description="Long videos: options A, B and C for YouTube's A/B test")
+
+
+class ThumbnailsMake(BaseModel):
+    only: Literal["A", "B", "C"] | None = Field(None, description="Plan this one again; the others stay")
+    note: str = Field("", max_length=500, description="What you want changed in it")
+
+
+class ThumbnailEdit(BaseModel):
+    headline: str | None = Field(None, max_length=80)
+    accent: Literal["gold", "warm", "bad", "good"] | None = None
+    side: Literal["left", "right"] | None = None
+    title: int | None = Field(None, ge=1, le=3)
+    mode: Literal["drawn", "frame"] | None = None
+    at: float | None = Field(None, ge=0, description="Frame mode: seconds into the video")
+    beats: str | None = Field(None, max_length=2000, description="Drawn mode: the picture's beat lines")
 
 
 class YoutubeEdit(BaseModel):

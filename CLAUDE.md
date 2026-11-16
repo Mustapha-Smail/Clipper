@@ -189,6 +189,20 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
 - `studio/publish.py`: the YouTube text of an approved video (`storyboards.youtube`).
   The model writes only titles, the opening, hashtags and tags from the
   narration; chapters, sources and credits are assembled by code. Never upload.
+- `studio/thumbnail.py`: three thumbnails (A, B, C) per long video for YouTube's
+  A/B test, one per angle (reaction, stakes, mystery). The model (`llm` task
+  `thumbnail`) writes a headline and, for ink storyboards, the picture in beat
+  lines (never coordinates); other styles take a frame by shot number (never a
+  timestamp). `picture_lines` keeps only the video's own people, props, flags
+  and photos and lists what it drops. Code draws: one frozen shot with the
+  camera set to fill its half, the headline in Archivo Black. `check` is
+  arithmetic with every point in its lines (size when small, the duration
+  corner, clutter, contrast, likeness between options, title echo, clickbait,
+  numbers the narration never says); the quick tier (`thumbnail_check`) looks
+  once at the three when small and an unclear or misleading one is planned
+  again once. AI down: three frames by rules, said in the log. Files live in
+  `script-N/thumbnails-M/` (not the render folder) as 1920x1080 JPEG under
+  2 MB; export copies them. Never upload.
 - `studio/retention.py`: a render not approved within `unapproved_keep_days`
   (Settings, 30 by default, 0 = never) is deleted by the idle worker: the
   storyboard's render folder only, never the plan, the take or an approved

@@ -456,12 +456,16 @@
         } @else {
           <div class="notice small"><span>{{ b.has_video ? 'Approve the video (Video tab) and the YouTube title and description can be written here.' : 'Render the video and approve it first; the YouTube title and description are written here.' }}</span></div>
         }
+        @if (b.format === 'long' && b.scene_count) {
+          <app-thumbnails-panel [board]="b" [busy]="busy()" [version]="version()"
+                                (changed)="setBoard($event)" (started)="jobStarted()" />
+        }
         @if (b.has_video && b.review === 'approved') {
           <section class="card publish export">
             <div class="row spread">
               <div>
                 <h3>Export</h3>
-                <p class="small muted">Copies the video{{ b.format === 'long' ? ', its subtitles' : '' }}, the YouTube title and
+                <p class="small muted">Copies the video{{ b.format === 'long' ? ', its subtitles' : '' }}{{ b.thumbnails ? ', the three thumbnails' : '' }}, the YouTube title and
                   description and the authorship log into one folder of the output folder
                   (<a routerLink="/settings">Settings</a>, Storage), ready to upload or sync. Nothing is posted.</p>
               </div>
@@ -476,6 +480,8 @@
               </div>
               @if (x.stale) {
                 <div class="notice small"><span>The video was rendered again since this export. Export again to replace the copy.</span></div>
+              } @else if (b.thumbnails && !x.files.includes('thumbnail-A.jpg')) {
+                <div class="notice small"><span>The thumbnails were made after this export. Export again to add them.</span></div>
               } @else if (b.youtube && !x.files.includes('youtube.txt')) {
                 <div class="notice small"><span>The title and description were written after this export. Export again to add them.</span></div>
               } @else {

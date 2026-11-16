@@ -37,6 +37,7 @@ JOB_EVENTS = {
     "voice_rec": ("voice", "you", "Recorded the narration in your own voice"),
     "storyboard": ("plan", "ai", "Planned the scenes"),
     "animate": ("render", "app", "Rendered the video"),
+    "thumbnails": ("thumbnail", "ai", "Planned and drew thumbnails for the A/B test"),
 }
 
 

@@ -645,6 +645,58 @@ export interface Storyboard extends StoryboardSummary {
   /** The plan is still the one the director left, so Undo can put the old one back. */
   director_undoable: boolean;
   export: ExportInfo | null;
+  /** Long videos: three thumbnails for YouTube's A/B test, or null until made. */
+  thumbnails: Thumbnails | null;
+}
+
+export type ThumbnailAngle = 'reaction' | 'stakes' | 'mystery';
+export type ThumbnailAccent = 'gold' | 'warm' | 'bad' | 'good';
+
+/** One line of a thumbnail's check: what was measured and the points it cost. */
+export interface ThumbnailCheckLine { text: string; points: number; }
+
+/** One option of the A/B test: a headline over a picture drawn from the video. */
+export interface ThumbnailOption {
+  key: 'A' | 'B' | 'C';
+  angle: ThumbnailAngle;
+  /** At most four words; a word between *stars* is coloured. */
+  headline: string;
+  accent: ThumbnailAccent;
+  side: 'left' | 'right';
+  /** Which title option it goes with (1-based), and that title's text when it was chosen. */
+  title: number;
+  title_text?: string;
+  why: string;
+  by: 'ai' | 'rules' | 'you';
+  /** drawn: one shot in the ink style; frame: a moment of the video. */
+  mode: 'drawn' | 'frame';
+  at: number | null;
+  /** Drawn mode: the picture's beat lines, as you edit them. */
+  beats: string;
+  /** Lines of the AI's plan left out because the video does not have them. */
+  dropped: string[];
+  bytes: number;
+  version: string;
+  edited?: boolean;
+  check: { score: number; lines: ThumbnailCheckLine[]; problems: string[] };
+  /** The quick tier's look at it when small; redrawn once when it was unclear or misleading. */
+  look?: { clear: boolean; honest: boolean; note: string; redrawn?: boolean };
+}
+
+export interface Thumbnails {
+  options: ThumbnailOption[];
+  made_at: string;
+  by: 'ai' | 'rules';
+}
+
+export interface ThumbnailEdit {
+  headline?: string;
+  accent?: ThumbnailAccent;
+  side?: 'left' | 'right';
+  title?: number;
+  mode?: 'drawn' | 'frame';
+  at?: number;
+  beats?: string;
 }
 
 /** The YouTube title, description and tags of an approved video. Copied into YouTube Studio by you. */

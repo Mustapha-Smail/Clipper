@@ -41,6 +41,7 @@ STAGES = {
     "align": ["align"],
     "storyboard": ["plan", "draw"],
     "direct": ["draw", "direct"],
+    "thumbnails": ["thumbnails"],
     "animate": ["draw", "animate"],
 }
 STAGE_LABELS = {
@@ -66,6 +67,7 @@ STAGE_LABELS = {
     "draw": "Drawing new props and finding photos",
     "animate": "Animating the video",
     "direct": "The AI director is looking at the shots",
+    "thumbnails": "Making the thumbnails",
 }
 
 

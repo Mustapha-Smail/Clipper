@@ -24,6 +24,7 @@ from .studio import compliance, retention
 from .studio import director as director_mod
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
+from .studio import thumbnail as thumbnail_mod
 from .studio import voice as voice_mod
 
 HEARTBEAT_SECONDS = 5
@@ -102,6 +103,8 @@ def run_job(job_id: int) -> None:
                 animate_mod.render(params["storyboard_id"], settings, rep)
             elif stage == "direct":
                 director_mod.run(params["storyboard_id"], settings, rep)
+            elif stage == "thumbnails":
+                thumbnail_mod.run(params["storyboard_id"], settings, rep, params.get("only"), params.get("note", ""))
         with session_scope() as db:
             compliance.record_job(db, kind, params)
         jobs.finish(job_id, "succeeded", done)

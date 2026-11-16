@@ -292,6 +292,8 @@ class Storyboard(Base):
     youtube: Mapped[dict | None] = mapped_column(JSON)
     # The last AI director pass (studio/director.py): its notes per shot and, for one undo, the plan before it.
     director: Mapped[dict | None] = mapped_column(JSON)
+    # Long videos: three thumbnails for YouTube's A/B test (studio/thumbnail.py), {options, made_at, by}.
+    thumbnails: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

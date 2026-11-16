@@ -9,6 +9,7 @@ after it:
       <title>-<id>.mp4     the video
       <title>-<id>.srt     subtitles, long videos only (Shorts have theirs burned in)
       youtube.txt          title, description and tags, once they are written
+      thumbnail-A.jpg ...  long videos: the three thumbnails for YouTube's A/B test, once made
       authorship.txt       who did what, to keep with the video
 
 Exporting again overwrites that folder. It is a copy for you to upload or sync;
@@ -42,9 +43,18 @@ def folder_for(board: Storyboard, settings: Settings) -> Path:
     return settings_mod.clips_dir(settings) / "studio" / f"{slug(board.title) or board.format}-{board.id}"
 
 
-def youtube_file(text: dict) -> str:
-    return (f"TITLE\n{text.get('title', '')}\n\nDESCRIPTION\n{text.get('description', '')}\n\n"
-            f"TAGS\n{', '.join(text.get('tags', []))}\n")
+def youtube_file(text: dict, thumbnails: list[dict] | None = None) -> str:
+    out = (f"TITLE\n{text.get('title', '')}\n\nDESCRIPTION\n{text.get('description', '')}\n\n"
+           f"TAGS\n{', '.join(text.get('tags', []))}\n")
+    if thumbnails:
+        titles = text.get("titles") or [text.get("title", "")]
+        rows = [f"{o['key']}: thumbnail-{o['key']}.jpg ({o['angle']}), with the title: "
+                + (o.get("title_text") or (titles[o["title"] - 1] if 0 < o["title"] <= len(titles)
+                                           else text.get("title", "")))
+                for o in thumbnails]
+        out += ("\nA/B TEST (YouTube Studio on a computer: Details, Thumbnail, A/B testing)\n"
+                + "\n".join(rows) + "\n")
+    return out
 
 
 def _copy(source: Path, target: Path) -> None:
@@ -83,9 +93,16 @@ def run(db: Session, board: Storyboard, settings: Settings) -> dict:
             (folder / files[-1]).write_text(sound.srt(board.words), encoding="utf-8")
         else:
             (folder / f"{name}.srt").unlink(missing_ok=True)
+        thumbs = [o for o in (board.thumbnails or {}).get("options", [])
+                  if board.format == "long" and o.get("path") and Path(o["path"]).is_file()]
+        for old in folder.glob("thumbnail-*.jpg"):
+            old.unlink(missing_ok=True)
+        for option in thumbs:
+            files.append(f"thumbnail-{option['key']}.jpg")
+            _copy(Path(option["path"]), folder / files[-1])
         if board.youtube:
             files.append("youtube.txt")
-            (folder / "youtube.txt").write_text(youtube_file(board.youtube), encoding="utf-8")
+            (folder / "youtube.txt").write_text(youtube_file(board.youtube, thumbs), encoding="utf-8")
         files.append("authorship.txt")
         (folder / "authorship.txt").write_text(compliance.authorship_text(db, board), encoding="utf-8")
     except OSError as err:

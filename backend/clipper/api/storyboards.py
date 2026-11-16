@@ -22,6 +22,7 @@ from ..studio import export as export_mod
 from ..studio import places as places_mod
 from ..studio import script as script_mod
 from ..studio import storyboard as storyboard_mod
+from ..studio import thumbnail as thumbnail_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
 from .scripts import get_script
@@ -90,7 +91,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            music_credit=credit, score=score, photos=used,
                            photo_searches_missing=[q for q in queries if q not in found], credits=credits,
                            youtube=board.youtube, director=director_mod.public(board.director),
-                           director_undoable=director_mod.undoable(board))
+                           director_undoable=director_mod.undoable(board),
+                           thumbnails=thumbnail_mod.public(board.thumbnails))
 
 
 LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon"), "film": ("wall", "studio"), "flat": ("ink",)}
@@ -423,9 +425,11 @@ def chapters(board: Storyboard = Depends(get_board)):
 def delete_storyboard(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     _idle(db, board)
     folder = animate.video_path({"script_id": board.script_id, "id": board.id, "format": board.format}).parent
+    thumbs = thumbnail_mod.folder(board)
     db.delete(board)
     db.flush()
     shutil.rmtree(folder, ignore_errors=True)
+    shutil.rmtree(thumbs, ignore_errors=True)
 
 
 # --- archive photos ---------------------------------------------------------------------------
@@ -525,6 +529,55 @@ def export_video(board: Storyboard = Depends(get_board), db: Session = Depends(g
                       storyboard_id=board.id)
     db.flush()
     return export_out(board)
+
+
+# --- thumbnails (long videos, YouTube's A/B test) ---------------------------------------------
+
+@router.post("/storyboards/{storyboard_id}/thumbnails", response_model=s.JobOut, status_code=202)
+def make_thumbnails(body: s.ThumbnailsMake | None = None, board: Storyboard = Depends(get_board),
+                    db: Session = Depends(get_db)):
+    """Plan and draw three thumbnails (or plan one again). A job: a few cents of AI, a few seconds of drawing."""
+    body = body or s.ThumbnailsMake()
+    if board.format != "long":
+        raise HTTPException(409, "Thumbnails are for long videos: a Short's cover is chosen in the YouTube app")
+    if not board.scenes or not board.words:
+        raise HTTPException(409, "Plan the storyboard first")
+    if body.only and not board.thumbnails:
+        raise HTTPException(409, "Make the three thumbnails first")
+    _idle(db, board)
+    params = {"script_id": board.script_id, "storyboard_id": board.id}
+    if body.only:
+        params |= {"only": body.only, "note": body.note.strip()}
+    return jobs.enqueue(db, "thumbnails", board.title, params)
+
+
+@router.put("/storyboards/{storyboard_id}/thumbnails/{key}", response_model=s.StoryboardOut)
+def edit_thumbnail(key: str, body: s.ThumbnailEdit, board: Storyboard = Depends(get_board),
+                   db: Session = Depends(get_db)):
+    """Your change to one thumbnail: drawn again at once, checked again, no AI."""
+    if key not in thumbnail_mod.KEYS or not board.thumbnails:
+        raise HTTPException(404, "No such thumbnail")
+    _idle(db, board)
+    board_id, script_id = board.id, board.script_id
+    db.commit()           # release the row: the drawing writes it in its own session
+    try:
+        thumbnail_mod.edit(board_id, key, body.model_dump(exclude_none=True), settings_mod.load())
+    except KeyError as err:
+        raise HTTPException(404, "No such thumbnail") from err
+    compliance.record(db, script_id, "thumbnail_edit", "you", f"Edited thumbnail {key}", storyboard_id=board_id)
+    db.flush()
+    db.expire_all()
+    board = db.get(Storyboard, board_id)
+    return board_out(board, _board_jobs(db).get(board_id), db)
+
+
+@router.get("/storyboards/{storyboard_id}/thumbnails/{key}.jpg")
+def thumbnail_image(key: str, board: Storyboard = Depends(get_board)):
+    path = thumbnail_mod.path_of(board, key)
+    if path is None or not path.is_file():
+        raise HTTPException(404, "Thumbnail not found")
+    return FileResponse(path, media_type="image/jpeg", filename=f"thumbnail-{key}.jpg",
+                        content_disposition_type="inline", headers={"Cache-Control": "max-age=86400"})
 
 
 # --- the library ------------------------------------------------------------------------------
