@@ -194,7 +194,8 @@ def test_music_search_and_import_keep_the_credit(client, monkeypatch, tmp_path):
 def test_generated_ideas_wait_in_the_inbox(client, monkeypatch):
     from clipper.studio import ideas
     monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
-        ideas.Draft(title=seed or f"Idea {i}", hook="h", answer="a", angle="x", format="single", search_query="q",
+        ideas.Draft(title=seed or f"Idea {i}", hook="h", expected="e", answer="a", angle="x", format="single",
+                    search_query="q",
                     beats=[]) for i in range(1 if seed else count)])
     made = generate(client, count=2, theme="Odd history")
     assert [i["status"] for i in made] == ["inbox", "inbox"] and made[0]["theme"] == "Odd history"

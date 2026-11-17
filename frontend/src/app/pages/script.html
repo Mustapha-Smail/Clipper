@@ -96,6 +96,63 @@
         </details>
       }
 
+      <section class="card plain hold" [class.ok]="(s.hold?.score ?? 0) >= 85 && s.hold?.current"
+               [class.warn]="s.hold?.current && (s.hold?.score ?? 0) < 85 && (s.hold?.score ?? 0) >= 65"
+               [class.bad]="s.hold?.current && (s.hold?.score ?? 0) < 65">
+        @if (s.hold?.current && s.hold; as h) {
+          <div class="hold-head">
+            <span class="plain-title">Holds attention <span class="num">{{ h.score }}</span><span class="muted small">/100</span></span>
+            <span class="pill" [class.approved]="(h.score ?? 0) >= 85" [class.failed]="(h.score ?? 0) < 65">{{ h.verdict }}</span>
+            @if (h.stats; as st) {
+              <span class="small muted">first twist {{ st.first_twist === null ? 'none' : st.first_twist + ' s' }} ·
+                longest gap {{ st.longest_gap === null ? '–' : st.longest_gap + ' s' }} · topic: {{ h.topic }}</span>
+            }
+          </div>
+          @if (holdWorst().length) {
+            <ul class="deductions">
+              @for (l of holdWorst(); track l.label) {
+                <li><span class="num points">{{ l.points }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
+              }
+            </ul>
+          } @else {
+            <p class="small muted">Topic up front, an early twist, a new question often enough and the payoff last.</p>
+          }
+          <details class="hold-more">
+            <summary class="small">Every line and the role of each sentence</summary>
+            <ul class="deductions">
+              @for (l of h.lines; track l.label) {
+                <li><span class="num points" [class.zero]="!l.points">{{ l.points || '0' }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
+              }
+            </ul>
+            <ol class="roles">
+              @for (x of h.sentences; track x.n) {
+                <li>
+                  <span class="at num muted">{{ x.at }} s</span>
+                  <span class="role" [attr.data-role]="x.role ?? 'none'">{{ x.role ? roleLabels[x.role] : '–' }}@if (x.title_question) { · title }</span>
+                  <span class="said">{{ x.text }}</span>
+                </li>
+              }
+            </ol>
+            <p class="small muted">The quick AI tier labels what each sentence does; the score is plain arithmetic on
+              those labels at 150 words a minute, every point shown. It advises; you decide.</p>
+          </details>
+        } @else {
+          <div class="hold-head">
+            <span class="plain-title">Holds attention</span>
+            @if (s.hold && !s.hold.current) {
+              <span class="small muted">Out of date: the text changed since the check@if (s.hold.previous_score !== null && s.hold.previous_score !== undefined) { (it was {{ s.hold.previous_score }}/100)}.</span>
+            } @else {
+              <span class="small muted">Not checked yet.</span>
+            }
+          </div>
+        }
+        <div class="row">
+          <button class="quiet" (click)="checkHold()" [disabled]="busy() || !s.sections.length"
+                  title="Label what each sentence does (hook, stakes, twist...) and check the pacing. Advice only.">
+            {{ s.hold?.current ? 'Check again' : 'Check how it holds' }}</button>
+        </div>
+      </section>
+
       <div class="row">
         <button (click)="checkFacts()" [disabled]="busy() || !s.sections.length">Check the facts</button>
         <button (click)="makeSpoken()" [disabled]="busy() || !s.sections.length"

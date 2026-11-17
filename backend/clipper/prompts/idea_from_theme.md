@@ -19,6 +19,6 @@ How to use them:
 - Stay inside the theme, and stay away from anything like the rejected titles.
 - For each idea, list in inspired_by the numbers of the examples it builds on (one to three), and say in why_now, in one sentence, which proven pattern it follows.
 
-A good idea turns on one surprising, true fact the viewer can repeat to a friend. The working title is a claim or question that creates curiosity, never a flat "How X works". The facts must be true and well established; do not build an idea on a myth or an anecdote you cannot verify. Avoid topics that YouTube limits ads on (violence, tragedy, drugs, divisive politics) unless the theme itself is built on them, and then keep it factual and non-graphic.
+A good idea turns on one surprising, true fact the viewer can repeat to a friend. The working title is a claim or question that creates curiosity, never a flat "How X works". The hook names the topic in its first words; expected says what most viewers would guess before watching, and the answer overturns that guess. The facts must be true and well established; do not build an idea on a myth or an anecdote you cannot verify. Avoid topics that YouTube limits ads on (violence, tragedy, drugs, divisive politics) unless the theme itself is built on them, and then keep it factual and non-graphic.
 
 Do not repeat or lightly reword any idea in the <already_have> list.

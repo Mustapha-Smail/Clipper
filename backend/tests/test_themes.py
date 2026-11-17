@@ -106,7 +106,8 @@ def test_the_board_follows_the_work_from_idea_to_published(app_env):
 
 def test_themes_api_create_rename_merge_and_archive(client, monkeypatch):
     monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
-        ideas.Draft(title=f"Idea {i}", hook="h", answer="a", angle="x", format="single", search_query="q",
+        ideas.Draft(title=f"Idea {i}", hook="h", expected="e", answer="a", angle="x", format="single",
+                    search_query="q",
                     beats=[]) for i in range(count)])
     a = client.post("/api/v1/themes", json={"name": "Odd history", "description": "Strange rules"}).json()
     b = client.post("/api/v1/themes", json={"name": "Odd laws"}).json()
@@ -194,6 +195,37 @@ def test_lessons_need_enough_videos_and_keep_the_model_honest(app_env, monkeypat
         assert db.get(Theme, theme_id).insights["works"] == ["Question titles [1]"]
 
 
+def test_craft_columns_show_for_measured_videos_and_stay_blank_for_older_ones(app_env, monkeypatch):
+    from clipper.db.models import VoiceTake
+    from clipper.studio import script as script_mod
+
+    sections = [{"key": "a", "heading": "Short", "short": True,
+                 "text": "Your fridge never made cold. But here is the twist. It moves heat. So it warms the room."}]
+    stored = {"hash": script_mod.text_hash(sections), "topic": "fridge", "checked_at": "now", "dropped": 0,
+              "roles": [{"n": n, "role": r, "title_question": False}
+                        for n, r in enumerate(["hook", "rehook", "twist", "payoff"], 1)]}
+    with session_scope() as db:
+        theme = _theme(db)
+        measured = _published(db, theme, "Measured", 5000)
+        script = db.get(Script, measured.script_id)
+        script.sections, script.hold, script.video = sections, stored, "short"
+        take = VoiceTake(script_id=script.id, source="kokoro", voice="am_michael", script_hash=stored["hash"],
+                         alignment={"wpm": 158})
+        db.add(take)
+        db.flush()
+        measured.take_id, measured.format = take.id, "short"
+        _published(db, theme, "Older", 1000)
+        rows = {r["title"]: r for r in learning.published(db, theme.id)}
+        table = learning._video_table(learning.ranked(list(rows.values()))["videos"])
+    m = rows["Measured"]
+    assert (m["wpm"], m["opening"], m["first_twist"]) == (158, "hook > rehook > twist", 2)
+    assert isinstance(m["hold_score"], int)
+    assert all(rows["Older"][k] is None for k in learning.CRAFT)
+    assert "opens hook > rehook > twist; pace 158 wpm" in table
+    assert "Craft: hold not measured; pace not measured" in table
+    assert "at least 3 videos" in str(learning.prompts.Prompt("theme_insights"))
+
+
 def test_proven_examples_put_the_evidence_first_and_new_ideas_say_what_they_build_on(client, monkeypatch):
     with session_scope() as db:
         theme = _theme(db)
@@ -205,7 +237,7 @@ def test_proven_examples_put_the_evidence_first_and_new_ideas_say_what_they_buil
 
     def fake_proven(theme, about, count, existing, examples, lessons, rejected, hint=""):
         seen.update(examples=examples, rejected=rejected, hint=hint)
-        return [ideas.ProvenDraft(title="Next big", hook="h", answer="a", angle="x", format="single",
+        return [ideas.ProvenDraft(title="Next big", hook="h", expected="e", answer="a", angle="x", format="single",
                                   search_query="q", beats=[], inspired_by=[1, 1, 9], why_now="Same hook as Big")]
 
     monkeypatch.setattr(ideas, "generate_proven", fake_proven)
@@ -420,7 +452,8 @@ def test_you_choose_which_proven_examples_new_ideas_build_on(client, monkeypatch
 
     def fake_proven(theme, about, count, existing, examples, lessons, rejected, hint=""):
         seen["examples"] = examples
-        return [ideas.ProvenDraft(title="Next", hook="h", answer="a", angle="x", format="single", search_query="q",
+        return [ideas.ProvenDraft(title="Next", hook="h", expected="e", answer="a", angle="x", format="single",
+                    search_query="q",
                                   beats=[], inspired_by=[1], why_now="Same")]
 
     monkeypatch.setattr(ideas, "generate_proven", fake_proven)
@@ -451,7 +484,8 @@ def test_ideas_are_written_by_a_job_you_can_come_back_to(client, monkeypatch):
 
     def fake_generate(theme, count, existing, seed=""):
         seen["theme"] = theme
-        return [ideas.Draft(title=f"Idea {i}", hook="h", answer="a", angle="x", format="single", search_query="q",
+        return [ideas.Draft(title=f"Idea {i}", hook="h", expected="e", answer="a", angle="x", format="single",
+                    search_query="q",
                             beats=[]) for i in range(count)]
 
     monkeypatch.setattr(ideas, "generate", fake_generate)

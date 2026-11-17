@@ -87,6 +87,14 @@ import { Toasts } from '../core/toast';
                   <p class="small muted">{{ v.format === 'short' ? 'Short' : 'Long video' }} · {{ v.style }}
                     @if (v.seconds) { · {{ v.seconds }} s } @if (v.published_at) { · out {{ v.published_at | ago }} }
                     · <a [routerLink]="['/storyboards', v.storyboard_id]">open</a></p>
+                  @if (v.hold_score !== null || v.wpm) {
+                    <p class="small muted">
+                      @if (v.hold_score !== null) { Holds {{ v.hold_score }}/100 · first twist {{ v.first_twist === null ? 'none' : v.first_twist + ' s' }}
+                        · longest gap {{ v.longest_gap === null ? '–' : v.longest_gap + ' s' }} · opens {{ v.opening }} }
+                      @if (v.hold_score !== null && v.wpm) { · }
+                      @if (v.wpm) { {{ v.wpm }} words a minute }
+                    </p>
+                  }
                   @if (v.format === 'long') {
                     <div class="row link">
                       <input #url type="text" [value]="v.published_url ?? ''" placeholder="Its YouTube link, for its numbers"

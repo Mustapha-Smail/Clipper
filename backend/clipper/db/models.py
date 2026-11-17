@@ -143,6 +143,7 @@ class Idea(Base):
     inspired_by: Mapped[list | None] = mapped_column(JSON)
     title: Mapped[str] = mapped_column(Text)
     hook: Mapped[str] = mapped_column(Text, default="")               # the question that opens the video
+    expected: Mapped[str] = mapped_column(Text, default="")           # the viewer's guess the answer overturns
     answer: Mapped[str] = mapped_column(Text, default="")             # the surprising answer, in one line
     beats: Mapped[list] = mapped_column(JSON, default=list)           # [{text, short}]
     angle: Mapped[str] = mapped_column(Text, default="")              # how it differs from what exists
@@ -164,7 +165,9 @@ class Script(Base):
 
     `research` holds Claude's notes with numbered web sources; `sections` the
     script itself (edited by you); `claims` the fact check of every factual
-    statement, with `checked_hash` recording which text it checked.
+    statement, with `checked_hash` recording which text it checked; `hold` the
+    sentence roles of the hold check (`studio/hold.py`) with the hash of the
+    text they label.
     """
 
     __tablename__ = "scripts"
@@ -186,6 +189,7 @@ class Script(Base):
     claims: Mapped[list | None] = mapped_column(JSON)      # [{section, claim, verdict, note, sources}]
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # hash of the text the claims were checked on
     previous_sections: Mapped[list | None] = mapped_column(JSON)  # the text before the last whole-script rewrite
+    hold: Mapped[dict | None] = mapped_column(JSON)   # hold check labels: {hash, roles, topic, checked_at, ...}
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

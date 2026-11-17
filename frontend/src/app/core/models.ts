@@ -217,6 +217,9 @@ export interface AppSettings {
   unapproved_keep_days: number;
   prop_drawing: 'careful' | 'quick';
   director_pass: boolean;
+  /** Optional effects: an attention sound at 0 s, and risers into the first twist and the payoff. */
+  sound_starter: boolean;
+  sound_riser: boolean;
   clips_per_video: number;
   ai_fallback: 'rules' | 'fail';
   min_len: number;
@@ -386,6 +389,8 @@ export interface Idea {
   inspired_by: { kind: 'video' | 'script' | 'idea'; id: number; title: string; evidence: string }[] | null;
   title: string;
   hook: string;
+  /** What most viewers would guess before watching; the answer overturns it. */
+  expected: string;
   answer: string;
   beats: { text: string; short: boolean }[];
   angle: string;
@@ -420,7 +425,7 @@ export interface Idea {
   script_id: number | null;
 }
 
-export type IdeaPatch = Partial<Pick<Idea, 'status' | 'notes' | 'title' | 'hook' | 'answer' | 'angle' | 'search_query'
+export type IdeaPatch = Partial<Pick<Idea, 'status' | 'notes' | 'title' | 'hook' | 'expected' | 'answer' | 'angle' | 'search_query'
   | 'video'>>;
 
 export type ClaimVerdict = 'supported' | 'contradicted' | 'unclear' | 'joke';
@@ -468,6 +473,8 @@ export interface Script extends ScriptSummary {
   can_undo_rewrite: boolean;
   /** How easy the narration is to follow for the audience: arithmetic, every deduction explained. Advice only. */
   plain: PlainCheck | null;
+  /** How the narration holds attention: roles labelled by the AI, arithmetic on them. Advice only. */
+  hold: HoldCheck | null;
 }
 
 export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minutes' | 'notes'>>;
@@ -514,6 +521,8 @@ export interface VoiceTake {
     extra: { at: number; text: string }[];
     spoken_words: number;
     script_hash: string;
+    /** Measured pace: script words a minute, pauses included. Missing on takes timed before it was measured. */
+    wpm?: number | null;
   } | null;
   ready: boolean;
   current: boolean;
@@ -741,6 +750,24 @@ export interface PlainCheck {
            names_per_minute: number; minutes: number };
   names: string[];
   hardest: string[];
+}
+
+export type HoldRole = 'hook' | 'context' | 'stakes' | 'question' | 'twist' | 'rehook' | 'fact' | 'payoff'
+  | 'callback' | 'filler';
+
+/** The hold check. `current` is false once the text changed since the labels were made: then only
+ * `previous_score` is known and the check should run again. */
+export interface HoldCheck {
+  current: boolean;
+  checked_at: string | null;
+  score: number | null;
+  previous_score?: number | null;
+  verdict?: 'holds well' | 'some slack' | 'likely to lose people';
+  topic?: string;
+  lines?: { points: number; label: string; detail: string }[];
+  stats?: { seconds: number; first_twist: number | null; longest_gap: number | null; topic_at: number | null };
+  sentences?: { n: number; section: string; text: string; role: HoldRole | null; at: number;
+                title_question: boolean }[];
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
@@ -1040,6 +1067,12 @@ export interface ThemeVideo {
   saves: number | null;
   engagement: number | null;
   vs_median: number | null;
+  /** How it was built (hold check of its script, the take's pace); null when not measured. */
+  hold_score: number | null;
+  first_twist: number | null;
+  longest_gap: number | null;
+  opening: string | null;
+  wpm: number | null;
   lines: string[];
   networks: { service: string; name: string; link: string | null; views: number | null; status: string }[];
 }

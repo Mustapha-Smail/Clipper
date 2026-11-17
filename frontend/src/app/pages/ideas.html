@@ -185,6 +185,9 @@
                 }
               </p>
             }
+            @if (idea.expected) {
+              <p class="small"><strong>Most people guess:</strong> {{ idea.expected }}</p>
+            }
             <p class="small"><strong>The answer:</strong> {{ idea.answer }}</p>
 
             @if (idea.demand; as d) {
@@ -307,8 +310,10 @@
                   <h4>Edit</h4>
                   <label class="field"><span>Title</span><input #title type="text" [value]="idea.title" /></label>
                   <label class="field"><span>Hook</span><input #hook type="text" [value]="idea.hook" /></label>
+                  <label class="field"><span>What most people would guess</span><input #expected type="text" [value]="idea.expected"
+                         placeholder="The wrong or boring guess the answer overturns" /></label>
                   <label class="field"><span>YouTube search used to check it</span><input #query type="text" [value]="idea.search_query" /></label>
-                  <button class="sm" (click)="saveEdits(idea, title.value, hook.value, query.value)">Save changes</button>
+                  <button class="sm" (click)="saveEdits(idea, title.value, hook.value, query.value, expected.value)">Save changes</button>
 
                   <h4>Notes</h4>
                   <textarea #notes [value]="idea.notes" placeholder="Anything you want to remember about this idea"></textarea>

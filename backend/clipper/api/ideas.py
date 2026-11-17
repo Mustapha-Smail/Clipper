@@ -19,7 +19,7 @@ log = logging.getLogger("clipper.studio")
 
 # Editing these makes the stored check out of date.
 RESEARCH_FIELDS = {"search_query"}
-JUDGED_FIELDS = {"title", "hook", "answer", "angle", "search_query"}
+JUDGED_FIELDS = {"title", "hook", "expected", "answer", "angle", "search_query"}
 
 
 def get_idea(idea_id: int, db: Session = Depends(get_db)) -> Idea:

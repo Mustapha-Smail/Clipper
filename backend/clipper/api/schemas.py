@@ -228,6 +228,7 @@ class IdeaOut(Model):
     inspired_by: list[dict] | None = None
     title: str
     hook: str
+    expected: str = ""
     answer: str
     beats: list[IdeaBeat]
     angle: str
@@ -282,6 +283,7 @@ class IdeaPatch(BaseModel):
     notes: str | None = None
     title: str | None = Field(None, min_length=1)
     hook: str | None = None
+    expected: str | None = None
     answer: str | None = None
     angle: str | None = None
     search_query: str | None = Field(None, min_length=2)
@@ -573,6 +575,9 @@ class ScriptOut(ScriptSummary):
     can_undo_rewrite: bool = False
     plain: dict | None = Field(None, description="How easy the narration is to follow for the audience in "
                                                  "Settings: 0-100, every deduction explained. Advice only")
+    hold: dict | None = Field(None, description="How the narration holds attention: 0-100 from the sentence roles, "
+                                                "every deduction explained; current false when the text changed "
+                                                "since the check. Advice only")
 
 
 class ScriptCreate(BaseModel):
@@ -654,6 +659,7 @@ class TakeAlignment(BaseModel):
     extra: list[TakeExtra]
     spoken_words: int
     script_hash: str
+    wpm: int | None = Field(None, description="Measured pace: script words a minute, pauses included")
 
 
 class TakeOut(Model):
@@ -1077,6 +1083,12 @@ class ThemeVideo(BaseModel):
     saves: int | None
     engagement: float | None
     vs_median: float | None
+    # How it was built: the hold check of its script and the take's pace; None when not measured
+    hold_score: int | None = None
+    first_twist: int | None = None
+    longest_gap: int | None = None
+    opening: str | None = None
+    wpm: int | None = None
     lines: list[str]
     networks: list[dict]
 

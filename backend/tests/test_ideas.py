@@ -118,7 +118,7 @@ def test_missing_key_is_a_clear_error(monkeypatch):
 # --- API --------------------------------------------------------------------------------
 
 def draft(title):
-    return ideas.Draft(title=title, hook="Why?", answer="Because.", angle="Funny", format="single",
+    return ideas.Draft(title=title, hook="Why?", expected="e", answer="Because.", angle="Funny", format="single",
                        search_query="how does it work",
                        beats=[ideas.Beat(text="one", short=True), ideas.Beat(text="two", short=False)])
 
@@ -156,6 +156,12 @@ def test_generate_validate_decide_and_edit(client, fake_claude):
     edited = client.patch(f"/api/v1/ideas/{made[1]['id']}", json={"title": "Better title"}).json()
     assert edited["score"] is None and edited["validated_at"] is None  # the old check no longer applies
 
+    assert edited["expected"] == "e"                                   # the writer's guess came through
+    checked = client.post(f"/api/v1/ideas/{made[1]['id']}/validate").json()
+    guessed = client.patch(f"/api/v1/ideas/{made[1]['id']}", json={"expected": "It just gets cold"}).json()
+    assert guessed["expected"] == "It just gets cold" and guessed["validated_at"] is None   # a new guess, a new check
+    assert client.get("/api/v1/ideas").json()[0]["expected"] in ("It just gets cold", "e")
+
     mine = client.post("/api/v1/ideas", json={"text": "Why barcodes have no prices"}).json()
     assert mine["origin"] == "you" and mine["title"] == "Why barcodes have no prices"
     assert client.delete(f"/api/v1/ideas/{mine['id']}").status_code == 204
@@ -172,7 +178,8 @@ def test_theme_suggestions_avoid_existing_themes(client, monkeypatch):
                                         for i in range(7)])
     monkeypatch.setattr(llm, "ask", fake_ask)
     monkeypatch.setattr(ideas, "generate", lambda theme, count, existing, seed="": [
-        ideas.Draft(title="T", hook="h", answer="a", angle="x", format="single", search_query="q", beats=[])])
+        ideas.Draft(title="T", hook="h", expected="e", answer="a", angle="x", format="single", search_query="q",
+                    beats=[])])
     generate(client, count=1, theme="Odd history")
 
     themes = client.post("/api/v1/ideas/themes", json={}).json()

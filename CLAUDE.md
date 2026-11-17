@@ -311,6 +311,34 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   writer and by "Make it sound spoken" (`script.make_spoken`, which keeps the
   previous text in `previous_sections`). Kokoro delivery (`voice.delivery`) is
   per sentence; keep pauses varied, never one fixed gap.
+- Hold check (`studio/hold.py`, not `retention.py`, which deletes renders): the
+  quick tier (`llm` task `hold`, prompt `script_hold`) labels each sentence
+  (`plain.sentences`, numbered across sections) with one role; `hold.score` is
+  arithmetic on those roles (topic named, first twist, longest gap, filler,
+  ending, stakes; thresholds in `hold.TARGETS`), every point in its lines. It
+  advises only. `scripts.hold` stores the labels with the hash of the text they
+  label: an edit makes it out of date, never wrong. Runs after every write or
+  rewrite job; an AI failure is logged and the job still succeeds.
+  Storyboards plan on it: while it is current and the take's words match the
+  script, each chapter's planner gets a `<turns>` list (word numbers of twist,
+  rehook and payoff sentences, `storyboard.turn_marks`); otherwise it plans
+  without and says why in the log. After planning, `limit_big` keeps ink's
+  `write ... big` and film's `big ... bar` on at most `MAX_BIG` lines (payoff
+  first) and lists the rest; it is not in `clean`, so the director's rule that
+  `clean` leaves other shots unchanged still holds.
+  Settings `sound_starter` and `sound_riser` (off: weak evidence) add a
+  synthesised attention sound at 0 s and 1.5 s risers ending on the first word
+  of the first twist and of the payoff (`animate.attention_events`, needs a
+  current check, says in the log what it skipped). Chatterbox direction gets
+  the Short flag and the rehook sentences (`voice.lifted`, matched by text).
+  Each take's measured pace (`alignment.wpm`) is shown and logged after align;
+  `WORDS_PER_MINUTE` stays 150 until our own numbers say otherwise.
+  Learning shows each published video's craft (`learning.craft`: hold score,
+  first twist, longest gap, opening roles, pace), worked out on read and blank
+  when unknown (no check, text changed since the take, a Short cut from a long
+  script). `theme_insights` may name a craft pattern only across 3 videos.
+- Ideas have `expected`: what most viewers would guess; the answer overturns it.
+  It is judged text (editing it clears the check) and `_brief` passes it to the writer.
 - `studio/music_pick.py`: music is chosen from measurements
   (`sound.describe_track`: tempo, density, brightness, dynamics) on the quick
   tier; never send audio to a model. Library and Openverse candidates are

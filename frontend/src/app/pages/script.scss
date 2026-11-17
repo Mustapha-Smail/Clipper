@@ -313,3 +313,78 @@ section.card + section.card {
     flex-wrap: wrap;
   }
 }
+
+.hold {
+  .hold-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+  }
+
+  .deductions .points.zero {
+    color: var(--faint);
+  }
+
+  .hold-more > summary {
+    cursor: pointer;
+    color: var(--muted);
+    margin: 4px 0;
+  }
+
+  .roles {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0;
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+
+    li {
+      display: grid;
+      grid-template-columns: 3.2em 6.5em minmax(0, 1fr);
+      gap: 8px;
+      align-items: baseline;
+    }
+
+    .said {
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .role {
+    justify-self: start;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--sunken);
+    color: var(--muted);
+
+    &[data-role='question'], &[data-role='twist'], &[data-role='rehook'] {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+
+    &[data-role='hook'], &[data-role='stakes'], &[data-role='payoff'], &[data-role='callback'] {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+
+    &[data-role='filler'] {
+      background: var(--bad-soft);
+      color: var(--bad);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .roles li {
+      grid-template-columns: auto minmax(0, 1fr);
+
+      .said {
+        grid-column: 1 / -1;
+      }
+    }
+  }
+}

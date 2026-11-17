@@ -50,6 +50,7 @@ TASKS = {
     "campaign_pick": ("quick", "Choosing campaigns to read"),
     "brief_check": ("quick", "Checking clips against briefs"),
     "verdicts": ("quick", "Reading fact-check results"),
+    "hold": ("quick", "Checking how a script holds attention"),
     "props": ("writing", "Drawing props"),
     "prop_check": ("quick", "Looking at drawn props"),
     "music": ("quick", "Suggesting music"),

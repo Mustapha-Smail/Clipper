@@ -282,7 +282,7 @@ def test_a_chatterbox_take_is_assembled_with_our_pauses(client, script, fake_whi
             paths.append(path)
         return paths
     monkeypatch.setattr(chatterbox, "speak", speak)
-    monkeypatch.setattr(chatterbox, "direct", lambda sentences, rep: [f"[dramatic] {s}" for s in sentences])
+    monkeypatch.setattr(chatterbox, "direct", lambda sentences, rep, **kw: [f"[dramatic] {s}" for s in sentences])
     monkeypatch.setattr(voice, "sample_kokoro", lambda v, speed, text: voice.config.data_dir() / "ref.wav")
 
     assert client.post(f"/api/v1/scripts/{script}/takes/ai",

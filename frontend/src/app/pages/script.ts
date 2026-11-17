@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { ClaimVerdict, Script, ScriptClaim, ScriptSection } from '../core/models';
+import { ClaimVerdict, HoldRole, Script, ScriptClaim, ScriptSection } from '../core/models';
 import { ThemesStore } from '../core/themes-store';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -218,6 +218,23 @@ export class ScriptPage {
     }
     this.queue(this.api.factcheck(this.id), 'Fact check queued');
   }
+
+  protected checkHold(): void {
+    if (this.dirty()) {
+      this.toasts.error('Save your edits first, so the check runs on them');
+      return;
+    }
+    this.queue(this.api.checkHold(this.id), 'Hold check queued. Under a minute.');
+  }
+
+  /** The 3 lines that cost the most points, shown without a click. */
+  protected readonly holdWorst = computed(() =>
+    [...(this.script()?.hold?.lines ?? [])].filter((l) => l.points < 0).sort((a, b) => a.points - b.points).slice(0, 3));
+
+  protected readonly roleLabels: Record<HoldRole, string> = {
+    hook: 'Hook', context: 'Context', stakes: 'Stakes', question: 'Question', twist: 'Twist', rehook: 'Rehook',
+    fact: 'Fact', payoff: 'Payoff', callback: 'Callback', filler: 'Filler',
+  };
 
   protected async makeSimpler(): Promise<void> {
     if (this.dirty()) {

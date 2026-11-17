@@ -58,10 +58,17 @@ def _brief(script: Script) -> str:
     idea = script.idea
     if script.video == "short":
         words = round(script.target_seconds * WORDS_PER_MINUTE / 60)
+        rehooks = "two rehook lines, spaced out" if script.target_seconds > 45 else "one rehook line"
         lines = [f"Title: {script.title}", f"Channel theme: {script.theme}",
-                 "Format: a YouTube Short only (vertical, no long video). Write exactly ONE section: the hook in "
-                 "the first two seconds, then the surprising answer, ending on the payoff line. No intro, no "
-                 "outro, no call to subscribe.",
+                 "Format: a YouTube Short only (vertical, no long video). Write exactly ONE section, built like this:",
+                 "- Hook: one sentence that names the topic and starts on the action or the surprising claim. "
+                 "No \"Did you know\", no scene-setting.",
+                 "- Lock-in: the next 2 or 3 sentences give the stakes (why it matters to the viewer) and ask "
+                 "the big question the video answers.",
+                 f"- Body with {rehooks} in it: a new question or a twist (\"But here's the strange part\") that "
+                 f"gives a fresh reason to keep watching. The first twist lands within about the first 10 "
+                 f"seconds ({round(10 * WORDS_PER_MINUTE / 60)} words).",
+                 "- The payoff line last. No intro, no outro, no call to subscribe.",
                  f"Target length: about {script.target_seconds} seconds ({words} words of narration)"]
     else:
         lines = [f"Title: {script.title}", f"Channel theme: {script.theme}",
@@ -70,7 +77,11 @@ def _brief(script: Script) -> str:
                  f"({script.target_minutes * WORDS_PER_MINUTE} words of narration)"]
     lines.append(f"Audience: {plain.audience()}")
     if idea is not None:
-        lines += [f"Hook: {idea.hook}", f"The surprising answer: {idea.answer}", f"Angle: {idea.angle}", "Beats:"]
+        lines.append(f"Hook: {idea.hook}")
+        if idea.expected.strip():
+            lines.append(f"Expected guess: {idea.expected.strip()} (what most viewers would guess; the lock-in or "
+                         "the first twist can use it, and the answer overturns it)")
+        lines += [f"The surprising answer: {idea.answer}", f"Angle: {idea.angle}", "Beats:"]
         lines += [f"- {b['text']}" for b in idea.beats]
     return "\n".join(lines)
 
@@ -141,6 +152,7 @@ def write(script_id: int, rep: Reporter) -> None:
         row.sections = sections
         row.claims = None
         row.checked_hash = None
+        row.hold = None
 
 
 class Rewrite(BaseModel):

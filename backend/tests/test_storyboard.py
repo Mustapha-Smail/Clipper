@@ -230,9 +230,9 @@ def test_long_video_is_planned_per_chapter(client, script_with_take, fake_claude
     calls = []
     original = sb._plan_chunk
 
-    def counting(system, title, props, words, chapter):
+    def counting(system, title, props, words, chapter, turns=""):
         calls.append((chapter, len(words)))
-        return original(system, title, props, words, chapter)
+        return original(system, title, props, words, chapter, turns)
     monkeypatch.setattr(sb, "_plan_chunk", counting)
 
     assert client.post(f"/api/v1/scripts/{sid}/storyboards",
@@ -436,3 +436,78 @@ def test_shading_without_an_outline_is_only_a_wash_in_the_ink_look():
     fills = [el.get("fill") for el, *_ in prop.shapes]
     assert fills == [ink.PAPER, "none"]            # the shadow no longer paints paper over the lines
     assert prop.wash.count("fill=") >= 2
+
+
+# --- the script's turns reach the planner ---------------------------------------------------
+
+def _hold_for(sections, roles):
+    from clipper.studio import script as script_mod
+    return {"hash": script_mod.text_hash(sections), "topic": "fridge", "checked_at": "now",
+            "roles": [{"n": i, "role": r, "title_question": False} for i, r in enumerate(roles, 1)]}
+
+
+def _words():
+    return ([{"section": "a", "w": w} for w in SECTIONS[0]["text"].split()]
+            + [{"section": "b", "w": w} for w in SECTIONS[1]["text"].split()])
+
+
+def test_turns_become_word_numbers_only_while_the_check_is_current():
+    stored = _hold_for(SECTIONS, ["twist", "payoff"])
+    marks, why = sb.turn_marks(_words(), SECTIONS, stored)
+    assert marks == {0: "twist", 6: "payoff"} and not why
+    # Each chapter gets its own turns, numbered from 0 like its narration.
+    assert sb.turns_block(marks, 6, 4) == "<turns>\n[0] payoff\n</turns>\n\n"
+    assert sb.turns_block(marks, 0, 6) == "<turns>\n[0] twist\n</turns>\n\n"
+
+    edited = [SECTIONS[0], {**SECTIONS[1], "text": "It moves the heat out."}]
+    assert sb.turn_marks(_words(), edited, stored) == ({}, "the script's hold check is missing or out of date")
+    assert sb.turn_marks(_words(), SECTIONS, None)[0] == {}
+    # The take was timed against other words: nothing is marked rather than marking the wrong word.
+    other = _words()
+    other[7]["w"] = "pushes"
+    marks, why = sb.turn_marks(other, SECTIONS, stored)
+    assert marks == {0: "twist"}
+
+
+def test_a_sentence_after_an_ellipsis_starts_on_the_right_word():
+    from clipper.studio import hold
+    sections = [{"key": "a", "heading": "S", "text": "Your dinner needs… a toolbox. So how?"}]
+    assert hold.sentence_starts(sections) == [("a", 0), ("a", 3), ("a", 5)]
+
+
+def test_the_planner_gets_the_turns_when_current_and_not_when_stale(client, script_with_take, fake_claude,
+                                                                    monkeypatch):
+    sid = script_with_take
+    from clipper.studio import script as script_mod
+    with session_scope() as db:
+        db.get(VoiceTake, 1).script_hash = script_mod.text_hash(SECTIONS)
+        db.get(Script, sid).hold = _hold_for(SECTIONS, ["hook", "payoff"])
+    seen = []
+    original = sb._plan_chunk
+
+    def spying(system, title, props, words, chapter, turns=""):
+        seen.append((chapter, turns))
+        return original(system, title, props, words, chapter, turns)
+    monkeypatch.setattr(sb, "_plan_chunk", spying)
+    board = client.post(f"/api/v1/scripts/{sid}/storyboards", json={"format": "long", "style": "flat"}).json()
+    sb.plan(board["id"], ConsoleReporter())
+    assert dict(seen) == {"Cold open": "", "Trick": "<turns>\n[0] payoff\n</turns>\n\n"}
+
+    seen.clear()
+    with session_scope() as db:
+        db.get(Script, sid).hold = {**db.get(Script, sid).hold, "hash": "old"}
+    sb.plan(board["id"], ConsoleReporter())
+    assert dict(seen) == {"Cold open": "", "Trick": ""}
+
+
+def test_big_text_is_kept_for_the_payoff_and_two_other_beats():
+    from clipper.studio import beats, film
+    shots = [{"start_word": 0, "lines": ['0 write "ONE" top big', '5 write "TWO" big', '9 draw fridge']},
+             {"start_word": 10, "lines": ['12 write "THREE" big', '20 write "FOUR" big', '30 write "PAYOFF" big']}]
+    lost = sb.limit_big(shots, beats.parse_line, "big", {12: "twist", 20: "rehook", 30: "payoff"})
+    assert lost == ["ONE", "TWO"]
+    assert shots[0]["lines"][:2] == ['0 write "ONE" top', '5 write "TWO"'] and shots[1]["lines"][2].endswith("big")
+    # Without a check: the last one (most likely the payoff) and the first two.
+    shots = [{"start_word": 0, "lines": [f'{n} big "W{n}" bar' for n in (0, 4, 8, 12, 16)]}]
+    assert sb.limit_big(shots, film.parse_line, "bar", {}) == ["W8", "W12"]
+    assert sb.limit_big([{"start_word": 0, "lines": ['0 big "A" bar']}], film.parse_line, "bar", {}) == []

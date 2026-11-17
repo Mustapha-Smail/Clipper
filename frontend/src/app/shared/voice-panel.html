@@ -115,6 +115,7 @@
           <strong [class.warn]="a.coverage < 0.9">{{ (a.coverage * 100).toFixed(0) }}%</strong> of the script found in the take
           @if (a.missing.length) { · <span class="warn">{{ a.missing.length }} {{ a.missing.length === 1 ? 'passage' : 'passages' }} not spoken as written</span> }
           @if (a.extra.length) { · {{ a.extra.length }} {{ a.extra.length === 1 ? 'stretch' : 'stretches' }} of speech not in the script }
+          @if (a.wpm) { · <span class="num" title="Script words a minute, pauses included. Scripts are written for 150.">{{ a.wpm }} words a minute</span> }
         </p>
         <details class="fold small">
           <summary class="muted">Timing and differences</summary>

@@ -267,12 +267,39 @@ def marker(rng: np.random.Generator) -> np.ndarray:
     return (noise * np.sin(np.pi * x) ** 0.7 * 0.9).astype(np.float32)
 
 
+RISER_SECONDS = 1.5        # a riser ends on the word it leads to
+
+
+def starter(rng: np.random.Generator) -> np.ndarray:
+    """A short attention sound for the very start: a bright upward flick and a soft knock under it."""
+    n = int(RATE * 0.35)
+    t = np.arange(n) / RATE
+    flick = _sweep(rng.uniform(380, 420), rng.uniform(1300, 1500), n, 14) * np.exp(-t * 9)
+    knock = np.sin(2 * np.pi * np.cumsum(70 * (1 + np.exp(-t * 30))) / RATE) * np.exp(-t * 14)
+    attack = np.minimum(1.0, t / 0.006)
+    return ((flick * 0.5 + knock * 0.7) * attack).astype(np.float32)
+
+
+def riser(rng: np.random.Generator) -> np.ndarray:
+    """A rising sweep of tone and noise, loudest at its very end, so it lands on the word it leads to."""
+    n = int(RATE * RISER_SECONDS)
+    t = np.arange(n) / RATE
+    x = t / RISER_SECONDS
+    tone = np.sin(2 * np.pi * np.cumsum(180 + 520 * x ** 2) / RATE)
+    noise = rng.standard_normal(n)
+    hiss = np.convolve(noise, np.ones(8) / 8, mode="same") * (1 - x) + noise * x * 0.35   # brightens as it rises
+    swell = x ** 2.2
+    tail = np.minimum(1.0, (n - np.arange(n)) / (RATE * 0.008))      # 8 ms down at the end: no click
+    return ((tone * 0.55 + hiss * 0.35) * swell * tail).astype(np.float32)
+
+
 FAMILIES = {"bloop": (bloop, 1.0), "plop": (plop, 0.9), "pluck": (pluck, 0.8), "click": (click, 0.9),
             "ding": (ding, 0.55), "boing": (boing, 0.8), "zip": (zip_up, 0.7), "whoosh": (whoosh, 1.0),
             "scribble": (scribble, 0.55), "rub": (rub, 0.6), "step": (step, 0.5), "run_step": (run_step, 0.45),
             "thud": (thud, 0.9), "swish": (swish, 0.7), "slide": (slide, 0.5), "creak": (creak, 0.5),
             "lift": (lift, 0.7), "stamp": (stamp, 1.0), "pin": (pin, 0.8), "ticks": (ticks, 0.6),
-            "impact": (impact, 0.9), "typing": (typing, 0.7), "marker": (marker, 0.7)}
+            "impact": (impact, 0.9), "typing": (typing, 0.7), "marker": (marker, 0.7),
+            "starter": (starter, 1.0), "riser": (riser, 0.9)}
 CHOICES = {   # what appears -> the families that suit it
     "character": ["bloop", "plop"], "prop": ["bloop", "plop", "pluck"], "text": ["pluck", "click", "bloop"],
     "number": ["ding"], "arrow": ["zip"], "slide": ["whoosh"], "bounce": ["boing"], "grow": ["boing", "bloop"],
@@ -285,6 +312,8 @@ CHOICES = {   # what appears -> the families that suit it
     # the film style: an evidence wall
     "pin": ["pin"], "stamp": ["stamp"], "ticks": ["ticks"], "impact": ["impact"], "type": ["typing"],
     "marker": ["marker"], "label": ["swish"], "string": ["slide"],
+    # attention (Settings sound_starter, sound_riser)
+    "starter": ["starter"], "riser": ["riser"],
 }
 
 

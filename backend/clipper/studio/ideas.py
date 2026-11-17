@@ -34,8 +34,11 @@ class Beat(BaseModel):
 
 class Draft(BaseModel):
     title: str = Field(description="A working YouTube title: a surprising claim or question, not 'How X works'")
-    hook: str = Field(description="The question or claim said in the first five seconds")
-    answer: str = Field(description="The surprising answer, in one plain sentence")
+    hook: str = Field(description="The question or claim said in the first five seconds; it names the topic in "
+                                  "its first words")
+    expected: str = Field(description="What most viewers would guess before watching, in one sentence; the video "
+                                      "proves it wrong or more surprising")
+    answer: str = Field(description="The surprising answer, in one plain sentence, that overturns the expected guess")
     beats: list[Beat] = Field(description="3 to 7 steps from hook to payoff")
     angle: str = Field(description="What makes this take different from the usual explainer on the topic")
     format: Literal["single", "list"] = Field(
@@ -49,7 +52,10 @@ class Drafts(BaseModel):
 
 
 class Judgement(BaseModel):
-    hook_score: int = Field(description="0 to 10: would a casual viewer need to know the answer after the hook?")
+    hook_score: int = Field(description="0 to 10: would a casual viewer need to know the answer after the hook? "
+                                        "Ask three things: is the topic clear from its first words, is there a "
+                                        "reason to lean in (stakes or curiosity), and does the answer overturn the "
+                                        "expected guess? Low if any of the three is missing")
     hook_reason: str
     easy_score: int = Field(description="0 to 10: could the audience follow the whole answer on one listen, with "
                                         "no background? Low if it needs terms, names, dates or prior knowledge "
@@ -201,7 +207,8 @@ def judge(idea: Idea, research: dict | None) -> Judgement:
     results = "\n".join(lines) or "(not available: YouTube was not checked)"
     beats = "\n".join(f"- {b['text']}" + (" [Short]" if b.get("short") else "") for b in idea.beats)
     prompt = (f"<theme>{idea.theme}</theme>\n\n<idea>\nTitle: {idea.title}\nHook: {idea.hook}\n"
-              f"Answer: {idea.answer}\nAngle: {idea.angle}\nFormat: {idea.format}\nBeats:\n{beats}\n</idea>\n\n"
+              f"Expected guess: {idea.expected or '(not given)'}\nAnswer: {idea.answer}\nAngle: {idea.angle}\n"
+              f"Format: {idea.format}\nBeats:\n{beats}\n</idea>\n\n"
               f"<youtube_results query=\"{idea.search_query}\" today=\"{datetime.now(UTC).date()}\">\n"
               f"{results}\n</youtube_results>")
     return llm.ask("idea_check", JUDGE.format(audience=plain.audience()), prompt, Judgement, effort="medium")

@@ -12,3 +12,5 @@ You assess one video idea for a faceless animated YouTube channel (simple drawn 
 The videos are for {audience}.
 
 Be strict and calibrated: 5 is an ordinary idea, 8 or more is rare. Give each reason in one sentence that names what you saw. Judge the angle against the result titles you were given, not against videos you imagine exist.
+
+For the hook, ask three things: is the topic clear from the hook's first words, does it give a reason to lean in (stakes or curiosity), and does the answer overturn the expected guess? Say in hook_reason which of the three are missing.

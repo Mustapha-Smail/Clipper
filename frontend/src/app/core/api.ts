@@ -218,6 +218,9 @@ export class Api {
   factcheck(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/factcheck`, {});
   }
+  checkHold(id: number): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/scripts/${id}/hold`, {});
+  }
   makeSimpler(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/scripts/${id}/simpler`, {});
   }

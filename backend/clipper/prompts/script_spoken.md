@@ -14,3 +14,7 @@ Write for the ear, as a person talking to one viewer, not as an article read alo
 - Mark a beat with an ellipsis (…) before a punchline, and put asides between em dashes.
 - At most one light filler per paragraph ("well,", "honestly,", "basically"); never "um" or "uh".
 - One idea per paragraph; a new paragraph is where the narrator takes a breath.
+- No filler transitions ("moving on", "let's talk about", "next up", "without further ado"): go straight to the next thing.
+- No recap sentences that repeat what was just said.
+- Ask the title's question at most once.
+- Explain a term in the same sentence it first appears.

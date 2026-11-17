@@ -30,7 +30,7 @@ from .. import config, llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
-from . import art, beats, film, ink
+from . import art, beats, film, hold, ink
 from . import places as places_mod
 from . import voice as voice_mod
 
@@ -98,6 +98,92 @@ def numbered_words(words: list[dict]) -> str:
     return " ".join(out).strip()
 
 
+# --- the turns of the story, from the script's hold check ------------------------------------
+
+MAX_BIG = 3      # emphasised words on screen in a whole video: the payoff and at most two other key beats
+
+
+def turn_marks(words: list[dict], sections: list[dict], stored: dict | None) -> tuple[dict[int, str], str]:
+    """The storyboard word numbers where a twist, rehook or payoff sentence starts, from the hold check.
+
+    Empty, with the reason, when the check is missing or out of date, or when the take's words no longer
+    match the script's text (so a number would point at the wrong word)."""
+    found = hold.turns(sections, stored)
+    if found is None:
+        return {}, "the script's hold check is missing or out of date"
+    by_section: dict[str, list[int]] = {}
+    for i, w in enumerate(words):
+        by_section.setdefault(w.get("section"), []).append(i)
+    texts = {s["key"]: s["text"].split() for s in sections}
+    usable = {key for key, idx in by_section.items()
+              if key in texts and [words[i]["w"] for i in idx] == texts[key]}
+    marks = {by_section[t["section"]][t["index"]]: t["role"] for t in found
+             if t["section"] in usable and t["index"] < len(by_section[t["section"]])}
+    if not marks and by_section.keys() - usable:
+        return {}, "the voice take's words no longer match the script"
+    return marks, ""
+
+
+def turns_block(marks: dict[int, str], offset: int, size: int) -> str:
+    """The turns inside one chapter, numbered like its narration (from 0), for the planner."""
+    inside = sorted((i - offset, role) for i, role in marks.items() if offset <= i < offset + size)
+    if not inside:
+        return ""
+    return "<turns>\n" + "\n".join(f"[{i}] {role}" for i, role in inside) + "\n</turns>\n\n"
+
+
+def _report_turns(marks: dict[int, str], why: str, rep: Reporter) -> None:
+    if marks:
+        counts = {r: sum(1 for x in marks.values() if x == r) for r in hold.MARKED}
+        rep.info("Planning on the script's turns: " + ", ".join(f"{n} {r}{'s' if n > 1 else ''}"
+                                                                 for r, n in counts.items() if n))
+    else:
+        rep.info(f"Planning without the script's turns: {why or 'the hold check marked none'}")
+
+
+def limit_big(shots: list[dict], parse, flag: str, marks: dict[int, str]) -> list[str]:
+    """Keep the emphasis (`flag`: ink's `big`, film's `bar`) on at most MAX_BIG lines in the video: the payoff's
+    first, then the other turns, then the earliest. The others keep their text at normal size.
+
+    Returns the texts that lost their emphasis."""
+    found = []
+    for si, shot in enumerate(shots):
+        for li, raw in enumerate(shot.get("lines", [])):
+            line = parse(raw)
+            if line is not None and getattr(line, flag, False):
+                found.append((si, li, line))
+    if len(found) <= MAX_BIG:
+        return []
+    payoff = min((i for i, r in marks.items() if r == "payoff"), default=None)
+    turn_words = set(marks)
+
+    def rank(item: tuple) -> tuple:
+        line = item[2]
+        if payoff is not None and line.word >= payoff:
+            return (0, line.word)
+        if line.word in turn_words:
+            return (1, line.word)
+        return (2, line.word)
+
+    if not marks:              # no check: the last one (likely the payoff) and the first two
+        keep = {id(found[-1][2]), id(found[0][2]), id(found[1][2])}
+    else:
+        keep = {id(item[2]) for item in sorted(found, key=rank)[:MAX_BIG]}
+    lost = []
+    for si, li, line in found:
+        if id(line) not in keep:
+            setattr(line, flag, False)
+            shots[si]["lines"][li] = line.render()
+            lost.append(line.text)
+    return lost
+
+
+def _report_big(lost: list[str], rep: Reporter) -> None:
+    if lost:
+        rep.info(f"{len(lost)} big words shown at normal size (big text is kept for the payoff and at most "
+                 f"{MAX_BIG - 1} other key beats): " + ", ".join(f'"{t}"' for t in lost[:5]))
+
+
 def library() -> dict[str, str]:
     """The props the planner may reuse: yours, and those drawn in the current illustrated style.
 
@@ -146,10 +232,10 @@ def _chunks(words: list[dict]) -> list[tuple[int, list[dict], str | None]]:
     return chunks
 
 
-def _plan_chunk(system: str, title: str, props: str, words: list[dict], chapter: str) -> Plan:
+def _plan_chunk(system: str, title: str, props: str, words: list[dict], chapter: str, turns: str = "") -> Plan:
     chapter_line = f"<chapter>{chapter}</chapter>\n\n" if chapter else ""
     prompt = (f"<video_title>{title}</video_title>\n\n{chapter_line}<cast>\n{CAST}\n</cast>\n\n"
-              f"<prop_library>\n{props}\n</prop_library>\n\n"
+              f"<prop_library>\n{props}\n</prop_library>\n\n{turns}"
               f"<narration>\n{numbered_words(words)}\n</narration>")
     return llm.ask("storyboard", system, prompt, Plan, effort="high")
 
@@ -169,11 +255,13 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
         board = db.get(Storyboard, storyboard_id)
         words, fmt, title, style = list(board.words), board.format, board.title, board.style
         headings = {s["key"]: s["heading"] for s in board.script.sections}
+        marks, why = turn_marks(words, board.script.sections, board.script.hold)
+    _report_turns(marks, why, rep)
     if style == "ink":
-        plan_ink(storyboard_id, words, fmt, title, headings, rep)
+        plan_ink(storyboard_id, words, fmt, title, headings, rep, marks)
         return
     if style == "film":
-        plan_film(storyboard_id, words, fmt, title, headings, rep)
+        plan_film(storyboard_id, words, fmt, title, headings, rep, marks)
         return
     known = library()
     system = PLAN.format(max_elements=MAX_ELEMENTS, format_rules=FORMAT_RULES[fmt])
@@ -185,7 +273,8 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
     def run(chunk: tuple[int, list[dict], str | None]) -> tuple[int, int, Plan]:
         offset, part, key = chunk   # the model numbers the chapter's words from 0; shifted back below
         chapter = headings.get(key, "") if key else ""
-        return offset, len(part), _plan_chunk(system, title, props, part, chapter)
+        return offset, len(part), _plan_chunk(system, title, props, part, chapter,
+                                              turns_block(marks, offset, len(part)))
 
     results, done = [], 0
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -287,7 +376,8 @@ def _report_photo_cut(cut: int, style: str, rep: Reporter) -> None:
                  f"out; {'the drawings' if style == 'ink' else 'cards and type'} carry those moments")
 
 
-def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter) -> None:
+def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter,
+             marks: dict[int, str] | None = None) -> None:
     """Plan an ink storyboard: one call per chapter, the shared instructions cached between them."""
     known = library()
     props = "\n".join(f"- {name}: {desc}" for name, desc in known.items()) or "(empty so far)"
@@ -305,7 +395,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
                   f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / BEAT_SECONDS[fmt]))} beat "
                   f"lines in all, including about {max(1, round(seconds / 25))} ACTION lines and "
                   f"{max(1, round(seconds / 30))} move lines for actors; at most {photo_budget('ink', seconds)} "
-                  f"photo lines</length>\n\n"
+                  f"photo lines</length>\n\n{turns_block(marks or {}, offset, len(part))}"
                   f"<narration>\n{numbered_words(part)}\n</narration>")
         # Medium effort: at high, most of the answer was the model thinking (about 85% of the tokens)
         # for a plan of the same quality.
@@ -333,6 +423,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         descriptions.update({p.name: p.description for p in result.new_props})
         settings.update({beats._name(p.name): p.description for p in result.new_settings})
     _report_photo_cut(cut, "ink", rep)
+    _report_big(limit_big(shots, beats.parse_line, "big", marks or {}), rep)
     shots, dropped = beats.clean(shots, len(words))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "
@@ -366,7 +457,8 @@ FILM_SECONDS = {"long": 3.2, "short": 2.4}       # a beat line this often
 FILM_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_film_{fmt}") for fmt in ("short", "long")}
 
 
-def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter) -> None:
+def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter,
+              marks: dict[int, str] | None = None) -> None:
     """Plan a film storyboard: shots of beat lines on the evidence wall, one call per chapter."""
     system = FILM_PLAN.format(format_rules=FILM_FORMAT_RULES[fmt])
     chunks = _chunks(words) if fmt == "long" else [(0, words, None)]
@@ -381,7 +473,7 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
         prompt = (f"<video_title>{title}</video_title>\n\n{chapter_line}"
                   f"<length>{seconds:.0f} seconds: aim for about {max(4, round(seconds / FILM_SECONDS[fmt]))} "
                   f"beat lines in all, at most {photo_budget('film', seconds)} photo lines</length>\n\n"
-                  f"<narration>\n{numbered_words(part)}\n</narration>")
+                  f"{turns_block(marks or {}, offset, len(part))}<narration>\n{numbered_words(part)}\n</narration>")
         return offset, len(part), llm.ask("storyboard", system, prompt, FilmPlan, effort="medium", cache=True)
 
     results = [run(chunks[0])]
@@ -402,6 +494,7 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
         part[0]["start_word"] = offset
         shots.extend(part)
     _report_photo_cut(cut, "film", rep)
+    _report_big(limit_big(shots, film.parse_line, "bar", marks or {}), rep)
     shots, dropped = film.clean(shots, len(words))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "

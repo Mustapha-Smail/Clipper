@@ -104,6 +104,34 @@ def _numbers(board: Storyboard, posts: list[Post]) -> dict:
     return out
 
 
+CRAFT = ("hold_score", "first_twist", "longest_gap", "opening", "wpm")
+
+
+def craft(board: Storyboard, script: Script) -> dict:
+    """How the video was built, next to its numbers: the hold check (score, seconds to the first twist, longest
+    gap, the roles of its first three sentences) and the take's measured pace. Blank (None) when unknown: the
+    check is missing, the text changed since it was made or since the take was spoken, or the video tells only
+    part of its script (a Short cut from a long one)."""
+    from . import hold
+
+    out = dict.fromkeys(CRAFT)
+    take = board.take
+    if take is not None and take.alignment:
+        out["wpm"] = take.alignment.get("wpm")
+    if board.format != script.video or not script.hold:
+        return out
+    if take is not None and take.script_hash and take.script_hash != script.hold.get("hash"):
+        return out
+    result = hold.score(script.sections or [], script.hold, script.video)
+    if not result or not result.get("current"):
+        return out
+    stats = result["stats"]
+    roles = [s["role"] or "fact" for s in result["sentences"][:3]]
+    out.update(hold_score=result["score"], first_twist=stats["first_twist"], longest_gap=stats["longest_gap"],
+               opening=" > ".join(roles))
+    return out
+
+
 def published(db: Session, theme_id: int) -> list[dict]:
     """Every video of the theme that went out (sent on Buffer, or published by hand), with its numbers."""
     boards = db.execute(select(Storyboard, Script).join(Script, Storyboard.script_id == Script.id)
@@ -133,6 +161,7 @@ def published(db: Session, theme_id: int) -> list[dict]:
             "published_at": when.isoformat() if when else None,
             "published_url": board.published_url,
             **_numbers(board, mine),
+            **craft(board, script),
         })
     return rows
 
@@ -262,6 +291,19 @@ class Lessons(BaseModel):
     confidence: str = Field(description="low, medium or high: how far the numbers support these lessons")
 
 
+def _craft_text(v: dict) -> str:
+    """The craft columns of one video for the table; 'not measured' rather than a guess when blank."""
+    if v.get("hold_score") is None:
+        hold_part = "hold not measured"
+    else:
+        twist = "none" if v["first_twist"] is None else f"{v['first_twist']} s"
+        gap = "n/a" if v["longest_gap"] is None else f"{v['longest_gap']} s"
+        hold_part = (f"hold {v['hold_score']}/100, first twist {twist}, longest gap {gap}, "
+                     f"opens {v['opening']}")
+    pace = f"pace {v['wpm']} wpm" if v.get("wpm") else "pace not measured"
+    return f"\n    Craft: {hold_part}; {pace}"
+
+
 def _video_table(videos: list[dict]) -> str:
     lines = []
     for n, v in enumerate(videos, 1):
@@ -272,6 +314,7 @@ def _video_table(videos: list[dict]) -> str:
                      + f" | {views}" + (f" | {extra}" if extra else "")
                      + (f" | engagement {v['engagement']}%" if v["engagement"] is not None else "")
                      + (f" | posted {v['published_at'][:16].replace('T', ' ')} UTC" if v["published_at"] else "")
+                     + _craft_text(v)
                      + (f"\n    Hook: {v['hook']}" if v["hook"] else "")
                      + (f"\n    Angle: {v['angle']}" if v["angle"] else ""))
     return "\n".join(lines)

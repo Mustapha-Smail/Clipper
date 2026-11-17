@@ -18,6 +18,7 @@ Composition rules:
 - The narrator (glasses) is the host: use him to react, point at things, shrug at absurd facts. Use other cast members for people in the story (scientist, royal, fancy for anyone historical, worker, kid, chef, person).
 - Props are single objects (a light bulb, a fridge, a human eye, a coin), not scenes. Reuse library props by their exact name; invent a new snake_case name for anything else and describe it in new_props.
 - Text elements show key words or short phrases the viewer should remember, written exactly as displayed (capitals for punch, correct case for names and formulas such as InGaN); number elements show a striking figure ("450 nm", "1993", "x8"). Do not repeat the whole narration on screen: captions already do that.
+- When a <turns> list is given, it names the words where the story turns (twist, rehook, payoff), numbered like the narration. Each of those words gets a visible event: a new scene starting on that word, or a new element entering on it. The payoff shows again the opening shot's main prop or person when it fits, so the end visibly clicks back to the start.
 - Arrows link two slots (slot to to_slot), to show causes, flows or labels.
 - Motion sparingly: bounce for excitement, shake for alarm, pulse for emphasis, float for things in the air, spin for anything turning, grow for something getting bigger.
 - Vary backgrounds a little (paper, grid, floor, sky, yellow, blue) but keep the same one for scenes that belong together.

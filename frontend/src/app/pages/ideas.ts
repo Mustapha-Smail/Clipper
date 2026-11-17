@@ -376,10 +376,11 @@ export class IdeasPage {
     if (notes !== idea.notes) this.patch(idea, { notes }, 'Notes saved');
   }
 
-  protected saveEdits(idea: Idea, title: string, hook: string, query: string): void {
+  protected saveEdits(idea: Idea, title: string, hook: string, query: string, expected: string): void {
     const patch: IdeaPatch = {};
     if (title.trim() && title.trim() !== idea.title) patch.title = title.trim();
     if (hook.trim() !== idea.hook) patch.hook = hook.trim();
+    if (expected.trim() !== idea.expected) patch.expected = expected.trim();
     if (query.trim().length >= 2 && query.trim() !== idea.search_query) patch.search_query = query.trim();
     if (!Object.keys(patch).length) return;
     this.patch(idea, patch, 'Saved. Check it again to update the score.');

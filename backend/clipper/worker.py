@@ -23,6 +23,7 @@ from .studio import animate as animate_mod
 from .studio import banner as banner_mod
 from .studio import compliance, learning, retention
 from .studio import director as director_mod
+from .studio import hold as hold_mod
 from .studio import ideas as ideas_mod
 from .studio import script as script_mod
 from .studio import storyboard as storyboard_mod
@@ -99,6 +100,8 @@ def run_job(job_id: int) -> None:
                 script_mod.make_spoken(params["script_id"], rep)
             elif stage == "simpler":
                 script_mod.make_simpler(params["script_id"], rep)
+            elif stage == "hold":
+                hold_mod.run(params["script_id"], rep)
             elif stage == "speak":
                 voice_mod.speak(params["take_id"], settings, rep)
             elif stage == "prepare":

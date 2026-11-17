@@ -123,13 +123,18 @@ class Marks(BaseModel):
 DIRECT = prompts.Prompt("voice_direction")
 
 
-def direct(sentences: list[str], rep: Reporter) -> list[str]:
-    """The sentences with their tags, as Claude directs them; plain sentences if the AI cannot be reached."""
-    numbered = "\n".join(f"{n}. {s}" for n, s in enumerate(sentences))
+def direct(sentences: list[str], rep: Reporter, short: bool = False, lifts: frozenset[int] = frozenset()) -> list[str]:
+    """The sentences with their tags, as Claude directs them; plain sentences if the AI cannot be reached.
+
+    `short`: the video is a Short, so its first sentence is read with urgency. `lifts`: the numbers of the
+    rehook sentences (from the hold check), which get a lift."""
+    numbered = "\n".join(f"{n}. {'(rehook) ' if n in lifts else ''}{s}" for n, s in enumerate(sentences))
+    video = f"<video>{'a YouTube Short' if short else 'a long YouTube video'}</video>\n\n"
     try:
         brief = DIRECT.format(moods=", ".join(MOODS), sounds=", ".join(s for s in SOUNDS if s != "none"),
                               sound_every=SOUND_EVERY)
-        marks = llm.ask("delivery", brief, f"<sentences>\n{numbered}\n</sentences>", Marks, effort="low").marks
+        marks = llm.ask("delivery", brief, f"{video}<sentences>\n{numbered}\n</sentences>", Marks,
+                        effort="low").marks
     except Exception as err:  # noqa: BLE001 - a voice without direction is still a voice
         rep.warn(f"Could not direct the delivery ({str(err)[:160]}): every sentence is read as plain narration")
         return list(sentences)

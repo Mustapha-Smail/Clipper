@@ -4,6 +4,7 @@ from clipper import llm
 from clipper.db import session_scope
 from clipper.db.models import Idea, Job, Script
 from clipper.jobs import ConsoleReporter
+from clipper.studio import hold
 from clipper.studio import script as script_mod
 
 NOTES = "## Fridges\n- A fridge moves heat out of the box.[1]\n- The coils at the back get warm.[2]"
@@ -52,6 +53,10 @@ def fake_claude(monkeypatch):
                 script_mod.WebVerdict(index=1, verdict="supported", sources=[3], note="Confirmed")])
         if output_format is script_mod.Rewrite:
             return script_mod.Rewrite(text="  Shorter version.  ")
+        if output_format is hold.Labels:
+            return hold.Labels(topic="fridge", sentences=[
+                hold.Label(n=1, role="hook"), hold.Label(n=2, role="twist"), hold.Label(n=3, role="fact"),
+                hold.Label(n=4, role="payoff"), hold.Label(n=9, role="fact")])
         raise AssertionError(output_format)
 
     monkeypatch.setattr(llm, "search", fake_search)
@@ -65,7 +70,8 @@ def run_job(job_id: int) -> None:
         job = db.get(Job, job_id)
         stages, script_id = list(job.stages), job.params["script_id"]
     for stage in stages:
-        getattr(script_mod, stage)(script_id, ConsoleReporter())
+        run = hold.run if stage == "hold" else getattr(script_mod, stage)
+        run(script_id, ConsoleReporter())
 
 
 def test_sources_are_numbered_once_in_order():
@@ -87,7 +93,8 @@ def test_idea_to_checked_script(client, idea, fake_claude):
     assert started.status_code == 202
     body = started.json()
     assert body["target_minutes"] == 6 and body["job"]["kind"] == "script"
-    assert body["job"]["script_id"] == body["id"] and body["job"]["stages"] == ["research", "write", "factcheck"]
+    assert body["job"]["script_id"] == body["id"]
+    assert body["job"]["stages"] == ["research", "write", "factcheck", "hold"]
     assert client.get("/api/v1/ideas").json()[0]["status"] == "approved"
     assert client.get("/api/v1/ideas").json()[0]["script_id"] == body["id"]
 
@@ -106,6 +113,10 @@ def test_idea_to_checked_script(client, idea, fake_claude):
     assert verdicts == {"A fridge moves heat": "supported", "An open door warms the kitchen": "supported",
                         "Never made cold": "joke"}
     assert script["claim_counts"] == {"supported": 2, "contradicted": 0, "unclear": 0, "joke": 1}
+    # The hold check ran last: the label for a sentence that does not exist was dropped and counted.
+    assert script["hold"]["current"] and script["hold"]["topic"] == "fridge"
+    assert [x["role"] for x in script["hold"]["sentences"]] == ["hook", "twist", "fact", "payoff"]
+    assert any("1 labels dropped" in x["label"] for x in script["hold"]["lines"])
     # The writer was given only the research notes, and the web check only the uncovered claim.
     assert any(name == "Draft" and NOTES in content for name, content in fake_claude)
     assert [p for kind, p in fake_claude if kind == "search"][1].count("\n") == 2
@@ -132,7 +143,7 @@ def test_idea_to_checked_script(client, idea, fake_claude):
     assert listed[0]["id"] == body["id"] and listed[0]["job"] is None
 
     job = client.post(f"/api/v1/scripts/{body['id']}/redraft").json()
-    assert job["kind"] == "redraft" and job["stages"] == ["write", "factcheck"]
+    assert job["kind"] == "redraft" and job["stages"] == ["write", "factcheck", "hold"]
 
 
 def test_write_refuses_without_research(app_env, idea):
@@ -161,7 +172,7 @@ def test_spoken_rewrite_keeps_keys_and_can_be_undone(client, idea, fake_claude, 
             script_mod.SpokenSection(key="made-up", text="Nope.")])
     monkeypatch.setattr(llm, "ask", fake_ask)
     job = client.post(f"/api/v1/scripts/{body['id']}/spoken").json()
-    assert job["stages"] == ["spoken"]
+    assert job["stages"] == ["spoken", "hold"]
     script_mod.make_spoken(body["id"], ConsoleReporter())
     with session_scope() as db:
         db.get(Job, job["id"]).state = "succeeded"
@@ -179,3 +190,21 @@ def test_spoken_rewrite_keeps_keys_and_can_be_undone(client, idea, fake_claude, 
 
 def test_new_scripts_are_written_for_the_ear():
     assert "Write for the ear" in script_mod.WRITE and "Contractions" in script_mod.WRITE
+
+
+def test_the_brief_plans_the_hook_the_lock_in_and_the_expected_guess(app_env, idea):
+    with session_scope() as db:
+        db.get(Idea, idea).expected = "Fridges make cold air"
+        row = Script(idea_id=idea, title="Your fridge", theme="Everyday things", sections=[], video="short",
+                     target_seconds=50)
+        db.add(row)
+        db.flush()
+        script_id = row.id
+    brief = script_mod._brief(script_mod._load(script_id))
+    assert "names the topic" in brief and "Lock-in" in brief and "two rehook lines" in brief
+    assert "Expected guess: Fridges make cold air" in brief
+    with session_scope() as db:
+        db.get(Idea, idea).expected = ""
+        db.get(Script, script_id).target_seconds = 40
+    brief = script_mod._brief(script_mod._load(script_id))
+    assert "Expected guess" not in brief and "one rehook line" in brief

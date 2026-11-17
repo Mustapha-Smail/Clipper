@@ -63,7 +63,7 @@ def test_make_it_simpler_keeps_keys_and_can_be_undone(client, idea, fake_claude,
             script_mod.SpokenSection(key=keys[0], text="Your fridge? It moves heat.")])
     monkeypatch.setattr(llm, "ask", fake_ask)
     job = client.post(f"/api/v1/scripts/{body['id']}/simpler").json()
-    assert job["stages"] == ["simpler"]
+    assert job["stages"] == ["simpler", "hold"]
     script_mod.make_simpler(body["id"], ConsoleReporter())
     with session_scope() as db:
         db.get(Job, job["id"]).state = "succeeded"

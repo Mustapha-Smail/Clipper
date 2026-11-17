@@ -102,7 +102,9 @@ def syllables(word: str) -> int:
     return max(1, len(re.findall(r"[aeiouy]{1,2}", w)))
 
 
-def _sentences(text: str) -> list[str]:
+def sentences(text: str) -> list[str]:
+    """The sentences of a narration, paragraph by paragraph. Shared with the hold check, so its numbers
+    line up with the ones the model labelled."""
     out = []
     for para in re.split(r"\n+", text):
         out += [s.strip() for s in SENTENCE.findall(para) if WORD.search(s)]
@@ -139,19 +141,19 @@ def _numbers(text: str) -> list[str]:
 def check(sections: list[dict], lv: str = "everyone", title: str = "") -> dict | None:
     """How easy the narration is to follow on one listen, 0 to 100, every deduction explained."""
     text = "\n".join(s.get("text", "") for s in sections)
-    sentences = _sentences(text)
-    words = [w for s in sentences for w in WORD.findall(s) if not w[0].isdigit()]
+    said = sentences(text)
+    words = [w for s in said for w in WORD.findall(s) if not w[0].isdigit()]
     if len(words) < 20:
         return None
     lv = lv if lv in TARGETS else "everyone"
     target = TARGETS[lv]
     minutes = max(0.2, (len(words) + len(NUMBER.findall(text))) / WORDS_PER_MINUTE)
     syl = [syllables(w) for w in words]
-    per_sentence = len(words) / len(sentences)
+    per_sentence = len(words) / len(said)
     grade = 0.39 * per_sentence + 11.8 * sum(syl) / len(words) - 15.59
     long_share = 100 * sum(1 for n in syl if n >= 3) / len(words)
     numbers = _numbers(text)
-    names = _names(sentences, {_stem(w).lower() for w in WORD.findall(title)})
+    names = _names(said, {_stem(w).lower() for w in WORD.findall(title)})
     numbers_pm, names_pm = len(numbers) / minutes, len(names) / minutes
     lines: list[dict] = []
 
@@ -172,7 +174,7 @@ def check(sections: list[dict], lv: str = "everyone", title: str = "") -> dict |
            f"{len(names)} different names ({', '.join(names[:8])}{'…' if len(names) > 8 else ''}); "
            f"aim for {target['names']:.0f} a minute or fewer, each explained.")
     score = max(0, 100 + sum(x["points"] for x in lines))
-    hardest = sorted(sentences, key=lambda s: len(WORD.findall(s)), reverse=True)[:3]
+    hardest = sorted(said, key=lambda s: len(WORD.findall(s)), reverse=True)[:3]
     return {
         "score": score,
         "verdict": "plain" if score >= 85 else "a bit dense" if score >= 65 else "hard to follow",

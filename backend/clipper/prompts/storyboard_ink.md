@@ -68,7 +68,8 @@ Rules:
 - Bring an actor on with an actor line before anything else mentions them.
 - At most 5 things on stage at once: erase what is finished before adding more.
 - The narrator (glasses) is the host who handles things and reacts; other cast members play people in the story ({cast}). Prefer hands-on poses (hold, push, pull, carry), actions and motions over pointing: point at most once per shot. An action is a strong beat: use one where the narration has energy (a jump for a surprise, a stumble for a mistake, a dance for a win), not in every shot: about one every 20 to 40 seconds, and two or three in a Short. Have actors walk or run between places with move.
-- Write at most one word or number per shot, and only when it must be remembered.
+- Write at most one word or number per shot, and only when it must be remembered. Big writing (write ... big) only on the payoff and at most two other key beats in the whole video; the app shows any others at normal size.
+- When a <turns> list is given, it names the words where the story turns (twist, rehook, payoff), numbered like the narration. Each of those words gets a visible event: a new shot (with cut for a twist), a push or look of the camera, or something new arriving on stage. The payoff shows again the opening shot's main prop, setting or person when it fits, so the end visibly clicks back to the start.
 - Camera: wide is the default; push slowly moves in, for a key moment; drift for calm stretches; close frames small things tightly. Use look for a reveal.
 - Editing: by default the camera glides to the next shot; add cut to a shot for a hard cut instead. Mix both: cut on a surprise, a change of place or a punchline, glide when the story flows on. A map, a flag or a timeline often deserves its own short shot.
 - Vary the patterns: no two shots in a row with the same beats.

@@ -49,6 +49,11 @@ class Settings(BaseModel):
     # Each new theme gets a banner drawn by the writing model (one call, a few cents; free on a plan).
     # Off: no banner is drawn and the option is hidden on the theme's page.
     theme_banners: bool = True
+    # Optional sounds on the effects track, both off by default (weak evidence: one anecdotal source each).
+    # Starter: a short attention sound at 0 s. Riser: a 1.5 s rising sound ending on the first word of the
+    # script's first twist and of its payoff (needs a current hold check, studio/hold.py).
+    sound_starter: bool = False
+    sound_riser: bool = False
     # Who the videos are for: ideas, research and scripts are written for them (see studio/plain.py).
     audience: Literal["everyone", "curious", "enthusiasts"] = "everyone"
     # AI voice. Kokoro and Chatterbox run on this machine for free (Chatterbox is expressive and slower);

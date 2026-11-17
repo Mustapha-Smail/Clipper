@@ -287,15 +287,31 @@ def chatterbox_voices() -> list[dict]:
             *({"id": k, "label": f"{v} (as Chatterbox)"} for k, v in KOKORO_VOICES.items())]
 
 
+def lifted(lines: list[str], rehooks: list[str]) -> frozenset[int]:
+    """The numbers of the spoken sentences that hold a rehook sentence of the hold check (the two split text
+    differently, so they are matched by content)."""
+    def norm(text: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9']+", text.lower()))
+    wanted = [norm(t) for t in rehooks if norm(t)]
+    return frozenset(n for n, line in enumerate(lines)
+                     if any(w in norm(line) or norm(line) in w for w in wanted if norm(line)))
+
+
 def speak_chatterbox(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter,
-                     pauses: str = "natural") -> None:
+                     pauses: str = "natural", short: bool = False, rehooks: list[str] | None = None) -> None:
     """Claude directs each sentence (a mood, now and then a sound); Chatterbox speaks it; pauses as for Kokoro."""
     from . import chatterbox
 
     if voice != "default" and voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown voice for Chatterbox: {voice}")
     lines = _lines(sections)
-    texts = chatterbox.direct([s for s, _, _ in lines], rep)
+    said = [s for s, _, _ in lines]
+    lifts = lifted(said, rehooks or [])
+    if rehooks is None:
+        rep.info("Rehooks get no lift: the script's hold check is missing or out of date")
+    elif lifts:
+        rep.info(f"{len(lifts)} rehook sentence{'s' if len(lifts) > 1 else ''} will get a lift")
+    texts = chatterbox.direct(said, rep, short=short, lifts=lifts)
     reference = None
     if voice != "default":
         rep.info(f"Taking the timbre of the Kokoro voice {KOKORO_VOICES[voice].split(' · ')[0]}")
@@ -487,7 +503,11 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     if take.source == "kokoro":
         speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
     elif take.source == "chatterbox":
-        speak_chatterbox(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
+        from . import hold
+
+        speak_chatterbox(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural",
+                         short=script.video == "short",
+                         rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)))
     elif take.source == "elevenlabs":
         speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep)
     else:
@@ -527,14 +547,28 @@ def align(take_id: int, settings: Settings, rep: Reporter) -> None:
     transcript = transcribe_mod.transcribe_isolated(folder, settings.language, engine, settings.voice_align_model,
                                                     force=True, progress=rep.progress, media=Path(take.path))
     result = match(script.sections, transcript["words"])
-    timeline_path(take).write_text(json.dumps(result.pop("timeline")))
+    timeline = result.pop("timeline")
+    timeline_path(take).write_text(json.dumps(timeline))
     result["script_hash"] = script_mod.text_hash(script.sections)
+    result["wpm"] = pace(timeline)
     _update(take_id, alignment=result)
     rep.info(f"{result['coverage']:.0%} of the script was found in the take")
+    if result["wpm"]:
+        rep.info(f"Pace: {result['wpm']} words a minute, pauses included "
+                 f"(scripts are written for {script_mod.WORDS_PER_MINUTE})")
     if result["missing"]:
         rep.warn(f"{len(result['missing'])} passages of the script were not spoken or were said differently")
     if result["extra"]:
         rep.info(f"{len(result['extra'])} stretches of speech are not in the script (retakes, asides)")
+
+
+def pace(timeline: list[dict]) -> int | None:
+    """Words a minute of a take, from its first word to its last, pauses included; None if too short to tell."""
+    timed = [w for w in timeline if w.get("e", 0) > 0]
+    if len(timed) < 10:
+        return None
+    seconds = timed[-1]["e"] - timed[0]["s"]
+    return round(len(timeline) * 60 / seconds) if seconds > 1 else None
 
 
 # --- matching speech to the script ---------------------------------------------------------

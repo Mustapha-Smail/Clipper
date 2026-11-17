@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .. import jobs, llm
 from ..db import get_db
 from ..db.models import Idea, Job, Script
-from ..studio import compliance, plain
+from ..studio import compliance, hold, plain
 from ..studio import script as script_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
@@ -59,10 +59,11 @@ def summary_out(script: Script, job: Job | None) -> s.ScriptSummary:
 
 def script_out(script: Script, job: Job | None) -> s.ScriptOut:
     fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job",
-                                              "can_undo_rewrite", "plain"}
+                                              "can_undo_rewrite", "plain", "hold"}
     return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
                        can_undo_rewrite=bool(script.previous_sections),
-                       plain=plain.check(script.sections or [], plain.level(), script.title))
+                       plain=plain.check(script.sections or [], plain.level(), script.title),
+                       hold=hold.score(script.sections or [], script.hold, script.video))
 
 
 def _require_idle(db: Session, script: Script) -> None:
@@ -178,6 +179,14 @@ def make_simpler(script: Script = Depends(get_script), db: Session = Depends(get
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
     return _start(db, script, "simpler")
+
+
+@router.post("/scripts/{script_id}/hold", response_model=s.JobOut, status_code=202)
+def check_hold(script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Label every sentence and check how the narration holds attention. Advice only."""
+    if not script.sections:
+        raise HTTPException(409, "The script has no text yet")
+    return _start(db, script, "hold")
 
 
 @router.post("/scripts/{script_id}/undo-rewrite", response_model=s.ScriptOut)

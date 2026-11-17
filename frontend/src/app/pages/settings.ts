@@ -96,6 +96,20 @@ import { Toasts } from '../core/toast';
             </div>
           </section>
 
+          <section class="card" id="studio-sounds">
+            <h3>Attention sounds</h3>
+            <p class="small muted">Optional extras on a video's sound-effects track. Each rests on one creator's advice,
+              not on data, so both start off: try them and compare your numbers.</p>
+            <div class="form-grid">
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.sound_starter" />
+                <span>A short attention sound at 0 s<small>Plays as the video opens, under the first word.</small></span></label>
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.sound_riser" />
+                <span>A riser into the first twist and the payoff<small>A 1.5 s rising sound ending on the first word of
+                  each. It needs a current "Check how it holds" on the script; without one the render says why it
+                  left them out.</small></span></label>
+            </div>
+          </section>
+
           <section class="card" id="studio-voice">
             <h3>Studio voice</h3>
             <p class="small muted">Defaults for AI voices on the script page. You can still record your own voice.</p>
@@ -764,6 +778,7 @@ export class SettingsPage {
     ];
     if (f?.feature_studio) {
       groups.push({ title: 'Studio', items: [{ id: 'studio-themes', label: 'Themes' }, { id: 'studio-drawings', label: 'Drawings' },
+        { id: 'studio-sounds', label: 'Attention sounds' },
         { id: 'studio-voice', label: 'Voice' }, { id: 'studio-ink', label: 'Ink style' }] });
     }
     if (f?.feature_clipping) {

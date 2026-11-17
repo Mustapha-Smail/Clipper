@@ -24,6 +24,7 @@ from ..ffutil import require
 from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
+from ..settings import load as load_settings
 from . import art, beats, film, sound
 from . import voice as voice_mod
 
@@ -473,6 +474,7 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
                 "title": board.title,
                 "start": board.start, "end": board.end, "words": list(board.words), "scenes": list(board.scenes),
                 "headings": {s["key"]: s["heading"] for s in board.script.sections},
+                "sections": list(board.script.sections), "hold": board.script.hold,
                 "effects": board.effects, "music_db": board.music_db,
                 "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
         names = beats.prop_names(board.scenes) if board.style == "ink" else set() if board.style == "film" else \
@@ -502,11 +504,42 @@ def composer_for(board: dict, props: dict[str, str | None], settings: Settings, 
     return Composer(board, props, settings, mouths)
 
 
-def effect_events(composer, duration: float) -> list[tuple[float, str]]:
-    """The sound effects of a storyboard, from the composer that films it."""
+def effect_events(composer, duration: float, extra: list[tuple[float, str]] = ()) -> list[tuple[float, str]]:
+    """The sound effects of a storyboard, from the composer that films it, plus `extra` (attention sounds)."""
     if hasattr(composer, "sound_events"):
-        return composer.sound_events()
-    return sound.effect_events(composer.scenes, composer.word_time, duration)
+        events = composer.sound_events()
+    else:
+        events = sound.effect_events(composer.scenes, composer.word_time, duration)
+    return sorted([*events, *extra]) if extra else events
+
+
+def attention_events(board: dict, word_time, settings: Settings) -> tuple[list[tuple[float, str]], list[str]]:
+    """The optional starter (at 0 s) and risers (ending on the first word of the first twist and of the payoff),
+    with a note for the log on what was added or why not."""
+    from . import storyboard as storyboard_mod
+
+    events, notes = [], []
+    if settings.sound_starter:
+        events.append((0.0, "starter"))
+        notes.append("an attention sound at 0 s")
+    if not settings.sound_riser:
+        return events, notes
+    marks, why = storyboard_mod.turn_marks(board.get("words", []), board.get("sections", []), board.get("hold"))
+    if not marks:
+        notes.append(f"no risers: {why or 'the hold check marked no twist or payoff'}")
+        return events, notes
+    for role in ("twist", "payoff"):
+        word = min((i for i, r in marks.items() if r == role), default=None)
+        if word is None:
+            notes.append(f"no riser before a {role}: the hold check marked none in this video")
+            continue
+        at = word_time(word) - sound.RISER_SECONDS
+        if at < 0:
+            notes.append(f"no riser before the {role}: it comes too early ({word_time(word):.1f} s)")
+            continue
+        events.append((at, "riser"))
+        notes.append(f"a riser into the {role} at {word_time(word):.1f} s")
+    return events, notes
 
 
 _still_cache: dict = {}
@@ -548,7 +581,8 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
         if effects:
             data, props, _ = load(board.id)
             composer = composer_for(data, props, Settings(), None)
-            events = [(at - start, kind) for at, kind in effect_events(composer, duration)
+            extra, _ = attention_events(data, composer.word_time, load_settings())
+            events = [(at - start, kind) for at, kind in effect_events(composer, duration, extra)
                       if start <= at < start + seconds]
             fx = Path(tmp) / "fx.wav"
             sound.write_effects(events, seconds, fx, seed=board.id)
@@ -594,10 +628,13 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{voiced:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
     if board["effects"]:
-        events = effect_events(composer, duration)
+        extra, notes = attention_events(board, composer.word_time, settings)
+        events = effect_events(composer, duration, extra)
         sound.write_effects(events, duration, effects_wav, seed=board["id"])
         audio_inputs += ["-i", str(effects_wav)]
-        rep.info(f"{len(events)} sound effects")
+        rep.info(f"{len(events)} sound effects" + (f"; {'; '.join(notes)}" if notes else ""))
+    elif settings.sound_starter or settings.sound_riser:
+        rep.info("Sound effects are off for this video, so there is no attention sound or riser")
     if board["music"]:
         audio_inputs += ["-stream_loop", "-1", "-i", board["music"]]
         rep.info(f"Music under the voice at {board['music_db']:g} dB, lowered while the voice speaks")
