@@ -136,6 +136,28 @@ def run(src: Annotated[str, typer.Argument(help="Video URL or local file path")]
 
 
 @app.command()
+def watch(src: Annotated[str, typer.Argument(help="Video URL (reel, Short, TikTok...) or local file")],
+          language: Annotated[str, typer.Option(help="Spoken language, or auto to detect it")] = "auto",
+          model: Annotated[str | None, typer.Option(
+              help="Whisper model: small, medium or large-v3-turbo. Default: the setting")] = None):
+    """Prepare a video for an AI to watch: caption, transcript and frames in <data>/watch/<id>/."""
+    from . import settings as settings_mod
+    from . import watch as watch_mod
+    from .ffutil import ToolError
+
+    if model is not None and model not in ("small", "medium", "large-v3-turbo"):
+        typer.secho("Error: --model must be small, medium or large-v3-turbo", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    db.upgrade()
+    try:
+        path = watch_mod.watch(src, settings_mod.load(), language, model, info=typer.echo)
+    except (ToolError, FileNotFoundError, RuntimeError, ValueError) as err:
+        typer.secho(f"Error: {err}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from err
+    typer.echo(f"Done. Read {path}")
+
+
+@app.command()
 def scout():
     """Read public campaign listings now, in the foreground, and add them to Campaigns."""
     from . import scout as scout_mod

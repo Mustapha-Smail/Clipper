@@ -109,6 +109,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   `BUFFER_API_KEY` is a fallback). Keys come from `.env` only, never from Settings
   or the database. A new network needs an entry in
   `posting.SERVICES`, `posting.TEXT_MAX` and `buffer.METADATA`.
+- `watch.py` (`clipper watch URL`): prepares a video for an agent to watch
+  (skill `watch-video`): reuses `ingest` and `transcribe` (language `auto` lets
+  Whisper detect it), then writes the post details, timed transcript, frames kept
+  at each visual change and labelled contact sheets to `<data>/watch/<id>/`.
+  No database rows, no AI call: the agent that asked does the looking.
 - `captions.py`: text is drawn with Pillow because Homebrew's ffmpeg has no
   subtitle or drawtext filters. Do not switch to ffmpeg `ass`/`subtitles`.
 - `subtitles.py`: burned-in captions are detected as a band of changing text,

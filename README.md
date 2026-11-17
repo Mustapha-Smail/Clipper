@@ -818,5 +818,10 @@ file in `backend/clipper/db/migrations/versions/`. Migrations are applied by
 
 Without the UI: `cd backend && uv run clipper run <url-or-file> --n 5`.
 
+To let an AI "watch" a video (reel, Short, TikTok, file):
+`cd backend && uv run clipper watch <url-or-file>` writes the caption, a timed
+transcript and labelled frames to `data/watch/<id>/digest.md`. The prompt that
+tells Claude or Codex how to use it is `.claude/skills/watch-video/SKILL.md`.
+
 When downloads stop working, update yt-dlp:
 `cd backend && uv lock --upgrade-package yt-dlp && uv sync`, then rebuild.

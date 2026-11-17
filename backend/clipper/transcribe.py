@@ -23,6 +23,7 @@ MLX_MODELS = {
     "medium": "mlx-community/whisper-medium-mlx",
     "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
 }
+AUTO = "auto"   # language: let Whisper detect it; the transcript stores what it found
 
 
 def transcript_path(src_dir: Path) -> Path:
@@ -45,13 +46,13 @@ def _word(text: str, start: float, end: float) -> dict | None:
     return {"w": text, "s": round(float(start), 3), "e": round(float(end), 3)}
 
 
-def _with_mlx(video: Path, language: str, model: str) -> list[dict]:
+def _with_mlx(video: Path, language: str, model: str) -> tuple[list[dict], str]:
     import mlx_whisper
 
     result = mlx_whisper.transcribe(
         str(video),
         path_or_hf_repo=MLX_MODELS[model],
-        language=language,
+        language=None if language == AUTO else language,
         word_timestamps=True,
         # Stops one hallucinated line from poisoning everything after it.
         condition_on_previous_text=False,
@@ -63,7 +64,7 @@ def _with_mlx(video: Path, language: str, model: str) -> list[dict]:
             word = _word(item["word"], item["start"], item["end"])
             if word:
                 words.append(word)
-    return words
+    return words, result.get("language") or language
 
 
 def _load_audio(video: Path):
@@ -85,14 +86,14 @@ def _load_audio(video: Path):
     return np.frombuffer(proc.stdout, dtype=np.float32)
 
 
-def _with_faster_whisper(video: Path, language: str, model: str, progress) -> list[dict]:
+def _with_faster_whisper(video: Path, language: str, model: str, progress) -> tuple[list[dict], str]:
     from faster_whisper import WhisperModel
 
     audio = _load_audio(video)
     whisper = WhisperModel(model, device="cpu", compute_type="int8")
     segments, info = whisper.transcribe(
         audio,
-        language=language,
+        language=None if language == AUTO else language,
         word_timestamps=True,
         condition_on_previous_text=False,
         vad_filter=True,
@@ -105,7 +106,7 @@ def _with_faster_whisper(video: Path, language: str, model: str, progress) -> li
                 words.append(word)
         if progress and info.duration:
             progress(min(1.0, segment.end / info.duration))
-    return words
+    return words, info.language or language
 
 
 def transcribe(src_dir: Path, language: str, engine: str, model: str,
@@ -116,9 +117,9 @@ def transcribe(src_dir: Path, language: str, engine: str, model: str,
         return json.loads(out_path.read_text())
     video = media or source_video(src_dir)
     if engine == "mlx":
-        words = _with_mlx(video, language, model)
+        words, language = _with_mlx(video, language, model)
     else:
-        words = _with_faster_whisper(video, language, model, progress)
+        words, language = _with_faster_whisper(video, language, model, progress)
     transcript = {"language": language, "engine": engine, "model": model, "words": words}
     out_path.write_text(json.dumps(transcript))
     return transcript
