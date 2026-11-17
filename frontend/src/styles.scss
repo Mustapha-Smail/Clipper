@@ -315,6 +315,12 @@ img {
   padding: 20px;
 }
 
+// Cards shrink with their column instead of pushing it wider; long words wrap.
+.card {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 // A whole card that opens something.
 a.card,
 .card.link {

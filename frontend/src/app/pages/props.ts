@@ -53,7 +53,7 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
             <article class="card prop">
               <img [src]="image(a)" [alt]="a.name" loading="lazy" />
               <div class="name">{{ a.name }}</div>
-              <div class="small muted">{{ a.description }}</div>
+              <div class="small muted desc" [title]="a.description">{{ a.description }}</div>
               <div class="small muted">{{ a.drawn ? 'drawn ' + (a.updated_at | ago) : 'not drawn yet' }} ·
                 added {{ a.created_at | ago }} · used in {{ a.used_in }} {{ a.used_in === 1 ? 'storyboard' : 'storyboards' }}</div>
               @if (editing() === a.name) {
@@ -192,7 +192,7 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(190px, 40%), 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
       gap: 12px;
     }
     .prop {
@@ -207,7 +207,15 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
         background: #fbf7ee;
         border-radius: 6px;
       }
-      .name { font-weight: 650; }
+      min-width: 0;
+      .name { font-weight: 650; overflow-wrap: anywhere; }
+      .desc {
+        display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+        overflow-wrap: break-word;
+      }
+    }
+    @media (max-width: 520px) {
+      .prop { padding: 10px; .desc { -webkit-line-clamp: 3; } }
     }
     .cast {
       display: flex;
