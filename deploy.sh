@@ -60,6 +60,29 @@ trap failed ERR
 say "Switching from $previous to $tag"
 git checkout --quiet --detach "refs/tags/$tag"
 
+# A build needs room for a whole new image next to the running one. Unused images and
+# build cache older than a week are safe to drop: containers keep the images they run.
+NEED_GB=${CLIPPER_NEED_GB:-6}
+free_gb() {
+  local root
+  root=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)
+  df -Pk "$root" 2>/dev/null | awk 'NR==2 {print int($4 / 1048576)}'
+}
+free=$(free_gb || true)
+if [ -n "$free" ] && [ "$free" -lt "$NEED_GB" ]; then
+  say "Only $free GB free for Docker: removing unused images and old build cache"
+  docker image prune -f >/dev/null || true
+  docker builder prune -f --filter until=168h >/dev/null || true
+  free=$(free_gb || true)
+  if [ -n "$free" ] && [ "$free" -lt "$NEED_GB" ]; then
+    trap - ERR
+    docker system df || true
+    fail "only $free GB free for Docker, a build needs about $NEED_GB GB. Free some space
+(see above; 'docker builder prune -af' empties the whole build cache) or grow the disk, then run this again.
+The code is on $tag; the app still runs $previous."
+  fi
+fi
+
 say "Building and starting the stack (a few minutes)"
 docker compose up -d --build
 
@@ -79,4 +102,5 @@ trap - ERR
 if [ "$version" != "${tag#v}" ]; then
   fail "the app answers, but with version $version instead of ${tag#v}. Check 'docker compose ps'."
 fi
+docker image prune -f >/dev/null 2>&1 || true   # the image the old containers ran
 say "Clipper $version is running (was $previous)"

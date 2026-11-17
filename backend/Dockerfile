@@ -57,11 +57,15 @@ COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 
+# uv's download cache lives in a build cache mount, not in the image: kept in a layer it
+# added ~600 MB to every build, and every release builds this layer again (uv.lock holds the version).
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 COPY clipper ./clipper
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH" \
     CLIPPER_IN_DOCKER=1 \

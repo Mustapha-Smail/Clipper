@@ -780,8 +780,12 @@ On a machine that runs the Docker stack from a git checkout (the homelab LXC):
 
 It fetches the tags, refuses to run over local changes to tracked files,
 checks the release out, runs `docker compose up -d --build` (migrations
-included), then waits until the app answers with that version. On failure it
-prints the containers and their last log lines. `.env`, the override file and
+included), then waits until the app answers with that version. Before
+building it checks that Docker has 6 GB free (a new image sits next to the
+running one until the switch); if not, it removes unused images and build cache
+older than a week, and stops if that is still not enough, with the app left
+running. After a good update it removes the image the old containers ran. On
+failure it prints the containers and their last log lines. `.env`, the override file and
 the data folders are untracked and left alone. To keep the command even when an
 older release is checked out, install a copy:
 `install -m 755 deploy.sh /usr/local/bin/clipper-deploy`, then
