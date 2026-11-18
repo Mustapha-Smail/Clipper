@@ -86,6 +86,13 @@
       }
       <p class="small muted">An AI voice reads the script as it is saved now. YouTube may limit monetisation of channels
         that rely on synthetic voices without adding much of their own; your own voice is the safer choice for the final video.</p>
+    } @else if (optionsError(); as e) {
+      <div class="notice bad small row spread">
+        <span>The AI voices could not be loaded: {{ e }}</span>
+        <button class="sm" (click)="loadOptions()">Try again</button>
+      </div>
+    } @else {
+      <p class="small muted">Loading the voices…</p>
     }
   }
 

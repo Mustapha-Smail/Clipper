@@ -21,6 +21,7 @@ import logging
 import re
 import shutil
 import threading
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -389,7 +390,8 @@ def _compact_silence(samples: np.ndarray, rate: int, floor_db: float = -45) -> n
     return np.concatenate(pieces)
 
 
-def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json") -> bytes:
+def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json",
+                timeout: float = 180) -> bytes:
     key = config.elevenlabs_api_key()
     if not key:
         raise RuntimeError("No ElevenLabs key. Put ELEVENLABS_API_KEY in .env and restart, or use Kokoro.")
@@ -397,7 +399,7 @@ def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = 
                                      data=json.dumps(body).encode() if body is not None else None,
                                      headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": accept})
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()
     except urllib.error.HTTPError as err:
         try:
@@ -416,8 +418,34 @@ def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = 
         raise RuntimeError("Could not reach ElevenLabs. Check your connection.") from err
 
 
+VOICE_LIST_TIMEOUT = 10     # seconds: the voice panel waits for this list
+VOICE_LIST_KEEP = 600       # seconds a fetched list is reused
+VOICE_LIST_RETRY = 120      # seconds before asking again after a failure
+_voice_list: dict = {"at": 0.0, "voices": None, "error": None}
+_voice_list_lock = threading.Lock()
+
+
 def elevenlabs_voices() -> list[dict]:
-    data = json.loads(_elevenlabs("GET", "/v2/voices?page_size=100&sort=name&sort_direction=asc"))
+    """The account's voices, kept for a while: the voice panel waits for them, and ElevenLabs can stall.
+    A failure is remembered briefly too, so a stalled API does not hold up every visit."""
+    with _voice_list_lock:
+        age = time.monotonic() - _voice_list["at"]
+        if _voice_list["at"] and _voice_list["voices"] is not None and age < VOICE_LIST_KEEP:
+            return _voice_list["voices"]
+        if _voice_list["at"] and _voice_list["error"] and age < VOICE_LIST_RETRY:
+            raise RuntimeError(_voice_list["error"])
+        try:
+            voices = _fetch_elevenlabs_voices()
+        except RuntimeError as err:
+            _voice_list.update(at=time.monotonic(), voices=None, error=str(err))
+            raise
+        _voice_list.update(at=time.monotonic(), voices=voices, error=None)
+        return voices
+
+
+def _fetch_elevenlabs_voices() -> list[dict]:
+    data = json.loads(_elevenlabs("GET", "/v2/voices?page_size=100&sort=name&sort_direction=asc",
+                                  timeout=VOICE_LIST_TIMEOUT))
     voices = []
     for v in data.get("voices", []):
         labels = ", ".join(str(x) for x in (v.get("labels") or {}).values() if x)

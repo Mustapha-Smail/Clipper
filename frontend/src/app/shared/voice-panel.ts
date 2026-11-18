@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Api } from '../core/api';
+import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import { Pauses, Script, VoiceChoice, VoiceEngine, VoiceOptions, VoiceTake } from '../core/models';
@@ -30,6 +30,8 @@ export class VoicePanel implements OnDestroy {
 
   protected readonly takes = signal<VoiceTake[]>([]);
   protected readonly options = signal<VoiceOptions | null>(null);
+  /** Why the voice list could not be loaded, shown in place of the AI choices. */
+  protected readonly optionsError = signal<string | null>(null);
   protected readonly mode = signal<Mode>('none');
   protected readonly uploading = signal(false);
   protected readonly engine = signal<VoiceEngine>('kokoro');
@@ -103,17 +105,7 @@ export class VoicePanel implements OnDestroy {
   }
 
   constructor() {
-    this.api.voiceOptions().subscribe({
-      next: (options) => {
-        this.options.set(options);
-        const wanted = options.defaults.engine;
-        this.engine.set(wanted === 'elevenlabs' && !options.elevenlabs_available ? 'kokoro' : wanted);
-        this.pickDefaultVoice();
-        this.speed.set(options.defaults.speed);
-        this.pauses.set(options.defaults.pauses ?? 'natural');
-      },
-      error: (err) => this.toasts.error(err),
-    });
+    this.loadOptions();
     // Load the takes when the script changes, and again whenever a voice job starts or ends.
     let known = '';
     effect(() => {
@@ -124,6 +116,22 @@ export class VoicePanel implements OnDestroy {
         known = signature;
         untracked(() => this.load());
       }
+    });
+  }
+
+  protected loadOptions(): void {
+    this.optionsError.set(null);
+    this.api.voiceOptions().subscribe({
+      next: (options) => {
+        this.options.set(options);
+        const wanted = options.defaults.engine;
+        const elevenlabs = options.elevenlabs_available && options.elevenlabs.length > 0;
+        this.engine.set(wanted === 'elevenlabs' && !elevenlabs ? 'kokoro' : wanted);
+        this.pickDefaultVoice();
+        this.speed.set(options.defaults.speed);
+        this.pauses.set(options.defaults.pauses ?? 'natural');
+      },
+      error: (err) => this.optionsError.set(errorMessage(err)),
     });
   }
 

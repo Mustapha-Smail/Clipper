@@ -178,6 +178,27 @@ def test_voice_options_without_elevenlabs(client, monkeypatch):
     assert not options["elevenlabs_available"] and options["defaults"]["engine"] == "kokoro"
 
 
+def test_elevenlabs_voice_list_is_kept_and_a_stall_is_not_retried_at_once(monkeypatch):
+    calls = []
+
+    def stalled(method, path, body=None, accept="application/json", timeout=180):
+        calls.append(timeout)
+        raise RuntimeError("Could not reach ElevenLabs. Check your connection.")
+    monkeypatch.setattr(voice, "_voice_list", {"at": 0.0, "voices": None, "error": None})
+    monkeypatch.setattr(voice, "_elevenlabs", stalled)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="Could not reach"):
+            voice.elevenlabs_voices()
+    assert calls == [voice.VOICE_LIST_TIMEOUT]        # short wait, and the failure is remembered
+
+    monkeypatch.setattr(voice, "_voice_list", {"at": 0.0, "voices": None, "error": None})
+    monkeypatch.setattr(voice, "_elevenlabs", lambda *a, **k: calls.append("ok") or
+                        b'{"voices": [{"voice_id": "v1", "name": "Adam", "labels": {"accent": "American"}}]}')
+    assert voice.elevenlabs_voices() == voice.elevenlabs_voices() == [
+        {"id": "v1", "label": "Adam · American", "preview": None}]
+    assert calls.count("ok") == 1                       # kept
+
+
 def test_voice_samples_are_made_once(client, monkeypatch):
     calls = []
 
