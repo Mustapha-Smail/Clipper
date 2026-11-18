@@ -1073,8 +1073,48 @@ export interface ThemeVideo {
   longest_gap: number | null;
   opening: string | null;
   wpm: number | null;
+  /** YouTube Analytics once connected: average % viewed, % still watching at the first twist and the payoff. */
+  avg_viewed: number | null;
+  kept_at_twist: number | null;
+  kept_at_payoff: number | null;
+  retention: VideoRetention | null;
   lines: string[];
   networks: { service: string; name: string; link: string | null; views: number | null; status: string }[];
+}
+
+export interface VideoRetention {
+  youtube_id: string;
+  source: 'linked' | 'buffer';
+  views: number | null;
+  minutes_watched: number | null;
+  average_view_s: number | null;
+  average_view_pct: number | null;
+  duration_s: number | null;
+  /** [fraction of the video, audience watch ratio] from YouTube */
+  curve: [number, number][];
+  twist_at: number | null;
+  payoff_at: number | null;
+  lines: string[];
+  /** why a column is blank, by column name */
+  why: Record<string, string>;
+  note: string | null;
+  fetched_at: string | null;
+}
+
+export interface YoutubeStatus {
+  configured: boolean;
+  connected: boolean;
+  needs_reconnect: boolean;
+  channel_id: string | null;
+  channel_title: string | null;
+  connected_at: string | null;
+  problem: string | null;
+  problem_at: string | null;
+  redirect_uri: string;
+  testing_note: string;
+  last_fetch: string | null;
+  videos_with_numbers: number;
+  revoked?: boolean | null;
 }
 
 export interface ThemeLearning {
@@ -1085,7 +1125,8 @@ export interface ThemeLearning {
   insights: ThemeInsights | null;
   can_learn: boolean;
   proven: { n: number; kind: string; id: number; title: string; evidence: string }[];
-  stats_sources: { buffer: boolean; youtube: boolean };
+  stats_sources: { buffer: boolean; youtube: boolean; analytics: boolean };
+  unmatched: { storyboard_id: number; title: string; why: string }[];
 }
 
 export interface ThemePatch {

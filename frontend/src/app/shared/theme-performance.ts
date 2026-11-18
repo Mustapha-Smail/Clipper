@@ -95,6 +95,36 @@ import { Toasts } from '../core/toast';
                       @if (v.wpm) { {{ v.wpm }} words a minute }
                     </p>
                   }
+                  @if (v.retention; as r) {
+                    <div class="watch">
+                      <div class="figs">
+                        <div><strong class="num">{{ pct(v.avg_viewed) }}</strong><small>average viewed</small></div>
+                        <div [title]="r.why['kept_at_twist'] ?? ''"><strong class="num">{{ pct(v.kept_at_twist) }}</strong>
+                          <small>still watching at the first twist</small></div>
+                        <div [title]="r.why['kept_at_payoff'] ?? ''"><strong class="num">{{ pct(v.kept_at_payoff) }}</strong>
+                          <small>still watching at the payoff</small></div>
+                      </div>
+                      @if (r.curve.length > 1) {
+                        <svg class="curve" viewBox="0 0 300 100" preserveAspectRatio="none" role="img"
+                             [attr.aria-label]="'Retention curve: ' + pct(v.avg_viewed) + ' viewed on average'">
+                          <path class="area" [attr.d]="area(r.curve)" />
+                          <path class="line" [attr.d]="line(r.curve)" />
+                          @if (r.twist_at !== null) { <line class="mark" [attr.x1]="r.twist_at * 300" [attr.x2]="r.twist_at * 300" y1="0" y2="100" /> }
+                          @if (r.payoff_at !== null) { <line class="mark payoff" [attr.x1]="r.payoff_at * 300" [attr.x2]="r.payoff_at * 300" y1="0" y2="100" /> }
+                        </svg>
+                        <p class="axis small muted"><span>0 s</span>
+                          @if (r.twist_at !== null || r.payoff_at !== null) {
+                            <span class="keys">@if (r.twist_at !== null) { <i class="k"></i> first twist } @if (r.payoff_at !== null) { <i class="k payoff"></i> payoff }</span>
+                          }
+                          <span>{{ r.duration_s === null ? '' : round(r.duration_s) + ' s' }}</span></p>
+                      }
+                      <ul class="lines small">@for (line of r.lines; track line) { <li>{{ line }}</li> }</ul>
+                      @for (w of whys(r.why); track w) { <p class="small muted why">{{ w }}</p> }
+                      <p class="small muted">YouTube Analytics, organic views · read {{ r.fetched_at | ago }}</p>
+                    </div>
+                  } @else if (d.stats_sources.analytics && hasYoutube(v)) {
+                    <p class="small muted">No YouTube Analytics for it yet: read with the next refresh.</p>
+                  }
                   @if (v.format === 'long') {
                     <div class="row link">
                       <input #url type="text" [value]="v.published_url ?? ''" placeholder="Its YouTube link, for its numbers"
@@ -107,6 +137,11 @@ import { Toasts } from '../core/toast';
             </article>
           }
         </div>
+        @if (d.unmatched.length) {
+          <p class="small muted unmatched">Not matched to YouTube Analytics:
+            @for (u of d.unmatched; track u.storyboard_id + u.why; let last = $last) { "{{ u.title }}" ({{ u.why }}){{ last ? '.' : '; ' }} }
+          </p>
+        }
       } @else {
         <div class="empty">Nothing published yet. Shorts posted through Buffer and long videos marked published show up
           here with their numbers.</div>
@@ -161,11 +196,27 @@ import { Toasts } from '../core/toast';
     .nets { display: flex; flex-wrap: wrap; gap: 6px; }
     .net { display: inline-flex; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--sunken); }
     .link input { flex: 1 1 260px; }
+    .watch { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--sunken); }
+    .figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+      div { display: grid; gap: 1px; min-width: 0; }
+      strong { font-size: 20px; font-weight: 720; letter-spacing: -0.02em; }
+      small { color: var(--muted); font-size: 12px; } }
+    .curve { width: 100%; height: 96px; display: block; overflow: visible;
+      .area { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+      .line { fill: none; stroke: var(--text); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+      .mark { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+      .mark.payoff { stroke: var(--good); } }
+    .axis { display: flex; justify-content: space-between; gap: 8px; margin: -4px 0 0; }
+    .keys { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .k { display: inline-block; width: 12px; border-top: 2px dashed var(--warn); &.payoff { border-color: var(--good); } }
+    .why { margin: 0; }
+    .unmatched { margin-top: 10px; }
     .proven { margin-top: 24px; ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 4px; } }
     @media (max-width: 860px) {
       .cols { grid-template-columns: 1fr; }
       .more { padding-left: 16px; }
     }
+    @media (max-width: 480px) { .figs strong { font-size: 17px; } }
   `,
 })
 export class ThemePerformance {
@@ -213,8 +264,45 @@ export class ThemePerformance {
   }
 
   protected sources(d: ThemeLearning): string {
-    const from = [d.stats_sources.buffer ? 'Buffer' : '', d.stats_sources.youtube ? 'YouTube' : ''].filter(Boolean);
-    return from.length ? `From ${from.join(' and ')}, once a day` : 'Connect Buffer or a YouTube key in .env';
+    const from = [d.stats_sources.buffer ? 'Buffer' : '', d.stats_sources.youtube ? 'YouTube' : '',
+      d.stats_sources.analytics ? 'YouTube Analytics' : ''].filter(Boolean);
+    if (!from.length) return 'Connect Buffer or a YouTube key in .env';
+    const list = from.length > 1 ? `${from.slice(0, -1).join(', ')} and ${from[from.length - 1]}` : from[0];
+    return `From ${list}, once a day`;
+  }
+
+  protected pct(n: number | null): string {
+    return n === null ? '—' : `${Math.round(n)}%`;
+  }
+
+  protected round(n: number): number {
+    return Math.round(n);
+  }
+
+  protected hasYoutube(v: ThemeVideo): boolean {
+    return !!v.published_url || v.networks.some((n) => n.service === 'youtube');
+  }
+
+  /** Why a figure is blank, once per reason. */
+  protected whys(why: Record<string, string>): string[] {
+    const names: Record<string, string> = { kept_at_twist: 'First twist', kept_at_payoff: 'Payoff' };
+    const seen = new Map<string, string[]>();
+    for (const [k, reason] of Object.entries(why)) seen.set(reason, [...(seen.get(reason) ?? []), names[k] ?? k]);
+    return [...seen].map(([reason, keys]) => `${keys.join(' and ')} not measured: ${reason}.`);
+  }
+
+  private top_(curve: [number, number][]): number {
+    return Math.max(1, ...curve.map((p) => p[1]));
+  }
+
+  protected line(curve: [number, number][]): string {
+    const top = this.top_(curve);
+    return curve.map(([x, y], i) => `${i ? 'L' : 'M'}${(x * 300).toFixed(1)},${(100 - (100 * y) / top).toFixed(1)}`).join(' ');
+  }
+
+  protected area(curve: [number, number][]): string {
+    const first = curve[0][0] * 300, last = curve[curve.length - 1][0] * 300;
+    return `${this.line(curve)} L${last.toFixed(1)},100 L${first.toFixed(1)},100 Z`;
   }
 
   protected toggle(v: ThemeVideo): void {

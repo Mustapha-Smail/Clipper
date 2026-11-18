@@ -341,6 +341,32 @@ class Storyboard(Base):
     take: Mapped["VoiceTake | None"] = relationship()
 
 
+class VideoAnalytics(Base):
+    """What YouTube Analytics says about one published video on your connected channel (studio/analytics.py).
+
+    One row per storyboard and YouTube video: the summary for its whole life so far, and the audience
+    retention curve as [[elapsed ratio, audience watch ratio, relative retention performance], ...].
+    `note` says why something is missing (not on the connected channel, no data yet)."""
+
+    __tablename__ = "video_analytics"
+    __table_args__ = (Index("ux_video_analytics_board_video", "storyboard_id", "youtube_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    storyboard_id: Mapped[int] = mapped_column(
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_analytics_storyboard_id"), index=True)
+    youtube_id: Mapped[str] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(8))                      # linked (published_url) | buffer (a post)
+    duration_s: Mapped[float | None] = mapped_column(Float)              # the video's length on YouTube
+    views: Mapped[int | None] = mapped_column(Integer)
+    minutes_watched: Mapped[float | None] = mapped_column(Float)         # estimatedMinutesWatched
+    average_view_s: Mapped[float | None] = mapped_column(Float)          # averageViewDuration
+    average_view_pct: Mapped[float | None] = mapped_column(Float)        # averageViewPercentage
+    retention: Mapped[list | None] = mapped_column(JSON)
+    note: Mapped[str | None] = mapped_column(Text)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StudioPhoto(Base):
     """An archive picture found for a search in a storyboard (`photo "..."`), with its credit.
 

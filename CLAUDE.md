@@ -337,6 +337,18 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   first twist, longest gap, opening roles, pace), worked out on read and blank
   when unknown (no check, text changed since the take, a Short cut from a long
   script). `theme_insights` may name a craft pattern only across 3 videos.
+- Connect YouTube (`studio/youtube_auth.py`, `api/youtube.py`, `studio/analytics.py`): OAuth code flow
+  with PKCE and a single-use `state` (in the API's memory, 10 minutes), scopes `yt-analytics.readonly` and
+  `youtube.readonly` (reports.query needs both). Client id and secret from `.env` only; the redirect URI is
+  `YOUTUBE_OAUTH_REDIRECT_URI` (default localhost:8000). Only the refresh token is kept, in
+  `data/secrets/youtube-oauth.json` (0600, never in the database), never logged or returned. A refused token
+  is marked Reconnect, logged and said in the job; it never fails the stats job. Analytics are read in
+  `learning.refresh` (daily pass and `stats` job, each video at most every 20 h): matched only by known ids
+  (`published_url`, Buffer's `posts.link`), unmatched ones listed with why; one `reports.query` per 200
+  videos for the summary, one per video for retention (the API takes one). Rows in `video_analytics`.
+  Retention at the first twist and the payoff is arithmetic (`analytics.for_video`: word time through
+  `storyboard.turn_marks`, linear between curve points), blank with a reason when the hold check is not
+  current. Impressions, thumbnail CTR and the Shorts swipe-away share are not in this API: never fake them.
 - Ideas have `expected`: what most viewers would guess; the answer overturns it.
   It is judged text (editing it clears the check) and `_brief` passes it to the writer.
 - `studio/music_pick.py`: music is chosen from measurements

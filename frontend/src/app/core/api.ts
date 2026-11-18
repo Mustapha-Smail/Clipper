@@ -6,7 +6,7 @@ import {
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
-  SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeText,
+  SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeStatus, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -170,6 +170,15 @@ export class Api {
   }
   refreshStats(): Observable<Job> {
     return this.http.post<Job>(`${BASE}/themes/stats/refresh`, {});
+  }
+  youtubeStatus(): Observable<YoutubeStatus> {
+    return this.http.get<YoutubeStatus>(`${BASE}/youtube/status`);
+  }
+  youtubeConnect(): Observable<{ url: string }> {
+    return this.http.post<{ url: string }>(`${BASE}/youtube/connect`, {});
+  }
+  youtubeDisconnect(): Observable<YoutubeStatus> {
+    return this.http.post<YoutubeStatus>(`${BASE}/youtube/disconnect`, {});
   }
   linkPublished(storyboardId: number, url: string): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${storyboardId}`, { published_url: url });

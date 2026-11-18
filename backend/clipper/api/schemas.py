@@ -1089,6 +1089,12 @@ class ThemeVideo(BaseModel):
     longest_gap: int | None = None
     opening: str | None = None
     wpm: int | None = None
+    # YouTube Analytics, once connected: average % viewed and the share still watching at the first twist and
+    # the payoff (studio/analytics.py); None when not measured, with the reason in retention.why
+    avg_viewed: float | None = None
+    kept_at_twist: int | None = None
+    kept_at_payoff: int | None = None
+    retention: dict | None = None
     lines: list[str]
     networks: list[dict]
 
@@ -1102,6 +1108,27 @@ class ThemeLearning(BaseModel):
     can_learn: bool
     proven: list[dict]
     stats_sources: dict
+    unmatched: list[dict] = []          # videos on YouTube that cannot be matched to their analytics, with why
+
+
+class YoutubeStatus(BaseModel):
+    configured: bool
+    connected: bool
+    needs_reconnect: bool
+    channel_id: str | None
+    channel_title: str | None
+    connected_at: str | None
+    problem: str | None
+    problem_at: str | None
+    redirect_uri: str
+    testing_note: str
+    last_fetch: str | None
+    videos_with_numbers: int
+    revoked: bool | None = None
+
+
+class YoutubeConnect(BaseModel):
+    url: str
 
 
 # --- prompts ----------------------------------------------------------------------

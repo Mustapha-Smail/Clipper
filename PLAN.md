@@ -125,6 +125,12 @@ Your steps for the Studio:
 ### Technical
 - [x] Create an Anthropic API key and put it in `.env` as `ANTHROPIC_API_KEY`
 - [ ] Install the Claude in Chrome extension and log in to Content Rewards in Chrome
+- [ ] Connect YouTube for watch time and retention (README, "Connect YouTube"):
+  - [ ] Google Cloud project; enable the YouTube Analytics API and the YouTube Data API v3
+  - [ ] OAuth consent screen: External, scopes `yt-analytics.readonly` and `youtube.readonly`, yourself as test user
+  - [ ] Web application client with the redirect URI `http://localhost:8000/api/v1/youtube/callback`
+  - [ ] `YOUTUBE_OAUTH_CLIENT_ID` and `YOUTUBE_OAUTH_CLIENT_SECRET` in `.env`, restart, press Connect YouTube in Settings
+  - [ ] Decide on the 7-day limit of apps in Testing: reconnect weekly, or publish the app
 - [x] Approve the tool install: `brew install ffmpeg yt-dlp uv`
 
 ### First campaigns

@@ -10,6 +10,11 @@ the database). This module only knows what is decided when a process starts.
   CLIPPER_LOG_LEVEL      DEBUG, INFO, WARNING...
   CLIPPER_IN_DOCKER      set by the container image
   YOUTUBE_API_KEY        YouTube Data API key, used to check demand for Studio ideas
+  YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET
+                         a Google OAuth client ("Web application"), to read your own channel's
+                         YouTube Analytics once you press Connect YouTube (studio/youtube_auth.py)
+  YOUTUBE_OAUTH_REDIRECT_URI  where Google sends you back; default http://localhost:8000/api/v1/youtube/callback.
+                         Change it (and the client's list in Google Cloud) behind another address or a proxy.
   ELEVENLABS_API_KEY     ElevenLabs key, for the paid AI voice (Kokoro, the free one, needs none)
   OPENAI_API_KEY         OpenAI key, when a tier in Settings uses OpenAI
   OPENAI_BASE_URL        any OpenAI-compatible server instead (OpenRouter, Ollama...); empty = OpenAI
@@ -82,6 +87,22 @@ def log_format() -> str:
 
 def youtube_api_key() -> str:
     return (os.environ.get("YOUTUBE_API_KEY") or "").strip()
+
+
+def youtube_oauth_client() -> tuple[str, str]:
+    """The OAuth client's id and secret, ("", "") when not set."""
+    return ((os.environ.get("YOUTUBE_OAUTH_CLIENT_ID") or "").strip(),
+            (os.environ.get("YOUTUBE_OAUTH_CLIENT_SECRET") or "").strip())
+
+
+def youtube_oauth_redirect_uri() -> str:
+    return (os.environ.get("YOUTUBE_OAUTH_REDIRECT_URI") or "").strip() \
+        or "http://localhost:8000/api/v1/youtube/callback"
+
+
+def secrets_dir() -> Path:
+    """Tokens the app was given (the YouTube connection). Inside the gitignored data folder, owner-only."""
+    return data_dir() / "secrets"
 
 
 def elevenlabs_api_key() -> str:

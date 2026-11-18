@@ -135,8 +135,11 @@ most worth doing next. Open a theme to work on it:
   median). *Refresh numbers* reads them now; the worker also reads them once a
   day. Shorts posted through Buffer get Buffer's statistics; a long video you
   published by hand gets its numbers from YouTube once you paste its link
-  (needs `YOUTUBE_API_KEY`). With three videos that have numbers, *Draw the
-  lessons* asks the AI what the best and worst have in common.
+  (needs `YOUTUBE_API_KEY`). Once you [connect YouTube](#connect-youtube-watch-time-and-retention),
+  each video on your channel also shows its retention: the curve, the average
+  percentage viewed, and how many people are still watching at the first twist
+  and at the payoff. With three videos that have numbers, *Draw the lessons*
+  asks the AI what the best and worst have in common.
 - **Settings**: name and description (sent to the AI with every idea), colour,
   status (active, paused, archived), the Buffer channels its Shorts go to by
   default, merge into another theme.
@@ -160,6 +163,76 @@ in it (ideas, scripts, voice takes, videos and their files); type its name to
 confirm. Exported copies in the output folder stay.
 
 Press **⌘K** (Ctrl K) anywhere to jump to a theme, a script or a page.
+
+## Connect YouTube (watch time and retention)
+
+Views and likes say whether a video spread, not whether people stayed. The hold
+check (a script's twists and payoff) is a guess until it meets real retention, and
+retention needs the YouTube Analytics API, signed in as the channel's owner.
+**Settings > Studio > YouTube > Connect YouTube** does that once; then the daily
+statistics pass and *Refresh numbers* also read, for every video Clipper can match:
+
+- views, minutes watched, average view duration and average percentage viewed;
+- the retention curve (organic views), from which Learning works out the share
+  still watching when the first twist and the payoff start. Those come from the
+  script's hold check and the take's word times: when the check is missing or out
+  of date, or the take's words no longer match the script, they stay blank and
+  say why. Every number shows its arithmetic.
+
+Matching uses what Clipper knows: the YouTube link you pasted on a long video,
+and the link Buffer reports for a Short it sent to YouTube. A Short whose post has
+no YouTube link yet is listed under Performance as not matched. Videos that are
+not on the connected channel are skipped.
+
+Not available through Google's API, so not shown: impressions and thumbnail
+click-through rate (only in the bulk Reporting API) and the Shorts "viewed vs
+swiped away" share. YouTube's numbers arrive 2 to 3 days late. The retention
+report takes one video per request, so a run costs one request per video plus a
+few for the summary; the default quota is far above that.
+
+### Setting it up (once)
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a
+   project (or reuse the one of `YOUTUBE_API_KEY`).
+2. *APIs & Services > Library*: enable **YouTube Analytics API** and
+   **YouTube Data API v3**.
+3. *Google Auth Platform* (OAuth consent screen): user type **External**, an app
+   name, your email. Under *Data access* add the scopes
+   `.../auth/yt-analytics.readonly` and `.../auth/youtube.readonly`. Under
+   *Audience* add your Google account as a test user.
+4. *Clients > Create client*: type **Web application**. Under *Authorized
+   redirect URIs* add exactly `http://localhost:8000/api/v1/youtube/callback`
+   (the same in Docker, where nginx passes it on to the API).
+5. Put the client's ID and secret in `.env` as `YOUTUBE_OAUTH_CLIENT_ID` and
+   `YOUTUBE_OAUTH_CLIENT_SECRET`, restart, and press **Connect YouTube**. Sign
+   in with the account that owns the channel (pick the channel if Google asks)
+   and allow both read-only permissions.
+
+**The 7-day limit.** Google gives an app whose consent screen is *External* and
+in **Testing** refresh tokens that expire after 7 days for these scopes. The
+card then says *Reconnect*, the job log says so, and nothing fails silently. The
+options:
+
+- Leave it in Testing and press Reconnect once a week.
+- *Audience > Publish app* (In production). Google asks public apps that use
+  these scopes to be verified; an app only you use can stay unverified, and you
+  click through the "Google hasn't verified this app" screen once
+  (*Advanced > Go to ...*). Check the console's notes when you publish: Google's
+  page on production readiness could not be read when this was written.
+- *Internal* user type, if the channel's account belongs to a Google Workspace
+  organisation: the 7-day rule does not apply to it.
+
+**Another address.** Behind another port or a reverse proxy, set
+`YOUTUBE_OAUTH_REDIRECT_URI` (for example
+`https://clipper.example.com/api/v1/youtube/callback`) and add the same address
+to the client. Google requires HTTPS for anything but `localhost` and refuses
+raw IP addresses. On a server without a public name, connect through a tunnel
+(`ssh -L 8000:localhost:8000 server`, then open `http://localhost:8000`): the
+callback is only needed while connecting.
+
+The refresh token is kept in `data/secrets/youtube-oauth.json` (owner-only, never
+in the database or in git) and is never shown or logged. **Disconnect** asks
+Google to revoke it and deletes the file; the numbers already read stay.
 
 ## Prompts
 

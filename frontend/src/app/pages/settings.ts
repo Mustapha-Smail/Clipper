@@ -6,10 +6,11 @@ import { APPEARANCES, AppearanceStore } from '../core/appearance';
 import { JobsStore } from '../core/jobs-store';
 import { AiModel, AiModels, AiProvider, AppSettings, SettingsBundle, UsageReport, VoiceOptions } from '../core/models';
 import { Toasts } from '../core/toast';
+import { YoutubeConnect } from '../shared/youtube-connect';
 
 @Component({
   selector: 'app-settings-page',
-  imports: [FormsModule],
+  imports: [FormsModule, YoutubeConnect],
   template: `
     <div class="page wide">
       <div class="page-head">
@@ -95,6 +96,8 @@ import { Toasts } from '../core/toast';
                   a few cents a sheet on the API. You can also run it by hand on any storyboard.</small></span></label>
             </div>
           </section>
+
+          <app-youtube-connect />
 
           <section class="card" id="studio-sounds">
             <h3>Attention sounds</h3>
@@ -778,7 +781,7 @@ export class SettingsPage {
     ];
     if (f?.feature_studio) {
       groups.push({ title: 'Studio', items: [{ id: 'studio-themes', label: 'Themes' }, { id: 'studio-drawings', label: 'Drawings' },
-        { id: 'studio-sounds', label: 'Attention sounds' },
+        { id: 'studio-youtube', label: 'YouTube' }, { id: 'studio-sounds', label: 'Attention sounds' },
         { id: 'studio-voice', label: 'Voice' }, { id: 'studio-ink', label: 'Ink style' }] });
     }
     if (f?.feature_clipping) {

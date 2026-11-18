@@ -2,7 +2,8 @@
 
 Statistics come from Buffer for the Shorts it posted (`posting.sync_metrics`) and
 from YouTube's Data API for long videos you published by hand and linked
-(`storyboards.published_url`). Never from scraping.
+(`storyboards.published_url`). Never from scraping. Once YouTube is connected
+(Settings), watch time and retention come from YouTube Analytics (`analytics.py`).
 
 The ranking is arithmetic, shown line by line: views across networks, the
 engagement rate, and how a video compares with the theme's median. The model
@@ -21,10 +22,10 @@ from sqlalchemy.orm import Session
 
 from .. import config, llm, prompts
 from ..db import session_scope
-from ..db.models import Idea, Post, Script, Storyboard, Theme, as_utc, utcnow
+from ..db.models import Idea, Post, Script, Storyboard, Theme, VideoAnalytics, as_utc, utcnow
 from ..jobs import Reporter
+from . import analytics, youtube
 from . import ideas as ideas_mod
-from . import youtube
 
 log = logging.getLogger("clipper.studio")
 
@@ -72,8 +73,14 @@ def refresh(rep: Reporter | None = None, force: bool = False) -> str:
 
     posts = posting.sync_metrics(rep, force=force)
     linked = refresh_youtube(rep, force=force)
-    return f"Statistics read for {posts} post{'s' if posts != 1 else ''} and {linked} linked video" \
-           + ("s" if linked != 1 else "")
+    watched = analytics.refresh(rep, force=force)
+    message = f"Statistics read for {posts} post{'s' if posts != 1 else ''} and {linked} linked video" \
+              + ("s" if linked != 1 else "")
+    if watched["read"]:
+        message += f"; watch time and retention for {watched['read']} on YouTube"
+    if watched["problem"]:
+        message += f"; {watched['problem']}"
+    return message
 
 
 def _numbers(board: Storyboard, posts: list[Post]) -> dict:
@@ -144,6 +151,9 @@ def published(db: Session, theme_id: int) -> list[dict]:
         posts.setdefault(post.storyboard_id, []).append(post)
     ideas = {i.id: i for i in db.scalars(select(Idea).where(Idea.id.in_([s.idea_id for _, s in boards
                                                                           if s.idea_id])))}
+    watched: dict[int, list[VideoAnalytics]] = {}
+    for row in db.scalars(select(VideoAnalytics).where(VideoAnalytics.storyboard_id.in_(ids))):
+        watched.setdefault(row.storyboard_id, []).append(row)
     rows = []
     for board, script in boards:
         mine = posts.get(board.id, [])
@@ -162,6 +172,7 @@ def published(db: Session, theme_id: int) -> list[dict]:
             "published_url": board.published_url,
             **_numbers(board, mine),
             **craft(board, script),
+            **analytics.for_video(board, script, watched.get(board.id, [])),
         })
     return rows
 
@@ -304,6 +315,16 @@ def _craft_text(v: dict) -> str:
     return f"\n    Craft: {hold_part}; {pace}"
 
 
+def _watch_text(v: dict) -> str:
+    """The YouTube Analytics columns of one video; 'not measured' rather than a guess when blank."""
+    if v.get("avg_viewed") is None and v.get("kept_at_twist") is None and v.get("kept_at_payoff") is None:
+        return "\n    Watch: not measured"
+    parts = ["average viewed not measured" if v.get("avg_viewed") is None else f"average viewed {v['avg_viewed']}%"]
+    for key, name in (("kept_at_twist", "at the first twist"), ("kept_at_payoff", "at the payoff")):
+        parts.append(f"{name} not measured" if v.get(key) is None else f"{v[key]}% still watching {name}")
+    return "\n    Watch: " + ", ".join(parts)
+
+
 def _video_table(videos: list[dict]) -> str:
     lines = []
     for n, v in enumerate(videos, 1):
@@ -315,6 +336,7 @@ def _video_table(videos: list[dict]) -> str:
                      + (f" | engagement {v['engagement']}%" if v["engagement"] is not None else "")
                      + (f" | posted {v['published_at'][:16].replace('T', ' ')} UTC" if v["published_at"] else "")
                      + _craft_text(v)
+                     + _watch_text(v)
                      + (f"\n    Hook: {v['hook']}" if v["hook"] else "")
                      + (f"\n    Angle: {v['angle']}" if v["angle"] else ""))
     return "\n".join(lines)

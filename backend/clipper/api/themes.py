@@ -12,8 +12,8 @@ from .. import config, jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
 from ..db.models import Job, Theme, as_utc, utcnow
+from ..studio import analytics, learning, youtube_auth
 from ..studio import banner as banner_mod
-from ..studio import learning
 from ..studio import themes as themes_mod
 from . import schemas as s
 from .ideas import _latest_scripts, idea_out
@@ -182,10 +182,14 @@ def banner_image(theme: Theme = Depends(get_theme)):
 def theme_learning(theme: Theme = Depends(get_theme), db: Session = Depends(get_db)):
     """Its published videos ranked by their numbers, the lessons drawn, and what new ideas would build on."""
     table = learning.ranked(learning.published(db, theme.id))
+    ids = {v["storyboard_id"] for v in table["videos"]}
+    _, unmatched = analytics.targets(db, ids) if ids else ([], [])
     return s.ThemeLearning(**table, insights=theme.insights, can_learn=table["with_views"] >= learning.MIN_FOR_LESSONS,
                            proven=learning.proven(db, theme),
                            stats_sources={"buffer": buffer_mod.configured("storyboard"),
-                                          "youtube": bool(config.youtube_api_key())})
+                                          "youtube": bool(config.youtube_api_key()),
+                                          "analytics": youtube_auth.status()["connected"]},
+                           unmatched=unmatched)
 
 
 @router.post("/{theme_id}/insights", response_model=s.ThemeLearning)
