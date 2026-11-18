@@ -145,7 +145,7 @@ def test_elevenlabs_sections_are_joined_with_pauses(app_env, tmp_path, monkeypat
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
     sent = []
 
-    def fake_call(method, path, body=None, accept="application/json"):
+    def fake_call(method, path, body=None, accept="application/json", timeout=180, meta=None):
         sent.append((path, body))
         return mp3.read_bytes()
     monkeypatch.setattr(voice, "_elevenlabs", fake_call)
@@ -155,6 +155,28 @@ def test_elevenlabs_sections_are_joined_with_pauses(app_env, tmp_path, monkeypat
     assert sent[0][0] == "/v1/text-to-speech/voice123?output_format=mp3_44100_128"
     assert sent[0][1]["previous_text"] is None and sent[0][1]["next_text"] == SECTIONS[1]["text"]
     assert sent[1][1]["previous_text"] == SECTIONS[0]["text"] and sent[1][1]["voice_settings"]["speed"] == 1.0
+
+
+def test_eleven_v4_links_sections_by_request_id_and_applies_speed_itself(app_env, tmp_path, monkeypatch):
+    mp3 = tmp_path / "one.mp3"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=500:duration=1",
+                    "-ar", "44100", str(mp3)], check=True)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
+    sent = []
+
+    def fake_call(method, path, body=None, accept="application/json", timeout=180, meta=None):
+        sent.append(body)
+        meta["request_id"] = f"req-{len(sent)}"
+        return mp3.read_bytes()
+    monkeypatch.setattr(voice, "_elevenlabs", fake_call)
+    sections = [{"text": f"Section {n}."} for n in range(5)]
+    out = tmp_path / "raw.wav"
+    voice.speak_elevenlabs(sections, "voice123", "eleven_v4", 1.25, out, ConsoleReporter())
+    assert sent[0]["voice_settings"] == {"stability": 0.5, "similarity_boost": 0.75}     # no speed for v4
+    assert "previous_request_ids" not in sent[0] and "previous_text" not in sent[0]
+    assert sent[1]["previous_request_ids"] == ["req-1"]
+    assert sent[4]["previous_request_ids"] == ["req-2", "req-3", "req-4"]               # the 3 closest
+    assert voice.duration_of(out) == pytest.approx(5 / 1.25 + 4 * voice.SECTION_PAUSE, abs=0.15)
 
 
 def test_elevenlabs_long_internal_silence_is_shortened(app_env, tmp_path, monkeypatch):
@@ -286,6 +308,37 @@ def test_claude_directs_each_sentence_and_sounds_stay_rare(monkeypatch):
         raise RuntimeError("no credit")
     monkeypatch.setattr(chatterbox.llm, "ask", down)
     assert chatterbox.direct(said, ConsoleReporter()) == said        # plain narration, and said so in the log
+
+
+def test_eleven_v4_is_directed_with_its_own_tags_section_by_section(app_env, tmp_path, monkeypatch):
+    from clipper.studio import chatterbox
+
+    asked = []
+
+    def ask(task, system, content, fmt, effort="high", cache=False):
+        asked.append((task, content))
+        return fmt(marks=[{"n": 0, "mood": "dramatic"}, {"n": 2, "mood": "whispering", "sound": "sigh"},
+                          {"n": 3, "mood": "happy", "sound": "chuckle"}])        # sound too soon: dropped
+    monkeypatch.setattr(chatterbox.llm, "ask", ask)
+    sections = [{"title": "Hook", "text": "Concrete cracks. Water gets in."},
+                {"title": "Turn", "text": "Then it heals.\n\nNobody knew why."}]
+    directed = voice.directed_sections(sections, ConsoleReporter(), rehooks=["Then it heals."])
+    assert directed == [{"title": "Hook", "text": "[dramatic] Concrete cracks. Water gets in."},
+                        {"title": "Turn", "text": "[sighs] [whispers] Then it heals.\n\n[cheerfully] Nobody knew why."}]
+    assert asked[0][0] == "delivery" and "2. (rehook) Then it heals." in asked[0][1]
+
+    mp3 = tmp_path / "one.mp3"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=500:duration=1",
+                    "-ar", "44100", str(mp3)], check=True)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
+    sent = []
+    monkeypatch.setattr(voice, "_elevenlabs", lambda *a, **k: sent.append(a[2]["text"]) or mp3.read_bytes())
+    voice.speak_elevenlabs(sections, "v", "eleven_v4", 1.0, tmp_path / "a.wav", ConsoleReporter(), direct=True)
+    assert sent[0].startswith("[dramatic]")
+    sent.clear()
+    voice.speak_elevenlabs(sections, "v", "eleven_multilingual_v2", 1.0, tmp_path / "b.wav", ConsoleReporter(),
+                           direct=True)
+    assert sent == [s["text"] for s in sections]                  # older models are never tagged
 
 
 def test_a_chatterbox_take_is_assembled_with_our_pauses(client, script, fake_whisper, monkeypatch):

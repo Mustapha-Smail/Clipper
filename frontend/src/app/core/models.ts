@@ -204,6 +204,7 @@ export interface AppSettings {
   chatterbox_voice: string;
   elevenlabs_voice: string;
   elevenlabs_model: string;
+  elevenlabs_direction: boolean;
   voice_speed: number;
   voice_pauses: Pauses;
   audience_tier1_share: number | null;

@@ -160,6 +160,12 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   `delivery`, quick tier: mood tags and rare sounds, spacing enforced in code);
   if the AI fails, plain narration, said in the log. Voices: its own, or a
   Kokoro clip as the timbre reference. Our pauses and room tone, as for Kokoro.
+- ElevenLabs (`voice.speak_elevenlabs`): one request per section, `Settings.elevenlabs_model`.
+  Eleven v4 (`voice.V4_MODELS`) takes only stability and similarity: speed is applied by us
+  (atempo), sections are linked by `previous_request_ids` (the 3 closest), not by text. With
+  `Settings.elevenlabs_direction`, the Chatterbox direction (task `delivery`) is written in as v4
+  audio tags (`voice.V4_TAGS`); older models are never tagged. The voice list is fetched with a
+  short timeout and cached (`voice.elevenlabs_voices`), so a stalled API never blocks the panel.
 - `studio/storyboard.py`, `studio/animate.py`, `studio/art.py`: Claude plans
   scenes by word number (never timestamps) in a fixed vocabulary that the
   renderer knows; `storyboard.clean()` makes any plan or user edit safe. Props

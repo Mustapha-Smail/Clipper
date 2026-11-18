@@ -62,7 +62,10 @@ class Settings(BaseModel):
     kokoro_voice: str = Field("am_michael", pattern=r"^[a-z]{2}_[a-z]+$")
     chatterbox_voice: str = Field("default", pattern=r"^(default|[a-z]{2}_[a-z]+)$")   # its own, or a Kokoro timbre
     elevenlabs_voice: str = Field("", max_length=64)       # a voice_id from your ElevenLabs account
-    elevenlabs_model: Literal["eleven_multilingual_v2", "eleven_v3", "eleven_flash_v2_5"] = "eleven_multilingual_v2"
+    elevenlabs_model: Literal["eleven_v4", "eleven_multilingual_v2", "eleven_v3",
+                              "eleven_flash_v2_5"] = "eleven_multilingual_v2"
+    # Eleven v4 only: Claude chooses a mood per sentence (the Chatterbox direction), sent as audio tags.
+    elevenlabs_direction: bool = True
     voice_speed: float = Field(1.0, ge=0.7, le=1.3)
     # Kokoro and Chatterbox read one sentence at a time; this sets how long they pause between them.
     voice_pauses: Literal["tight", "natural", "relaxed"] = "natural"

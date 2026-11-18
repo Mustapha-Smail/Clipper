@@ -2,8 +2,8 @@
 title: Direct the AI voice
 step: Voice
 task: delivery
-used_in: clipper/studio/chatterbox.py
-about: Chooses a mood and, now and then, a sound for each sentence read by Chatterbox.
+used_in: clipper/studio/chatterbox.py, clipper/studio/voice.py
+about: Chooses a mood and, now and then, a sound for each sentence read by Chatterbox or ElevenLabs v4.
 variables: moods, sounds, sound_every
 var.moods: The moods Chatterbox can speak a sentence in.
 var.sounds: The sounds Chatterbox can add (a sigh, a gasp, a chuckle...).

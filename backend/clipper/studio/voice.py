@@ -391,7 +391,8 @@ def _compact_silence(samples: np.ndarray, rate: int, floor_db: float = -45) -> n
 
 
 def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json",
-                timeout: float = 180) -> bytes:
+                timeout: float = 180, meta: dict | None = None) -> bytes:
+    """One ElevenLabs call. `meta`, when given, receives the response's request id (for stitching)."""
     key = config.elevenlabs_api_key()
     if not key:
         raise RuntimeError("No ElevenLabs key. Put ELEVENLABS_API_KEY in .env and restart, or use Kokoro.")
@@ -400,6 +401,8 @@ def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = 
                                      headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": accept})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
+            if meta is not None:
+                meta["request_id"] = response.headers.get("request-id")
             return response.read()
     except urllib.error.HTTPError as err:
         try:
@@ -478,31 +481,81 @@ def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") 
     return out
 
 
+# Eleven v4 takes only stability and similarity (no speed or style), and links sections by the request ids
+# of the ones before it (at most 3) rather than by their text.
+V4_MODELS = frozenset({"eleven_v4"})
+# Claude's direction (chatterbox.MOODS and SOUNDS) as v4 audio tags. Narration stays untagged.
+V4_TAGS = {"dramatic": "dramatic", "surprised": "surprised", "sarcastic": "sarcastic", "whispering": "whispers",
+           "happy": "cheerfully", "fear": "nervously", "angry": "angrily", "sigh": "sighs", "gasp": "gasps",
+           "clear throat": "clears throat", "chuckle": "chuckles", "laugh": "laughs"}
+
+
+def directed_sections(sections: list[dict], rep: Reporter, short: bool = False,
+                      rehooks: list[str] | None = None) -> list[dict]:
+    """The sections with Claude's direction written in as v4 audio tags, sentence by sentence (paragraphs kept).
+    The tags are not spoken, so the alignment against the script is unchanged. Plain text if the AI fails."""
+    from . import chatterbox
+
+    layout = []          # per section, per paragraph, its sentences
+    for section in sections:
+        paragraphs = [p for p in re.split(r"\n\s*\n", section["text"]) if p.strip()] or [section["text"]]
+        layout.append([sentences(p) for p in paragraphs])
+    said = [s for section in layout for paragraph in section for s in paragraph]
+    lifts = lifted(said, rehooks or [])
+    if rehooks is None:
+        rep.info("Rehooks get no lift: the script's hold check is missing or out of date")
+    directed = iter(chatterbox.direct(said, rep, short=short, lifts=lifts, tags=V4_TAGS))
+    return [{**section, "text": "\n\n".join(" ".join(next(directed) for _ in paragraph) for paragraph in parts)}
+            for section, parts in zip(sections, layout, strict=True)]
+
+
+def elevenlabs_body(model: str, sections: list[dict], i: int, speed: float, previous_ids: list[str]) -> dict:
+    """The request for section i: neighbouring text or the previous requests keep the delivery continuous."""
+    body = {"text": sections[i]["text"], "model_id": model}
+    if model in V4_MODELS:
+        body["voice_settings"] = {"stability": 0.5, "similarity_boost": 0.75}
+        if previous_ids:
+            body["previous_request_ids"] = previous_ids[-3:]
+        return body
+    body["voice_settings"] = {"stability": 0.5, "similarity_boost": 0.75, "speed": speed}
+    body["previous_text"] = sections[i - 1]["text"][-500:] if i else None
+    body["next_text"] = sections[i + 1]["text"][:500] if i + 1 < len(sections) else None
+    return body
+
+
 def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: float, out: Path,
-                     rep: Reporter) -> None:
-    """One request per section, joined with a pause. Neighbouring text keeps the delivery continuous."""
+                     rep: Reporter, direct: bool = False, short: bool = False,
+                     rehooks: list[str] | None = None) -> None:
+    """One request per section, joined with a pause. Neighbouring text keeps the delivery continuous.
+    `direct` (v4 only): Claude chooses a mood per sentence, written in as audio tags."""
     if not voice_id:
         raise RuntimeError("Choose an ElevenLabs voice first")
+    if direct and model in V4_MODELS:
+        sections = directed_sections(sections, rep, short=short, rehooks=rehooks)
     folder = out.parent / "parts"
     folder.mkdir(exist_ok=True)
-    parts = []
-    for i, section in enumerate(sections):
-        body = {"text": section["text"], "model_id": model,
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": speed},
-                "previous_text": sections[i - 1]["text"][-500:] if i else None,
-                "next_text": sections[i + 1]["text"][:500] if i + 1 < len(sections) else None}
+    parts, request_ids = [], []
+    for i in range(len(sections)):
+        body = elevenlabs_body(model, sections, i, speed, request_ids)
+        meta: dict = {}
         audio = _elevenlabs("POST", f"/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", body,
-                            accept="audio/mpeg")
+                            accept="audio/mpeg", meta=meta)
+        if meta.get("request_id"):
+            request_ids.append(meta["request_id"])
         part = folder / f"{i:03d}.mp3"
         part.write_bytes(audio)
         parts.append(part)
         rep.progress((i + 1) / len(sections), f"Speaking: section {i + 1} of {len(sections)}")
+    # v4 has no speed setting, so the speed is applied here (pitch kept).
+    tempo = ["-af", f"atempo={speed:g}"] if model in V4_MODELS and abs(speed - 1) > 0.001 else []
+    if tempo:
+        rep.info(f"Eleven v4 has no speed setting: the voice is sped to {speed:g}x here, pitch kept")
     # TTS providers can bake distracting gaps into a section. Decode each one so
     # confirmed long silences can be shortened, then add one exact section beat.
     cleaned = []
     for i, part in enumerate(parts):
         decoded = folder / f"clean-{i:03d}.wav"
-        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(part), "-vn", "-ac", "1", "-ar",
+        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(part), "-vn", *tempo, "-ac", "1", "-ar",
              str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(decoded)])
         samples, rate = _read_wav(decoded)
         samples = _compact_silence(samples, rate)
@@ -527,7 +580,8 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     if not sections:
         raise RuntimeError("The script has no text to speak")
     rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}"
-             + (f", {take.pauses} pauses" if take.source in ("kokoro", "chatterbox") else ""))
+             + (f", {take.pauses} pauses" if take.source in ("kokoro", "chatterbox") else "")
+             + (f", model {settings.elevenlabs_model}" if take.source == "elevenlabs" else ""))
     if take.source == "kokoro":
         speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
     elif take.source == "chatterbox":
@@ -537,7 +591,11 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
                          short=script.video == "short",
                          rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)))
     elif take.source == "elevenlabs":
-        speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep)
+        from . import hold
+
+        speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep,
+                         direct=settings.elevenlabs_direction, short=script.video == "short",
+                         rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)))
     else:
         raise RuntimeError(f"Not an AI take: {take.source}")
     out = folder / "voice.wav"

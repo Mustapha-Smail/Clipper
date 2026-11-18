@@ -149,11 +149,18 @@ import { YoutubeConnect } from '../shared/youtube-connect';
               }
               <label class="field"><span>ElevenLabs model</span>
                 <select [(ngModel)]="f.elevenlabs_model">
-                  <option value="eleven_multilingual_v2">Multilingual v2 (most natural)</option>
-                  <option value="eleven_v3">v3 (most expressive)</option>
+                  <option value="eleven_v4">v4 (newest, most expressive)</option>
+                  <option value="eleven_multilingual_v2">Multilingual v2 (steadiest on long scripts)</option>
+                  <option value="eleven_v3">v3 (previous expressive model)</option>
                   <option value="eleven_flash_v2_5">Flash v2.5 (cheapest, fastest)</option>
                 </select>
               </label>
+              @if (f.elevenlabs_model === 'eleven_v4') {
+                <label class="check wide"><input type="checkbox" [(ngModel)]="f.elevenlabs_direction" />
+                  <span>Claude directs the v4 voice<small>A mood for each sentence (dramatic, surprised,
+                    whispers…) and now and then a sigh or a gasp, sent as v4 audio tags. One quick-tier call per
+                    take; off, v4 reads it as plain narration.</small></span></label>
+              }
               <label class="field"><span>Speed</span>
                 <input type="number" min="0.7" max="1.3" step="0.05" [(ngModel)]="f.voice_speed" />
                 <small>1 is the voice's natural pace.</small>

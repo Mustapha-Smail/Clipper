@@ -3,6 +3,7 @@
 Resemble AI's model (MIT licence) reads tags such as [dramatic], [surprised] or
 [whispering] and sounds such as [sigh] or [gasp]. Claude directs the delivery:
 each sentence gets a mood and, now and then, a sound (`llm` task `delivery`).
+ElevenLabs v4 takes the same direction written in its own tags (`voice.V4_TAGS`).
 
 chatterbox-tts pins torch, numpy and transformers versions the app does not use,
 so it lives in its own virtual environment under data/cache/chatterbox/<platform>, made with
@@ -123,11 +124,14 @@ class Marks(BaseModel):
 DIRECT = prompts.Prompt("voice_direction")
 
 
-def direct(sentences: list[str], rep: Reporter, short: bool = False, lifts: frozenset[int] = frozenset()) -> list[str]:
+def direct(sentences: list[str], rep: Reporter, short: bool = False, lifts: frozenset[int] = frozenset(),
+           tags: dict[str, str] | None = None) -> list[str]:
     """The sentences with their tags, as Claude directs them; plain sentences if the AI cannot be reached.
 
     `short`: the video is a Short, so its first sentence is read with urgency. `lifts`: the numbers of the
-    rehook sentences (from the hold check), which get a lift."""
+    rehook sentences (from the hold check), which get a lift. `tags`: how another voice writes each mood and
+    sound (ElevenLabs v4 says [whispers] where Chatterbox says [whispering]); Chatterbox's own by default."""
+    tags = tags or {}
     numbered = "\n".join(f"{n}. {'(rehook) ' if n in lifts else ''}{s}" for n, s in enumerate(sentences))
     video = f"<video>{'a YouTube Short' if short else 'a long YouTube video'}</video>\n\n"
     try:
@@ -146,9 +150,10 @@ def direct(sentences: list[str], rep: Reporter, short: bool = False, lifts: froz
         if sound != "none":
             last_sound, sounds = n, sounds + 1
         moods[mark.mood] = moods.get(mark.mood, 0) + 1
-        text = sentence if mark.mood == "narration" else f"[{mark.mood}] {sentence}"
+        mood_tag, sound_tag = tags.get(mark.mood, mark.mood), tags.get(sound, sound)
+        text = sentence if mark.mood == "narration" else f"[{mood_tag}] {sentence}"
         if sound != "none":
-            text = f"[{sound}] {text}" if sound in BEFORE else f"{text} [{sound}]"
+            text = f"[{sound_tag}] {text}" if sound in BEFORE else f"{text} [{sound_tag}]"
         out.append(text)
     rep.info("Delivery: " + ", ".join(f"{k} {v}" for k, v in sorted(moods.items(), key=lambda kv: -kv[1]))
              + f"; {sounds} sounds")
