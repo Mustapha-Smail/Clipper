@@ -22,6 +22,7 @@ from ..studio import (
     beats,
     cartoon,
     compliance,
+    continuity,
     film,
     music_pick,
     music_search,
@@ -34,6 +35,7 @@ from ..studio import director as director_mod
 from ..studio import export as export_mod
 from ..studio import places as places_mod
 from ..studio import script as script_mod
+from ..studio import story_map as story_map_mod
 from ..studio import storyboard as storyboard_mod
 from ..studio import thumbnail as thumbnail_mod
 from ..studio import voice as voice_mod
@@ -98,6 +100,10 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
         words = board.words
         score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"],
                             board.end - board.start)
+    map_value = board.script.story_map if board.script.story_map and story_map_mod.status(board.script)[0] else None
+    continuity_lines = continuity.check(board.style, board.scenes, board.words, board.script.sections,
+                                        board.script.hold, map_value)
+    settings = settings_mod.load()
     return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job, _keep_days()),
                            export=export_out(board), words=board.words, scenes=board.scenes,
                            missing_props=sorted(names - drawn),
@@ -105,10 +111,13 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            photo_searches_missing=[q for q in queries if q not in found], credits=credits,
                            youtube=board.youtube, director=director_mod.public(board.director),
                            director_undoable=director_mod.undoable(board),
-                           thumbnails=thumbnail_mod.public(board.thumbnails))
+                           thumbnails=thumbnail_mod.public(board.thumbnails), render_meta=board.render_meta,
+                           sound_starter_default=settings.sound_starter,
+                           sound_riser_default=settings.sound_riser, continuity=continuity_lines)
 
 
-LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon"), "film": ("wall", "studio"), "flat": ("ink",)}
+LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint"),
+         "film": ("wall", "studio"), "flat": ("ink",)}
 
 
 def _look_for(style: str, look: str | None) -> str:
@@ -356,6 +365,16 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
         board.music_db = body.music_db
     if body.effects is not None:
         board.effects = body.effects
+    for field, label in (("starter_mode", "opening attention sound"), ("riser_mode", "twist/payoff risers")):
+        value = getattr(body, field)
+        if value is not None and value != getattr(board, field):
+            _idle(db, board)
+            inherited = getattr(settings_mod.load(), "sound_starter" if field == "starter_mode" else "sound_riser")
+            summary = f"Set {label} to {value}"
+            if value == "default":
+                summary += f" (currently {'on' if inherited else 'off'} in Settings)"
+            compliance.record(db, board.script_id, "sound", "you", summary, storyboard_id=board.id)
+            setattr(board, field, value)
     db.flush()
     return board_out(board, _board_jobs(db).get(board.id), db)
 

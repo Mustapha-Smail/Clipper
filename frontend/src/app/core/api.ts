@@ -347,7 +347,8 @@ export class Api {
     return `${BASE}/storyboards/${id}/authorship.txt`;
   }
   soundSettings(id: number, patch: { music_id?: number | null; music_db?: number; effects?: boolean;
-                                     music_suggested?: boolean }): Observable<Storyboard> {
+                                     music_suggested?: boolean; starter_mode?: 'default' | 'on' | 'off';
+                                     riser_mode?: 'default' | 'on' | 'off' }): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, patch);
   }
   chapters(id: number): Observable<Chapters> {

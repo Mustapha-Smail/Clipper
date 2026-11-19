@@ -88,7 +88,7 @@ def script_with_take(app_env):
         db.flush()
         take = VoiceTake(script_id=script.id, source="kokoro", voice="am_michael", script_hash="x", chosen=True,
                          alignment={"coverage": 1.0, "sections": [], "missing": [], "extra": [],
-                                    "spoken_words": 10, "script_hash": "x"})
+                                    "spoken_words": 10, "script_hash": "x", "wpm": 160})
         db.add(take)
         db.flush()
         folder = voice.take_dir(script.id, take.id)
@@ -173,6 +173,8 @@ def test_short_from_section_to_video(client, script_with_take, fake_claude):
     run_job(job["id"])
     done = client.get(f"/api/v1/storyboards/{board['id']}").json()
     assert done["has_video"] and done["review"] == "pending" and done["missing_props"] == []
+    assert done["render_meta"]["version"] == 1 and done["render_meta"]["wpm"] == 160
+    assert done["render_meta"]["starter"] is False and done["render_meta"]["riser"] is False
     video = animate.video_path({"script_id": sid, "id": board["id"], "format": "short"})
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
                             "-of", "json", str(video)], capture_output=True, text=True, check=True)
@@ -184,6 +186,25 @@ def test_short_from_section_to_video(client, script_with_take, fake_claude):
 
     assert client.delete(f"/api/v1/storyboards/{board['id']}").status_code == 204
     assert not video.parent.exists()
+
+
+def test_attention_modes_round_trip_and_are_logged(client, script_with_take, fake_claude):
+    from sqlalchemy import select
+
+    from clipper.db.models import StudioEvent
+
+    board = client.post(f"/api/v1/scripts/{script_with_take}/storyboards",
+                        json={"format": "short", "section_key": "a", "style": "flat"}).json()
+    run_job(board["job"]["id"])
+    assert board["starter_mode"] == board["riser_mode"] == "default"
+    changed = client.patch(f"/api/v1/storyboards/{board['id']}",
+                           json={"starter_mode": "on", "riser_mode": "off"}).json()
+    assert changed["starter_mode"] == "on" and changed["riser_mode"] == "off"
+    assert changed["sound_starter_default"] is False and changed["sound_riser_default"] is False
+    with session_scope() as db:
+        events = list(db.scalars(select(StudioEvent).where(StudioEvent.storyboard_id == board["id"],
+                                                           StudioEvent.kind == "sound")))
+    assert len(events) == 2 and {event.by for event in events} == {"you"}
 
 
 # --- long videos, sound, subtitles ---------------------------------------------------------------

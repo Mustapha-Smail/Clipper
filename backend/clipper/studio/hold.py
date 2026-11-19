@@ -1,10 +1,11 @@
 """The hold check: does the narration keep giving the viewer a reason to stay?
 
-The quick tier labels every sentence with one role (hook, stakes, twist, ...)
-and names the topic it took the title to be about. Everything else is plain
-arithmetic on those labels and the word counts (`score`): how long before the
-topic is named, how long before the first twist, the longest stretch without a
-new question, filler, the ending, the stakes. Every deduction is a line.
+The quick tier labels every sentence with one role (hook, stakes, twist, ...),
+names the topic it took the title to be about, and audits the script's promise,
+open loops and rehooks. Everything else is plain arithmetic on those labels and
+the word counts (`score`): how long before the topic is named, how long before
+the first twist, the longest stretch without a new question, filler, the ending,
+the stakes and whether promises are paid. Every deduction is a line.
 
 It advises; it never rewrites or blocks. The labels are stored on the script
 with the hash of the text they were made on (`scripts.hold`), so an edit makes
@@ -17,11 +18,13 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from .. import llm, prompts
 from ..ai_errors import AiUnavailable
 from ..db import session_scope
-from ..db.models import Script
+from ..db.models import Script, VoiceTake
 from ..jobs import Reporter
 from . import plain
 from . import script as script_mod
@@ -41,6 +44,11 @@ REPEAT_POINTS, REPEAT_CAP = 5, 10
 ENDING_POINTS = 10
 STAKES_POINTS = 10
 TOPIC_PER_S = 3          # points per second of narration before the topic is named
+PROMISE_MISSING, PROMISE_PARTIAL = 15, 8
+LOOP_POINTS, LOOP_CAP = 4, 12
+EMPTY_REHOOK_POINTS, EMPTY_REHOOK_CAP = 5, 15
+CONCURRENT_POINTS, CONCURRENT_CAP = 4, 8
+PROMISE_CAP = 30         # all new promise/loop/rehook deductions together
 
 FILLER = re.compile(r"\b(?:moving on|let'?s talk about|next up|without further ado|let'?s dive in|"
                     r"let'?s get (?:started|into it)|in (?:this|today'?s) video|stay tuned|"
@@ -108,10 +116,13 @@ def texts_with(sections: list[dict], stored: dict | None, roles: tuple[str, ...]
     return [s["text"] for s in sentences(sections) if labelled.get(s["n"]) in roles]
 
 
-def listing(script_title: str, video: str, sections: list[dict]) -> str:
+def listing(script_title: str, video: str, sections: list[dict], story_map: str = "") -> str:
     """What the model reads: the title, the kind of video and the numbered sentences under their headings."""
     lines = [f"<title>{script_title}</title>",
-             f"<video>{'a YouTube Short' if video == 'short' else 'a long YouTube video'}</video>", "<script>"]
+             f"<video>{'a YouTube Short' if video == 'short' else 'a long YouTube video'}</video>"]
+    if story_map:
+        lines += ["<story_map>", story_map, "</story_map>"]
+    lines.append("<script>")
     numbered = sentences(sections)
     for sec in sections:
         lines.append(f"[{sec.get('heading', '')}]")
@@ -133,6 +144,30 @@ class Label(BaseModel):
 class Labels(BaseModel):
     topic: str = Field(description="The topic the title is about, as one word or a short phrase")
     sentences: list[Label]
+    loops: list["Loop"] = Field(default_factory=list)
+    rehooks: list["Rehook"] = Field(default_factory=list)
+    promise: "Promise" = Field(default_factory=lambda: Promise())
+
+
+class Loop(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    question: str
+    opener_sentence: int
+    resolver_sentence: int | None = None
+    main: bool = False
+
+
+class Rehook(BaseModel):
+    sentence: int
+    delivers_new_information: bool = False
+    opens_loop: str | None = None
+    reason: str = ""
+
+
+class Promise(BaseModel):
+    verdict: Literal["paid", "partial", "missing"] = "paid"
+    answer_sentence: int | None = None
+    reason: str = ""
 
 
 PROMPT = prompts.Prompt("script_hold")
@@ -141,7 +176,14 @@ PROMPT = prompts.Prompt("script_hold")
 def label(script: Script) -> tuple[dict, int]:
     """Ask the quick tier for the roles. Returns what to store and how many labels were dropped."""
     count = len(sentences(script.sections))
-    answer = llm.ask("hold", PROMPT, listing(script.title, script.video, script.sections), Labels, effort="low")
+    from . import story_map
+
+    try:
+        map_text = story_map.prompt_value(script)
+    except RuntimeError:       # stale maps are not evidence; audit the title and narration instead
+        map_text = ""
+    answer = llm.ask("hold", PROMPT, listing(script.title, script.video, script.sections, map_text), Labels,
+                     effort="low")
     roles, seen, dropped = [], set(), 0
     for item in answer.sentences:
         if not 1 <= item.n <= count or item.n in seen:
@@ -150,8 +192,54 @@ def label(script: Script) -> tuple[dict, int]:
         seen.add(item.n)
         roles.append({"n": item.n, "role": item.role, "title_question": item.title_question})
     roles.sort(key=lambda r: r["n"])
+    loops = []
+    for item in answer.loops:
+        if not 1 <= item.opener_sentence <= count or (item.resolver_sentence is not None and
+                                                      not item.opener_sentence <= item.resolver_sentence <= count):
+            dropped += 1
+            continue
+        loops.append(item.model_dump())
+    loop_ids = {item["id"] for item in loops}
+    rehooks = []
+    for item in answer.rehooks:
+        if not 1 <= item.sentence <= count:
+            dropped += 1
+            continue
+        value = item.model_dump()
+        if value["opens_loop"] not in loop_ids:
+            value["opens_loop"] = None
+        rehooks.append(value)
+    promise = answer.promise.model_dump()
+    if promise["answer_sentence"] is not None and not 1 <= promise["answer_sentence"] <= count:
+        promise["answer_sentence"] = None
+        dropped += 1
     return {"hash": script_mod.text_hash(script.sections), "roles": roles, "topic": answer.topic.strip(),
+            "loops": loops, "rehooks": rehooks, "promise": promise,
             "dropped": dropped, "checked_at": datetime.now(UTC).isoformat(timespec="seconds")}, dropped
+
+
+def timing(script: Script) -> tuple[int, Literal["estimated", "measured"]]:
+    """Average pace for the advisory timing arithmetic. Exact word times elsewhere stay exact."""
+    current_hash = script_mod.text_hash(script.sections)
+    try:
+        take = next((item for item in script.takes if item.chosen), None)
+    except DetachedInstanceError:
+        # Worker stage loaders deliberately return detached rows. Read only the chosen take in a short session.
+        with session_scope() as db:
+            take = db.scalar(select(VoiceTake).where(VoiceTake.script_id == script.id, VoiceTake.chosen.is_(True)))
+    alignment = take.alignment if take is not None else None
+    aligned_hash = alignment.get("script_hash") if alignment else None
+    wpm = alignment.get("wpm") if alignment else None
+    if (take is not None and take.script_hash == current_hash and (aligned_hash is None or aligned_hash == current_hash)
+            and isinstance(wpm, int | float) and wpm > 0):
+        return round(wpm), "measured"
+    return script_mod.WORDS_PER_MINUTE, "estimated"
+
+
+def score_script(script: Script) -> dict | None:
+    """Score one ORM script with measured chosen-take timing when it is safe to use."""
+    wpm, timing_kind = timing(script)
+    return score(script.sections or [], script.hold, script.video, wpm=wpm, timing=timing_kind)
 
 
 def run(script_id: int, rep: Reporter) -> bool:
@@ -169,7 +257,8 @@ def run(script_id: int, rep: Reporter) -> bool:
     except Exception as err:      # an advisory check never fails the writing job it follows
         rep.warn(f"Hold check skipped, the AI's answer could not be used: {err}")
         return False
-    result = score(script.sections, stored, script.video)
+    script.hold = stored
+    result = score_script(script)
     stored["score"] = result["score"] if result else None
     with session_scope() as db:
         row = db.get(Script, script_id)
@@ -210,7 +299,8 @@ def names_topic(text: str, words: set[str]) -> bool:
 
 
 def score(sections: list[dict], stored: dict | None, video: str = "long",
-          wpm: int = script_mod.WORDS_PER_MINUTE) -> dict | None:
+          wpm: int = script_mod.WORDS_PER_MINUTE,
+          timing: Literal["estimated", "measured"] = "estimated") -> dict | None:
     """The check from stored labels and the current text, 0 to 100, every deduction a line.
 
     None when there is no check; `{"current": False, ...}` when the text changed since the labels were made
@@ -306,6 +396,61 @@ def score(sections: list[dict], stored: dict | None, video: str = "long",
         line(STAKES_POINTS, f"No stakes in the first {round(target['stakes'] * 100)}% of the words",
              "Say early why it matters to the viewer, or what it cost someone.")
 
+    # Promise integrity. These deductions share one cap so the new audit cannot overwhelm the established score.
+    promise_used = 0
+
+    def promise_line(points: int, label: str, detail: str) -> None:
+        nonlocal promise_used
+        charged = min(points, max(0, PROMISE_CAP - promise_used))
+        promise_used += charged
+        if charged < points:
+            detail += f" The combined promise deductions are capped at {PROMISE_CAP} points."
+        lines.append({"points": -charged, "label": label, "detail": detail})
+
+    promise = stored.get("promise") or {"verdict": "paid", "answer_sentence": None, "reason": ""}
+    if promise.get("verdict") == "missing":
+        promise_line(PROMISE_MISSING, "The title promise is not paid",
+                     promise.get("reason") or "Answer the title's main promise plainly before the ending.")
+    elif promise.get("verdict") == "partial":
+        promise_line(PROMISE_PARTIAL, "The title promise is only partly paid",
+                     promise.get("reason") or "Finish the answer the title committed to give.")
+
+    loops = [item for item in stored.get("loops", [])
+             if isinstance(item.get("opener_sentence"), int) and 1 <= item["opener_sentence"] <= len(said)
+             and (item.get("resolver_sentence") is None or
+                  isinstance(item.get("resolver_sentence"), int)
+                  and item["opener_sentence"] <= item["resolver_sentence"] <= len(said))]
+    unresolved = [item for item in loops if item.get("resolver_sentence") is None and not item.get("main")]
+    if unresolved:
+        raw = min(LOOP_CAP, len(unresolved) * LOOP_POINTS)
+        ids = ", ".join(str(item.get("id", "loop")) for item in unresolved)
+        promise_line(raw, f"{len(unresolved)} secondary loop{'s' if len(unresolved) != 1 else ''} left open",
+                     f"Unresolved: {ids}. Resolve each concrete question after it has delivered value.")
+
+    empty_rehooks = [item for item in stored.get("rehooks", [])
+                     if not item.get("delivers_new_information") and not item.get("opens_loop")]
+    if empty_rehooks:
+        raw = min(EMPTY_REHOOK_CAP, len(empty_rehooks) * EMPTY_REHOOK_POINTS)
+        numbered = ", ".join(str(item.get("sentence")) for item in empty_rehooks)
+        promise_line(raw, f"{len(empty_rehooks)} empty rehook{'s' if len(empty_rehooks) != 1 else ''}",
+                     f"Sentences {numbered} deliver no new information and open no concrete question.")
+
+    opened: set[str] = set()
+    maximum = 0
+    for n in range(1, len(said) + 1):
+        # A sentence may answer one question before opening the next; resolution happens first.
+        for item in loops:
+            if item.get("resolver_sentence") == n:
+                opened.discard(str(item.get("id", "")))
+        for item in loops:
+            if item.get("opener_sentence") == n:
+                opened.add(str(item.get("id", "")))
+        maximum = max(maximum, len(opened))
+    if maximum > 2:
+        raw = min(CONCURRENT_CAP, (maximum - 2) * CONCURRENT_POINTS)
+        promise_line(raw, f"{maximum} loops open at once",
+                     "Keep no more than two concrete questions open at the same time.")
+
     unlabelled = sum(1 for r in role if r is None)
     if unlabelled or stored.get("dropped"):
         line(0, f"{unlabelled} sentences without a label, {stored.get('dropped', 0)} labels dropped",
@@ -319,10 +464,13 @@ def score(sections: list[dict], stored: dict | None, video: str = "long",
         "score": result,
         "verdict": "holds well" if result >= 85 else "some slack" if result >= 65 else "likely to lose people",
         "topic": stored.get("topic", ""),
+        "promise": promise,
+        "loops": loops,
+        "rehooks": stored.get("rehooks", []),
         "lines": lines,
         "stats": {"seconds": round(seconds), "first_twist": round(secs[twists[0]]) if twists else None,
                   "longest_gap": round(max(gaps)[0]) if gaps else None,
-                  "topic_at": at + 1 if at is not None else None},
+                  "topic_at": at + 1 if at is not None else None, "timing": timing, "wpm": round(wpm)},
         "sentences": [{"n": s["n"], "section": s["section"], "text": s["text"], "role": role[i],
                        "at": round(secs[i]), "title_question": bool(roles.get(s["n"], {}).get("title_question"))}
                       for i, s in enumerate(said)],

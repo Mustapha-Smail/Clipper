@@ -168,7 +168,8 @@ class InkComposer:
         self.look = looks.get(board.get("look"))
         self.paper = Image.fromarray(looks.background(self.look, self.W, self.H, paper), "RGB").convert("RGBA")
         strength, self.boil_fps = WOBBLE.get(getattr(settings, "ink_wobble", "subtle"), WOBBLE["subtle"])
-        self.boil = boil_fields(self.W, self.H, strength=strength) if strength and self.look.boil else []
+        strength *= self.look.jitter
+        self.boil = boil_fields(self.W, self.H, strength=strength) if strength else []
         # Drawings are kept to be reused, up to a memory budget (not a count: a map or a
         # photo weighs as much as a hundred props). Previews in the API keep less.
         self._cache: OrderedDict = OrderedDict()
@@ -1092,7 +1093,9 @@ class InkComposer:
 
     def _dress(self, kind: str, image: Image.Image, zq: float) -> Image.Image:
         """The sprite as the look wants it: cut out of card (paper), or in white lines (blueprint)."""
-        if self.look.recolour and kind not in looks.PASTED:
+        if self.look.line_profile in ("uniform", "rough") and kind not in looks.PASTED:
+            how = self.look.line_profile
+        elif self.look.recolour and kind not in looks.PASTED:
             how = "bp"
         elif self.look.cartoon and kind in ("text", "tag", "timeline"):
             how = "card"                 # words on a card, so they read over a busy place
@@ -1105,7 +1108,9 @@ class InkComposer:
         key = id(image)
         out = self._dressed.get(key)
         if out is None or out[0] is not image:
-            if how == "bp":
+            if how in ("uniform", "rough"):
+                dressed = looks.profiled_sprite(image, self.look)
+            elif how == "bp":
                 dressed = looks.blueprint_sprite(image)
             elif how == "card":
                 dressed = looks.cutout(image, max(6, round(self.H / 80 * zq)))
@@ -1269,10 +1274,13 @@ class InkComposer:
             kept.append((t, kind))
         return kept
 
-    def bgr(self, t: float) -> np.ndarray:
+    def bgr(self, t: float, observer: animate.visual_qa.FrameObserver | None = None) -> np.ndarray:
         import cv2
 
-        frame = cv2.cvtColor(self._compose(t), cv2.COLOR_RGBA2BGR)
+        composed = self._compose(t)
+        if observer is not None:
+            observer.observe(t, composed[..., :3])       # intentionally before captions
+        frame = cv2.cvtColor(composed, cv2.COLOR_RGBA2BGR)
         if self.captions is not None:
             self.captions.draw(frame, t)
         return frame

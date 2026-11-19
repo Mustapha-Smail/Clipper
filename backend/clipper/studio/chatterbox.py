@@ -128,7 +128,7 @@ def direct(sentences: list[str], rep: Reporter, short: bool = False, lifts: froz
            tags: dict[str, str] | None = None) -> list[str]:
     """The sentences with their tags, as Claude directs them; plain sentences if the AI cannot be reached.
 
-    `short`: the video is a Short, so its first sentence is read with urgency. `lifts`: the numbers of the
+    `short`: the video is a Short, so its first sentence gets appropriate opening energy. `lifts`: the numbers of the
     rehook sentences (from the hold check), which get a lift. `tags`: how another voice writes each mood and
     sound (ElevenLabs v4 says [whispers] where Chatterbox says [whispering]); Chatterbox's own by default."""
     tags = tags or {}

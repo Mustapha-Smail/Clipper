@@ -572,6 +572,11 @@ section.card + section.card {
     margin: 4px 0;
   }
 
+  .promise-audit {
+    padding-left: 12px;
+    border-left: 2px solid var(--line-strong);
+  }
+
   .roles {
     list-style: none;
     padding: 0;

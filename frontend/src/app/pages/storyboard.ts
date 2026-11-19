@@ -377,7 +377,8 @@ export class StoryboardPage {
   }
 
   protected setSound(patch: { music_id?: number | null; music_db?: number; effects?: boolean;
-                              music_suggested?: boolean }): void {
+                              music_suggested?: boolean; starter_mode?: 'default' | 'on' | 'off';
+                              riser_mode?: 'default' | 'on' | 'off' }): void {
     this.api.soundSettings(this.id, patch).subscribe({
       next: (board) => {
         this.board.set(board);

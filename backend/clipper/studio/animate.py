@@ -13,6 +13,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -25,7 +26,8 @@ from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
 from ..settings import load as load_settings
-from . import art, beats, film, sound
+from . import art, beats, film, sound, visual_qa
+from . import script as script_mod
 from . import voice as voice_mod
 
 FPS = 24
@@ -392,9 +394,12 @@ class Composer:
                   (ex + math.cos(angle - 2.5) * head, ey + math.sin(angle - 2.5) * head)]
         draw.polygon(points, fill=colour)
 
-    def bgr(self, t: float) -> np.ndarray:
+    def bgr(self, t: float, observer: visual_qa.FrameObserver | None = None) -> np.ndarray:
         """The finished frame, captions included, as BGR for the encoder."""
-        frame = np.ascontiguousarray(np.asarray(self.frame(t).convert("RGB"))[:, :, ::-1])
+        image = self.frame(t).convert("RGB")
+        if observer is not None:
+            observer.observe(t, image)       # intentionally before captions
+        frame = np.ascontiguousarray(np.asarray(image)[:, :, ::-1])
         if self.captions is not None:
             yellow = self.scenes[self.scene_at(t)]["background"] == "yellow"
             (self.captions_on_yellow if yellow else self.captions).draw(frame, t)
@@ -475,7 +480,8 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
                 "start": board.start, "end": board.end, "words": list(board.words), "scenes": list(board.scenes),
                 "headings": {s["key"]: s["heading"] for s in board.script.sections},
                 "sections": list(board.script.sections), "hold": board.script.hold,
-                "effects": board.effects, "music_db": board.music_db,
+                "effects": board.effects, "starter_mode": board.starter_mode, "riser_mode": board.riser_mode,
+                "music_db": board.music_db,
                 "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
         names = beats.prop_names(board.scenes) if board.style == "ink" else set() if board.style == "film" else \
             {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
@@ -513,16 +519,42 @@ def effect_events(composer, duration: float, extra: list[tuple[float, str]] = ()
     return sorted([*events, *extra]) if extra else events
 
 
+AttentionMode = Literal["default", "on", "off"]
+
+
+def effective_attention(mode: AttentionMode | str | None, inherited: bool) -> bool:
+    """Resolve one per-video experiment mode. Unknown legacy values safely inherit Settings."""
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    return inherited
+
+
+def attention_state(board: dict, settings: Settings) -> dict[str, bool]:
+    """The exact attention sounds this board will use, including the effects master switch."""
+    effects = bool(board.get("effects", True))
+    return {
+        "starter": effects and effective_attention(board.get("starter_mode", "default"), settings.sound_starter),
+        "riser": effects and effective_attention(board.get("riser_mode", "default"), settings.sound_riser),
+    }
+
+
 def attention_events(board: dict, word_time, settings: Settings) -> tuple[list[tuple[float, str]], list[str]]:
     """The optional starter (at 0 s) and risers (ending on the first word of the first twist and of the payoff),
     with a note for the log on what was added or why not."""
     from . import storyboard as storyboard_mod
 
     events, notes = [], []
-    if settings.sound_starter:
+    resolved = attention_state(board, settings)
+    if not board.get("effects", True):
+        wanted = effective_attention(board.get("starter_mode", "default"), settings.sound_starter) \
+            or effective_attention(board.get("riser_mode", "default"), settings.sound_riser)
+        return [], ["sound effects are off for this video, so attention sounds are suppressed"] if wanted else []
+    if resolved["starter"]:
         events.append((0.0, "starter"))
         notes.append("an attention sound at 0 s")
-    if not settings.sound_riser:
+    if not resolved["riser"]:
         return events, notes
     marks, why = storyboard_mod.turn_marks(board.get("words", []), board.get("sections", []), board.get("hold"))
     if not marks:
@@ -580,6 +612,7 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
         inputs = ["-ss", f"{board.start + start:.3f}", "-t", f"{seconds:.3f}", "-i", voice_path]
         if effects:
             data, props, _ = load(board.id)
+            data["effects"] = effects
             composer = composer_for(data, props, Settings(), None)
             extra, _ = attention_events(data, composer.word_time, load_settings())
             events = [(at - start, kind) for at, kind in effect_events(composer, duration, extra)
@@ -605,6 +638,45 @@ def video_path(board: dict) -> Path:
     return voice_mod.script_media_dir(board["script_id"]) / f"storyboard-{board['id']}" / f"{board['format']}.mp4"
 
 
+def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | None = None) -> dict:
+    """Immutable craft facts for a successful render. Live settings are resolved here, once."""
+    from . import hold, story_map
+
+    script, take = board.script, board.take
+    alignment = take.alignment if take is not None else None
+    wpm = alignment.get("wpm") if alignment else None
+    hold_result = None
+    if (board.format == script.video and script.hold and take is not None
+            and take.script_hash == script.hold.get("hash")):
+        hold_result = hold.score(script.sections or [], script.hold, script.video,
+                                 wpm=round(wpm) if wpm else script_mod.WORDS_PER_MINUTE,
+                                 timing="measured" if wpm else "estimated")
+    current_map = script.story_map if script.story_map and story_map.status(script)[0] else None
+    opening = (current_map or {}).get("opening", {})
+    shape = " > ".join(name for name in ("context", "lean", "turn") if opening.get(name)) or None
+    state = attention_state({"effects": board.effects, "starter_mode": board.starter_mode,
+                             "riser_mode": board.riser_mode}, settings)
+    stats = hold_result.get("stats", {}) if hold_result else {}
+    return {
+        "version": 1,
+        "at": utcnow().isoformat(),
+        "look": board.look,
+        "style": board.style,
+        "story_template": (current_map or {}).get("template"),
+        "hook_shape": shape,
+        "starter": state["starter"],
+        "riser": state["riser"],
+        "effects": bool(board.effects),
+        "wpm": round(wpm) if wpm else None,
+        "hold_hash": script.hold.get("hash") if hold_result else None,
+        "hold_score": hold_result.get("score") if hold_result else None,
+        "first_twist_s": stats.get("first_twist"),
+        "longest_gap_s": stats.get("longest_gap"),
+        "first_visual_event_s": (visual_qa or {}).get("first_visual_event_s"),
+        "visual_qa": visual_qa or {},
+    }
+
+
 def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     board, props, wav = load(storyboard_id)
     if wav is None or not wav.is_file():
@@ -621,20 +693,21 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     tail = getattr(composer, "tail", 0.0)      # the film style holds a closing shot after the voice ends
     duration = voiced + tail
     total = math.ceil(duration * FPS)
+    observer = visual_qa.Observer(board.get("words", []), voiced)
     out = video_path(board)
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_suffix(".partial.mp4")
     options = RenderOptions.from_settings(settings)
     audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{voiced:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
+    extra, notes = attention_events(board, composer.word_time, settings)
     if board["effects"]:
-        extra, notes = attention_events(board, composer.word_time, settings)
         events = effect_events(composer, duration, extra)
         sound.write_effects(events, duration, effects_wav, seed=board["id"])
         audio_inputs += ["-i", str(effects_wav)]
         rep.info(f"{len(events)} sound effects" + (f"; {'; '.join(notes)}" if notes else ""))
-    elif settings.sound_starter or settings.sound_riser:
-        rep.info("Sound effects are off for this video, so there is no attention sound or riser")
+    elif notes:
+        rep.info("; ".join(notes))
     if board["music"]:
         audio_inputs += ["-stream_loop", "-1", "-i", board["music"]]
         rep.info(f"Music under the voice at {board['music_db']:g} dB, lowered while the voice speaks")
@@ -648,7 +721,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for n in range(total):
-            proc.stdin.write(composer.bgr(n / FPS).tobytes())
+            proc.stdin.write(composer.bgr(n / FPS, observer).tobytes())
             if n % 12 == 0:
                 rep.progress(n / total, f"Frame {n} of {total}")
         proc.stdin.close()
@@ -661,8 +734,10 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         partial.unlink(missing_ok=True)
         raise
     partial.replace(out)
+    qa_result = observer.finish()
     with session_scope() as db:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"
         row.review_at = row.expired_at = row.published_at = None   # new render starts review and publication again
+        row.render_meta = render_snapshot(row, settings, qa_result)
     rep.info(f"Rendered {out.name}: {out.stat().st_size / 1e6:.1f} MB. It waits for your review.")

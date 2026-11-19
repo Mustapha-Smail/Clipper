@@ -1,11 +1,14 @@
 """Phase 4: looks for the ink style, and the checks before publishing."""
 
 import numpy as np
+import pytest
 from PIL import Image
+from test_storyboard import SVG
 
 from clipper.db import session_scope
 from clipper.db.models import Idea, Script, Storyboard, StudioEvent, VoiceTake
-from clipper.studio import compliance, looks
+from clipper.settings import Settings
+from clipper.studio import beats, compliance, looks, stage
 
 
 def words(text: str) -> list[dict]:
@@ -29,6 +32,61 @@ def test_looks_redraw_sprites_without_moving_them():
     shadow = np.asarray(looks.shadow(layer, 1080))
     assert shadow[..., 3].max() > 0 and looks.shadow(Image.new("RGBA", (20, 20)), 1080) is None
     assert looks.get("nonsense").name == "ink" and not looks.get("paper").boil
+
+
+def test_look_profiles_centralize_every_render_choice():
+    assert looks.LOOK_NAMES == ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint")
+    old = {name: looks.get(name) for name in ("ink", "paper", "blueprint", "cartoon")}
+    assert (old["ink"].background_kind, old["ink"].line_profile, old["ink"].fill_mode,
+            old["ink"].jitter, old["ink"].entrance_mode) == ("ink_paper", "brush", "wash", 1, "draw")
+    assert (old["paper"].background_kind, old["paper"].fill_mode, old["paper"].shadow,
+            old["paper"].entrance_mode) == ("kraft", "native_flat", True, "pop")
+    assert (old["blueprint"].background_kind, old["blueprint"].line_profile) == ("blueprint", "blueprint")
+    assert (old["cartoon"].scene_mode, old["cartoon"].fill_mode, old["cartoon"].entrance_mode) == \
+        ("place", "cartoon", "pop")
+    clean, rough = looks.get("clean_doodle"), looks.get("rough_paint")
+    assert (clean.background_kind, clean.line_profile, clean.jitter, clean.shadow, len(clean.palette)) == \
+        ("near_white", "uniform", 0, False, 3)
+    assert rough.background_kind == "white" and rough.line_width > 1 and rough.jitter > old["ink"].jitter
+
+
+def test_new_profiles_flatten_colour_and_change_line_weight_without_moving_the_box():
+    sprite = Image.new("RGBA", (60, 40), (0, 0, 0, 0))
+    sprite.paste((35, 33, 31, 255), (8, 17, 52, 23))
+    sprite.paste((174, 142, 102, 170), (15, 8, 45, 17))
+    clean = looks.profiled_sprite(sprite, looks.get("clean_doodle"))
+    rough = looks.profiled_sprite(sprite, looks.get("rough_paint"))
+    assert clean.size == rough.size == sprite.size
+    dark_clean = (np.asarray(clean)[..., :3].mean(axis=2) < 70) & (np.asarray(clean)[..., 3] > 0)
+    dark_rough = (np.asarray(rough)[..., :3].mean(axis=2) < 70) & (np.asarray(rough)[..., 3] > 0)
+    assert dark_rough.sum() > dark_clean.sum() * 1.5
+    for made, profile in ((clean, looks.get("clean_doodle")), (rough, looks.get("rough_paint"))):
+        colours = {tuple(pixel) for pixel in np.asarray(made)[..., :3][np.asarray(made)[..., 3] > 0]}
+        allowed = set(profile.palette) | {(35, 35, 33), (30, 27, 25)}
+        assert colours <= allowed
+
+
+def _ink_board(fmt: str, look: str) -> dict:
+    plan = ('0 shot "A clean comparison" push\n0 actor narrator left talk\n1 draw fridge right large "fridge"\n'
+            '2 write "A clear answer" top big warm\n3 arrow narrator fridge\n4 tick fridge')
+    words = [{"w": f"w{i}", "s": i * 0.45, "e": i * 0.45 + 0.35} for i in range(8)]
+    return {"format": fmt, "words": words, "start": 0.0, "end": 4.0, "scenes": beats.parse_plan(plan, 8),
+            "headings": {}, "look": look}
+
+
+@pytest.mark.parametrize("fmt", ["short", "long"])
+@pytest.mark.parametrize("look", ["clean_doodle", "rough_paint"])
+def test_new_looks_render_the_same_plan_in_both_shapes(fmt, look):
+    data = _ink_board(fmt, look)
+    composer = stage.InkComposer(data, {"fridge": SVG}, Settings(captions_enabled=False), None)
+    frame = np.asarray(composer.frame(2.2).convert("RGB"))
+    expected = (1920, 1080, 3) if fmt == "short" else (1080, 1920, 3)
+    assert frame.shape == expected and (frame < 100).any()
+    assert composer.scenes is data["scenes"]
+    if look == "clean_doodle":
+        assert not composer.boil and tuple(composer.paper.getpixel((0, 0))[:3]) == (250, 249, 246)
+    else:
+        assert composer.boil and tuple(composer.paper.getpixel((0, 0))[:3]) == (255, 255, 255)
 
 
 def test_word_and_line_changes_are_counted():
@@ -63,6 +121,16 @@ def make_video(db, title: str, text: str, music_id=None, look="ink", origin="cla
     db.add(board)
     db.flush()
     return board
+
+
+def test_new_looks_round_trip_without_changing_the_plan(client, app_env):
+    with session_scope() as db:
+        board = make_video(db, "Same plan", "The same beats are drawn in a different visual language.")
+        board_id, original = board.id, list(board.scenes)
+    for name in ("clean_doodle", "rough_paint"):
+        changed = client.patch(f"/api/v1/storyboards/{board_id}", json={"look": name})
+        assert changed.status_code == 200 and changed.json()["look"] == name
+        assert changed.json()["scenes"] == original
 
 
 def test_before_publish_explains_every_point(client, app_env):

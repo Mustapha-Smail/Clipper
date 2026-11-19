@@ -326,6 +326,11 @@ class Storyboard(Base):
         ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id"))
     music_db: Mapped[float] = mapped_column(Float, default=-18.0)        # music level vs the voice, before ducking
     effects: Mapped[bool] = mapped_column(Boolean, default=True)         # pops and whooshes
+    # Per-video attention-sound experiment. "default" inherits Settings; on/off override it.
+    starter_mode: Mapped[str] = mapped_column(String(8), default="default")
+    riser_mode: Mapped[str] = mapped_column(String(8), default="default")
+    # What produced the current successful render, never mutable live settings (studio/animate.py).
+    render_meta: Mapped[dict | None] = mapped_column(JSON)
     # The YouTube text, once written: {titles, title, description, tags, made_at, edited, problems}.
     youtube: Mapped[dict | None] = mapped_column(JSON)
     # The last AI director pass (studio/director.py): its notes per shot and, for one undo, the plan before it.

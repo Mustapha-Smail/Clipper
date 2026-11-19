@@ -105,7 +105,8 @@
             <span class="pill" [class.approved]="(h.score ?? 0) >= 85" [class.failed]="(h.score ?? 0) < 65">{{ h.verdict }}</span>
             @if (h.stats; as st) {
               <span class="small muted">first twist {{ st.first_twist === null ? 'none' : st.first_twist + ' s' }} ·
-                longest gap {{ st.longest_gap === null ? '–' : st.longest_gap + ' s' }} · topic: {{ h.topic }}</span>
+                longest gap {{ st.longest_gap === null ? '–' : st.longest_gap + ' s' }} ·
+                {{ st.timing }} at {{ st.wpm }} wpm · topic: {{ h.topic }}</span>
             }
           </div>
           @if (holdWorst().length) {
@@ -119,6 +120,24 @@
           }
           <details class="hold-more">
             <summary class="small">Every line and the role of each sentence</summary>
+            @if (h.promise; as promise) {
+              <section class="promise-audit" aria-label="Model-labelled promise and loops">
+                <h4>Model-labelled promise and loops</h4>
+                <p><span class="pill" [class.failed]="promise.verdict === 'missing'">{{ promise.verdict }}</span>
+                  {{ promise.reason || 'No reason supplied.' }}
+                  @if (promise.answer_sentence) { <span class="muted"> Answered in sentence {{ promise.answer_sentence }}.</span> }
+                </p>
+                @if (h.loops?.length) {
+                  <ul class="loop-audit">
+                    @for (loop of h.loops; track loop.id) {
+                      <li><strong>{{ loop.main ? 'Main · ' : '' }}{{ loop.question }}</strong>
+                        <span class="muted">sentence {{ loop.opener_sentence }} →
+                          {{ loop.resolver_sentence ? 'sentence ' + loop.resolver_sentence : 'unresolved' }}</span></li>
+                    }
+                  </ul>
+                } @else { <p class="small muted">No concrete loops labelled.</p> }
+              </section>
+            }
             <ul class="deductions">
               @for (l of h.lines; track l.label) {
                 <li><span class="num points" [class.zero]="!l.points">{{ l.points || '0' }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
@@ -133,8 +152,9 @@
                 </li>
               }
             </ol>
-            <p class="small muted">The quick AI tier labels what each sentence does; the score is plain arithmetic on
-              those labels at 150 words a minute, every point shown. It advises; you decide.</p>
+            <p class="small muted">The quick AI tier labels sentence roles, promises and loops; deductions are plain
+              arithmetic, every point shown. Timing is {{ h.stats?.timing ?? 'estimated' }}{{ h.stats?.wpm ?
+              ' at ' + h.stats?.wpm + ' words a minute' : '' }}. It advises; you decide.</p>
           </details>
         } @else {
           <div class="hold-head">

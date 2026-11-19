@@ -1,5 +1,10 @@
 import numpy as np
+import pytest
+from sqlalchemy import inspect
 
+from clipper import db as db_mod
+from clipper.db import session_scope
+from clipper.db.models import Script, Storyboard
 from clipper.jobs import ConsoleReporter
 from clipper.settings import Settings
 from clipper.studio import animate, chatterbox, sound, voice
@@ -38,6 +43,48 @@ def test_nothing_is_added_when_off_or_when_the_check_is_stale():
     assert events == [] and "out of date" in notes[0]
 
 
+@pytest.mark.parametrize(("mode", "inherited", "expected"), [
+    ("default", False, False), ("default", True, True), ("on", False, True), ("on", True, True),
+    ("off", False, False), ("off", True, False),
+])
+def test_per_video_modes_resolve_against_settings(mode, inherited, expected):
+    assert animate.effective_attention(mode, inherited) is expected
+
+
+def test_effects_off_suppresses_even_explicit_attention_sounds():
+    data = {**board(), "effects": False, "starter_mode": "on", "riser_mode": "on"}
+    events, notes = animate.attention_events(data, word_time(data), Settings())
+    assert events == [] and "suppressed" in notes[0]
+
+
+def test_failed_render_keeps_the_previous_snapshot(app_env):
+    with session_scope() as db:
+        script = Script(title="No voice", sections=[])
+        db.add(script)
+        db.flush()
+        row = Storyboard(script_id=script.id, title="No voice", style="flat",
+                         scenes=[{"start_word": 0, "background": "paper", "camera": "still", "elements": []}],
+                         render_meta={"version": 1, "at": "before"})
+        db.add(row)
+        db.flush()
+        board_id = row.id
+    with pytest.raises(RuntimeError, match="voice take"):
+        animate.render(board_id, Settings(), ConsoleReporter())
+    with session_scope() as db:
+        assert db.get(Storyboard, board_id).render_meta == {"version": 1, "at": "before"}
+
+
+def test_render_experiment_migration_goes_down_and_up_on_sqlite(app_env):
+    from alembic import command
+
+    command.downgrade(db_mod._alembic_config(), "b6e2c8f4a913")
+    columns = {column["name"] for column in inspect(db_mod.get_engine()).get_columns("storyboards")}
+    assert not {"starter_mode", "riser_mode", "render_meta"} & columns
+    command.upgrade(db_mod._alembic_config(), "head")
+    columns = {column["name"] for column in inspect(db_mod.get_engine()).get_columns("storyboards")}
+    assert {"starter_mode", "riser_mode", "render_meta"} <= columns
+
+
 def test_a_twist_too_early_for_a_riser_is_skipped_and_said():
     data = board(["twist", "rehook", "fact", "payoff"])
     events, notes = animate.attention_events(data, word_time(data), Settings(sound_riser=True))
@@ -60,7 +107,7 @@ def test_pace_is_words_a_minute_with_pauses():
     assert voice.pace(timeline[:5]) is None
 
 
-def test_rehooks_get_a_lift_and_a_short_opens_with_urgency(monkeypatch):
+def test_rehooks_get_a_lift_and_a_short_opens_with_appropriate_energy(monkeypatch):
     said = voice.sentences(SECTIONS[0]["text"])
     lifts = voice.lifted(said, ["But here is the strange part."])
     assert lifts == frozenset({1})
@@ -72,4 +119,5 @@ def test_rehooks_get_a_lift_and_a_short_opens_with_urgency(monkeypatch):
     monkeypatch.setattr(chatterbox.llm, "ask", ask)
     out = chatterbox.direct(said, ConsoleReporter(), short=True, lifts=lifts)
     assert "<video>a YouTube Short</video>" in seen["content"] and "1. (rehook) But here" in seen["content"]
-    assert "urgency" in seen["system"] and out[1].startswith("[surprised]")
+    assert "decisive" in seen["system"] and "never manufacture urgency" in seen["system"]
+    assert out[1].startswith("[surprised]")

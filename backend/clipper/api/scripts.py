@@ -64,7 +64,7 @@ def script_out(script: Script, job: Job | None) -> s.ScriptOut:
     return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
                        can_undo_rewrite=bool(script.previous_sections),
                        plain=plain.check(script.sections or [], plain.level(), script.title),
-                       hold=hold.score(script.sections or [], script.hold, script.video),
+                       hold=hold.score_script(script),
                        story_map=story_map_mod.out(script))
 
 

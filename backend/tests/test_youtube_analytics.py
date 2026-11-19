@@ -215,6 +215,20 @@ def test_watching_at_is_a_straight_line_between_the_nearest_points():
     assert analytics.watching_at([[0.01, 1.1], [1.0, 0.3]], 0.0) == (1.1, "YouTube's first point, 1.10 at 1%")
 
 
+def test_five_second_retention_explains_when_it_cannot_be_measured():
+    short = VideoAnalytics(youtube_id="AAAAAAAAAAA", source="buffer", fetched_at=utcnow(), duration_s=4,
+                           retention=[[0.0, 1.0], [1.0, 0.5]])
+    unknown = VideoAnalytics(youtube_id="BBBBBBBBBBB", source="buffer", fetched_at=utcnow(),
+                             retention=[[0.0, 1.0], [1.0, 0.5]])
+    board, script = Storyboard(words=[], format="short"), Script(sections=[])
+    a = analytics.for_video(board, script, [short])
+    b = analytics.for_video(board, script, [unknown])
+    assert a["kept_at_5s"] is None and a["retention"]["why"]["kept_at_5s"] == \
+        "the video ends before five seconds"
+    assert b["kept_at_5s"] is None and b["retention"]["why"]["kept_at_5s"] == \
+        "the video's length is unknown"
+
+
 class FakeYouTube:
     """The two Google endpoints analytics.py calls, answering from tables, recording each call."""
 
@@ -293,10 +307,13 @@ def test_refresh_batches_calls_and_learning_shows_retention_with_its_arithmetic(
     held_row = videos["Held"]
     # first twist (the rehook "But") is word 6 at 2.5 s of 10 s = 25%, a point of the curve: 0.80
     # the payoff ("So") is word 14 at 6.5 s of 10 s = 65%, another point: 0.55
-    assert (held_row["avg_viewed"], held_row["kept_at_twist"], held_row["kept_at_payoff"]) == (72.0, 80, 55)
+    assert (held_row["avg_viewed"], held_row["kept_at_5s"], held_row["kept_at_twist"],
+            held_row["kept_at_payoff"]) == (72.0, 64, 80, 55)
     lines = held_row["retention"]["lines"]
-    assert "First twist at 2.5 s (word 6): 2.5 / 10 s = 25% in" in lines[2]
-    assert lines[3].startswith("Payoff at 6.5 s (word 14)") and lines[3].endswith("55% still watching")
+    assert lines[2].startswith("Five-second mark: 5.0 / 10 s = 50% in") and lines[2].endswith(
+        "64% still watching")
+    assert "First twist at 2.5 s (word 6): 2.5 / 10 s = 25% in" in lines[3]
+    assert lines[4].startswith("Payoff at 6.5 s (word 14)") and lines[4].endswith("55% still watching")
     unchecked = videos["Unchecked"]
     assert unchecked["avg_viewed"] == 48.0 and unchecked["kept_at_twist"] is None
     assert "no retention curve" in unchecked["retention"]["why"]["kept_at_twist"]
@@ -306,8 +323,8 @@ def test_refresh_batches_calls_and_learning_shows_retention_with_its_arithmetic(
 
     with session_scope() as db:
         table = learning._video_table(learning.ranked(learning.published(db, theme_id))["videos"])
-    assert "Watch: average viewed 72.0%, 80% still watching at the first twist, 55% still watching at the payoff" \
-        in table
+    assert ("Watch: average viewed 72.0%, 64% still watching at five seconds, "
+            "80% still watching at the first twist, 55% still watching at the payoff") in table
     assert "Watch: not measured" in table
 
     calls = len(fake.calls)
