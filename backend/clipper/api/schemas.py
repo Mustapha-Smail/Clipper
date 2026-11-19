@@ -940,7 +940,7 @@ class PlaceOut(BaseModel):
     origin: str
     updated_at: UtcDatetime | None = None
     used_in: int = 0
-    redrawn: list[Literal["wide", "tall"]] = []   # shapes of a code place that Claude drew instead
+    by_code: bool = False              # drawn by code now (a code place you have not redrawn or deleted)
 
 
 class PlaceRedraw(BaseModel):

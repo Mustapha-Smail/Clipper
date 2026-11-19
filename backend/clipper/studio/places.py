@@ -4,9 +4,9 @@ The planner names a place on shot lines ("12 shot ... in scriptorium"); a shot
 without one stays where the one before was. Six places are drawn by code
 (`cartoon.PLACES`); any other is drawn once by Claude in the house style and
 kept in `studio_places`, wide for long videos and tall for Shorts, each only
-when a cartoon video first needs it. A code place redrawn from the library gets
-a row too: its drawing replaces the code one in that shape only, and deleting
-the row brings the code drawing back. Storyboards planned before places existed
+when a cartoon video first needs it. A code place redrawn or deleted from the
+library gets a row too and from then on is like any other: Claude draws it when
+a video needs it. Deleting that row brings the code drawing back. Storyboards planned before places existed
 get them from a quick call (`assign`) the first time they are drawn as cartoons,
 so changing the look never needs a new plan.
 """
@@ -145,8 +145,9 @@ def check(svg: str, tall: bool) -> str:
     return svg
 
 
-def needed(board: Storyboard) -> list[str]:
-    return [n for n in dict.fromkeys(resolved(board.scenes)) if n not in cartoon.PLACES]
+def needed(board: Storyboard, code: set[str] | frozenset = frozenset(cartoon.PLACES)) -> list[str]:
+    """The places of the board that Claude draws: all but those still drawn by code."""
+    return [n for n in dict.fromkeys(resolved(board.scenes)) if n not in code]
 
 
 def prepare(storyboard_id: int, rep: Reporter) -> None:
@@ -159,7 +160,7 @@ def prepare(storyboard_id: int, rep: Reporter) -> None:
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         tall = board.format == "short"
-        names = needed(board)
+        names = needed(board, by_code(db))
         _register(db, names, {})
         db.flush()
         todo = [(p.name, p.description) for p in db.scalars(select(StudioPlace).where(StudioPlace.name.in_(names)))
@@ -192,11 +193,14 @@ def prepare(storyboard_id: int, rep: Reporter) -> None:
 
 
 def stored(place: StudioPlace, tall: bool) -> str | None:
-    """The drawing of a place in the shape asked for. A place drawn by code uses only a drawing of that
-    shape (code draws the other one better); any other falls back to the shape it has."""
-    if place.name in cartoon.PLACES:
-        return place.svg_tall if tall else place.svg
+    """The drawing of a place in the shape asked for, or the other shape if that is all there is."""
     return (place.svg_tall or place.svg) if tall else (place.svg or place.svg_tall)
+
+
+def by_code(db) -> set[str]:
+    """The code places still drawn by code: those without a row of their own."""
+    taken = set(db.scalars(select(StudioPlace.name).where(StudioPlace.name.in_(list(cartoon.PLACES)))))
+    return set(cartoon.PLACES) - taken
 
 
 def drawings(names: list[str], tall: bool) -> dict[str, str]:

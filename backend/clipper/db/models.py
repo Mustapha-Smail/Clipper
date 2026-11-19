@@ -248,8 +248,8 @@ class StudioPlace(Base):
     """A place for the cartoon look (a study, a scriptorium...), drawn once and used by every video.
 
     Two drawings, made only when a video needs them: wide for long videos, tall for
-    Shorts. The six places drawn by code (`cartoon.PLACES`) have a row only once Claude redrew
-    one from the library; that drawing replaces the code one in its shape.
+    Shorts. The six places drawn by code (`cartoon.PLACES`) have a row only once redrawn or
+    deleted from the library; from then on Claude draws them like any other place.
     """
 
     __tablename__ = "studio_places"

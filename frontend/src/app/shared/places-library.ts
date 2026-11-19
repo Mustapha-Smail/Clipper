@@ -10,7 +10,8 @@ import { Toasts } from '../core/toast';
   selector: 'app-places-library',
   imports: [FormsModule],
   template: `
-    <p class="muted small intro">Backgrounds for the cartoon look. Six are drawn by code (Claude can redraw them, and you can go back to the code drawing); for anywhere else the planner names
+    <p class="muted small intro">Backgrounds for the cartoon look. Six come drawn by code: redraw or delete one and Claude draws it like any other (Use code drawing brings it
+      back); for anywhere else the planner names
       a place and Claude draws it the first time a cartoon video needs it (about 4 cents), wide for long videos and
       tall for Shorts. Every later video that names it reuses the drawing.</p>
     @if (places(); as list) {
@@ -41,10 +42,10 @@ import { Toasts } from '../core/toast';
               <div class="row">
                 <button class="sm" (click)="editing.set(p.name); shape.set(p.wide || !p.tall ? 'wide' : 'tall')"
                         [disabled]="drawing() === p.name">{{ p.wide || p.tall ? 'Redraw' : 'Draw it' }}</button>
-                @if (!p.built_in) {
+                @if (p.built_in && !p.by_code) {
+                  <button class="sm quiet" (click)="remove(p)">Use code drawing</button>
+                } @else {
                   <button class="sm quiet danger" (click)="remove(p)">Delete</button>
-                } @else if (p.redrawn.length) {
-                  <button class="sm quiet danger" (click)="remove(p)">Use code drawing</button>
                 }
               </div>
             }
@@ -97,11 +98,7 @@ export class PlacesLibrary {
   }
 
   protected status(p: Place): string {
-    if (p.built_in) {
-      if (!p.redrawn.length) return 'Drawn by code';
-      return p.redrawn.length === 2 ? 'Redrawn by Claude, wide and tall'
-        : `Redrawn by Claude ${p.redrawn[0]}; ${p.redrawn[0] === 'wide' ? 'tall' : 'wide'} by code`;
-    }
+    if (p.by_code) return 'Drawn by code';
     if (p.wide && p.tall) return 'Drawn wide and tall';
     if (p.wide) return 'Drawn wide; tall when a Short needs it';
     if (p.tall) return 'Drawn tall; wide when a long video needs it';
@@ -126,24 +123,24 @@ export class PlacesLibrary {
   }
 
   protected async remove(p: Place): Promise<void> {
-    const back = p.built_in;
-    if (!(await this.confirm.ask({
-      title: back ? `Use the code drawing of ${this.label(p.name)}?` : `Delete ${this.label(p.name)}?`,
-      message: back
-        ? "Claude's drawings of it are deleted and videos use the code drawing again."
-        : p.used_in
-          ? `It is named in ${p.used_in} storyboard${p.used_in === 1 ? '' : 's'}: they show the plain colour background until it is drawn again.`
-          : 'Its drawings are deleted.',
-      confirm: back ? 'Use code drawing' : 'Delete', danger: true }))) return;
+    const name = this.label(p.name);
+    const back = p.built_in && !p.by_code;
+    const named = p.used_in ? `It is named in ${p.used_in} storyboard${p.used_in === 1 ? '' : 's'}. ` : '';
+    if (!(await this.confirm.ask(back
+      ? { title: `Use the code drawing of ${name}?`, message: "Claude's drawings of it are deleted.",
+          confirm: 'Use code drawing' }
+      : p.built_in
+        ? { title: `Delete the code drawing of ${name}?`, danger: true, confirm: 'Delete',
+            message: `${named}Claude draws it the first time a cartoon video needs it, like any other place. `
+              + 'Use code drawing brings it back.' }
+        : { title: `Delete ${name}?`, danger: true, confirm: 'Delete',
+            message: named ? `${named}They show the plain colour background until it is drawn again.`
+              : 'Its drawings are deleted.' }))) return;
     this.api.deletePlace(p.name).subscribe({
       next: () => {
-        if (back) {
-          this.version = Date.now();
-          this.places.update((list) => list && list.map((x) => (x.name === p.name
-            ? { ...x, redrawn: [], origin: 'code' } : x)));
-        } else {
-          this.places.update((list) => list && list.filter((x) => x.name !== p.name));
-        }
+        this.version = Date.now();
+        if (p.built_in) this.load();
+        else this.places.update((list) => list && list.filter((x) => x.name !== p.name));
       },
       error: (err) => this.toasts.error(err),
     });

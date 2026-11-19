@@ -128,7 +128,6 @@ def test_places_in_the_api(client, app_env):
     assert [p["name"] for p in listed][:6] == list(cartoon.PLACES) and all(p["built_in"] for p in listed)
     image = client.get("/api/v1/places/night/image", params={"shape": "tall", "size": 120})
     assert image.status_code == 200 and image.headers["content-type"] == "image/png"
-    assert client.delete("/api/v1/places/night").status_code == 404
 
     with session_scope() as db:
         idea = Idea(title="x")
@@ -151,26 +150,37 @@ def test_places_in_the_api(client, app_env):
     assert client.get("/api/v1/places/lighthouse/image").status_code == 404
 
 
-def test_a_code_place_can_be_redrawn_and_put_back(client, app_env, monkeypatch):
+def test_a_code_place_can_be_redrawn_deleted_and_put_back(client, app_env, monkeypatch):
     asked = []
 
     def fake_draw(name, description, tall, instruction=""):
         asked.append((name, description, tall, instruction))
         return TALL if tall else WIDE
 
+    def place(name):
+        return next(p for p in client.get("/api/v1/places").json() if p["name"] == name)
+
     monkeypatch.setattr(places, "draw", fake_draw)
     code_png = client.get("/api/v1/places/night/image", params={"size": 120}).content
+    assert place("night")["by_code"]
     out = client.post("/api/v1/places/night/redraw", json={"instruction": "more stars"}).json()
     assert asked == [("night", cartoon.BUILT_IN["night"], False, "more stars")]
-    assert out["built_in"] and out["redrawn"] == ["wide"] and out["origin"] == "claude"
+    assert out["built_in"] and not out["by_code"] and out["wide"] and not out["tall"]
     assert client.get("/api/v1/places/night/image", params={"size": 120}).content != code_png
-    # only the shape Claude drew replaces the code: a Short still gets the code's tall night
-    assert places.drawings(["night"], tall=False) == {"night": WIDE}
-    assert places.drawings(["night"], tall=True) == {}
-    listed = client.get("/api/v1/places").json()
-    assert [p["name"] for p in listed].count("night") == 1
+    assert places.drawings(["night"], tall=True) == {"night": WIDE}     # like any Claude place
+    assert [p["name"] for p in client.get("/api/v1/places").json()].count("night") == 1
+    # deleting Claude's drawing brings the code back
     assert client.delete("/api/v1/places/night").status_code == 204
-    night = next(p for p in client.get("/api/v1/places").json() if p["name"] == "night")
-    assert night["redrawn"] == [] and night["origin"] == "code"
+    assert place("night")["by_code"]
     assert client.get("/api/v1/places/night/image", params={"size": 120}).content == code_png
-    assert client.delete("/api/v1/places/night").status_code == 404
+    # deleting the code place: Claude draws it when a video needs it, like any other
+    assert client.delete("/api/v1/places/hills").status_code == 204
+    hills = place("hills")
+    assert not hills["by_code"] and not hills["wide"] and not hills["tall"]
+    assert client.get("/api/v1/places/hills/image").status_code == 404
+    with session_scope() as db:
+        assert places.by_code(db) == set(cartoon.PLACES) - {"hills"}
+    board = Storyboard(format="long", style="ink", title="x", words=[],
+                       scenes=[beats.shot(0, place="hills"), beats.shot(3, place="town")])
+    assert places.needed(board, set(cartoon.PLACES) - {"hills"}) == ["hills"]
+    assert places.needed(board) == []
