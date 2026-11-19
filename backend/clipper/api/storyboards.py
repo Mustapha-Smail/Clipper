@@ -664,17 +664,24 @@ def _place_usage(db: Session) -> dict[str, int]:
     return counts
 
 
+def _place_out(name: str, row: StudioPlace | None, used: dict[str, int]) -> s.PlaceOut:
+    if name in cartoon.PLACES:
+        redrawn = [shape for shape, svg in (("wide", row and row.svg), ("tall", row and row.svg_tall)) if svg]
+        return s.PlaceOut(name=name, description=row.description if row else cartoon.BUILT_IN[name], built_in=True,
+                          wide=True, tall=True, origin="claude" if redrawn else "code",
+                          updated_at=row.updated_at if row else None, used_in=used.get(name, 0), redrawn=redrawn)
+    return s.PlaceOut(name=row.name, description=row.description, built_in=False, wide=row.svg is not None,
+                      tall=row.svg_tall is not None, origin=row.origin, updated_at=row.updated_at,
+                      used_in=used.get(name, 0))
+
+
 @router.get("/places", response_model=list[s.PlaceOut])
 def list_places(db: Session = Depends(get_db)):
-    """The places of the cartoon look: six drawn by code, then those Claude drew, used or waiting."""
+    """The places of the cartoon look: six drawn by code (or redrawn by Claude), then those Claude drew."""
     used = _place_usage(db)
-    out = [s.PlaceOut(name=n, description=d, built_in=True, wide=True, tall=True, origin="code",
-                      used_in=used.get(n, 0)) for n, d in cartoon.BUILT_IN.items()]
-    for p in db.scalars(select(StudioPlace).order_by(StudioPlace.name)):
-        out.append(s.PlaceOut(name=p.name, description=p.description, built_in=False, wide=p.svg is not None,
-                              tall=p.svg_tall is not None, origin=p.origin, updated_at=p.updated_at,
-                              used_in=used.get(p.name, 0)))
-    return out
+    rows = {p.name: p for p in db.scalars(select(StudioPlace).order_by(StudioPlace.name))}
+    out = [_place_out(n, rows.get(n), used) for n in cartoon.BUILT_IN]
+    return out + [_place_out(n, p, used) for n, p in rows.items() if n not in cartoon.PLACES]
 
 
 @router.get("/places/{name}/image")
@@ -682,12 +689,11 @@ def place_image(name: str, shape: str = Query("wide", pattern="^(wide|tall)$"), 
                 db: Session = Depends(get_db)):
     """What the camera sees of the place when it rests in the middle, as PNG."""
     tall = shape == "tall"
-    svg = None
+    row = db.get(StudioPlace, name)
+    svg = places_mod.stored(row, tall) if row else None
     if name not in cartoon.PLACES:
-        row = db.get(StudioPlace, name)
         if row is None:
             raise HTTPException(404, "No such place")
-        svg = (row.svg_tall or row.svg) if tall else (row.svg or row.svg_tall)
         if svg is None:
             raise HTTPException(404, "Not drawn yet: it is drawn when a cartoon video first needs it")
     return Response(cartoon.preview(name, tall, size, svg), media_type="image/png",
@@ -696,12 +702,13 @@ def place_image(name: str, shape: str = Query("wide", pattern="^(wide|tall)$"), 
 
 @router.post("/places/{name}/redraw", response_model=s.PlaceOut)
 def redraw_place(name: str, body: s.PlaceRedraw, db: Session = Depends(get_db)):
-    """Have Claude draw the place (again), wide or tall, optionally with your instruction. About 30 seconds."""
-    if name in cartoon.PLACES:
-        raise HTTPException(400, "This place is drawn by code and cannot be redrawn")
+    """Have Claude draw the place (again), wide or tall, optionally with your instruction. About 30 seconds.
+    For a place drawn by code, Claude's drawing replaces the code one in that shape until you delete it."""
     place = db.get(StudioPlace, name)
     if place is None:
-        raise HTTPException(404, "No such place")
+        if name not in cartoon.PLACES:
+            raise HTTPException(404, "No such place")
+        place = StudioPlace(name=name, description=cartoon.BUILT_IN[name])
     if body.description is not None:
         place.description = body.description.strip()
     tall = body.shape == "tall"
@@ -715,18 +722,19 @@ def redraw_place(name: str, body: s.PlaceRedraw, db: Session = Depends(get_db)):
     else:
         place.svg = svg
     place.origin, place.updated_at = "claude", utcnow()
+    db.add(place)
     db.flush()
-    return s.PlaceOut(name=place.name, description=place.description, built_in=False, wide=place.svg is not None,
-                      tall=place.svg_tall is not None, origin=place.origin, updated_at=place.updated_at,
-                      used_in=_place_usage(db).get(name, 0))
+    return _place_out(name, place, _place_usage(db))
 
 
 @router.delete("/places/{name}", status_code=204)
 def delete_place(name: str, db: Session = Depends(get_db)):
-    """Forget a drawn place. Videos that name it show the plain colour background until it is drawn again."""
+    """Forget a drawn place. Videos that name it show the plain colour background until it is drawn again.
+    For a place drawn by code, this forgets Claude's drawings and brings the code drawing back."""
     place = db.get(StudioPlace, name)
     if place is None:
-        raise HTTPException(404, "No such place" if name not in cartoon.PLACES else "Places drawn by code stay")
+        raise HTTPException(404, "No such place" if name not in cartoon.PLACES
+                            else "This place is already drawn by code")
     db.delete(place)
 
 

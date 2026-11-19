@@ -10,7 +10,7 @@ import { Toasts } from '../core/toast';
   selector: 'app-places-library',
   imports: [FormsModule],
   template: `
-    <p class="muted small intro">Backgrounds for the cartoon look. Six are drawn by code; for anywhere else the planner names
+    <p class="muted small intro">Backgrounds for the cartoon look. Six are drawn by code (Claude can redraw them, and you can go back to the code drawing); for anywhere else the planner names
       a place and Claude draws it the first time a cartoon video needs it (about 4 cents), wide for long videos and
       tall for Shorts. Every later video that names it reuses the drawing.</p>
     @if (places(); as list) {
@@ -24,27 +24,29 @@ import { Toasts } from '../core/toast';
             </div>
             <div class="name">{{ label(p.name) }}</div>
             <div class="small muted">{{ p.description }}</div>
-            <div class="small muted">{{ p.built_in ? 'Drawn by code' : status(p) }} · used in {{ p.used_in }}
+            <div class="small muted">{{ status(p) }} · used in {{ p.used_in }}
               {{ p.used_in === 1 ? 'storyboard' : 'storyboards' }}</div>
-            @if (!p.built_in) {
-              @if (editing() === p.name) {
-                <input type="text" #how placeholder="What to change: warmer light, more books, a fireplace…"
-                       (keydown.enter)="redraw(p, shape(), how.value)" />
-                <div class="row">
-                  <select [ngModel]="shape()" (ngModelChange)="shape.set($event)" aria-label="Which drawing">
-                    <option value="wide">Wide (long videos)</option><option value="tall">Tall (Shorts)</option>
-                  </select>
-                  <button class="sm primary" (click)="redraw(p, shape(), how.value)" [disabled]="drawing() === p.name">
-                    {{ drawing() === p.name ? 'Drawing… about 30 s' : 'Draw' }}</button>
-                  <button class="sm quiet" (click)="editing.set(null)">Cancel</button>
-                </div>
-              } @else {
-                <div class="row">
-                  <button class="sm" (click)="editing.set(p.name); shape.set(p.wide || !p.tall ? 'wide' : 'tall')"
-                          [disabled]="drawing() === p.name">{{ p.wide || p.tall ? 'Redraw' : 'Draw it' }}</button>
+            @if (editing() === p.name) {
+              <input type="text" #how placeholder="What to change: warmer light, more books, a fireplace…"
+                     (keydown.enter)="redraw(p, shape(), how.value)" />
+              <div class="row">
+                <select [ngModel]="shape()" (ngModelChange)="shape.set($event)" aria-label="Which drawing">
+                  <option value="wide">Wide (long videos)</option><option value="tall">Tall (Shorts)</option>
+                </select>
+                <button class="sm primary" (click)="redraw(p, shape(), how.value)" [disabled]="drawing() === p.name">
+                  {{ drawing() === p.name ? 'Drawing… about 30 s' : 'Draw' }}</button>
+                <button class="sm quiet" (click)="editing.set(null)">Cancel</button>
+              </div>
+            } @else {
+              <div class="row">
+                <button class="sm" (click)="editing.set(p.name); shape.set(p.wide || !p.tall ? 'wide' : 'tall')"
+                        [disabled]="drawing() === p.name">{{ p.wide || p.tall ? 'Redraw' : 'Draw it' }}</button>
+                @if (!p.built_in) {
                   <button class="sm quiet danger" (click)="remove(p)">Delete</button>
-                </div>
-              }
+                } @else if (p.redrawn.length) {
+                  <button class="sm quiet danger" (click)="remove(p)">Use code drawing</button>
+                }
+              </div>
             }
           </article>
         }
@@ -95,6 +97,11 @@ export class PlacesLibrary {
   }
 
   protected status(p: Place): string {
+    if (p.built_in) {
+      if (!p.redrawn.length) return 'Drawn by code';
+      return p.redrawn.length === 2 ? 'Redrawn by Claude, wide and tall'
+        : `Redrawn by Claude ${p.redrawn[0]}; ${p.redrawn[0] === 'wide' ? 'tall' : 'wide'} by code`;
+    }
     if (p.wide && p.tall) return 'Drawn wide and tall';
     if (p.wide) return 'Drawn wide; tall when a Short needs it';
     if (p.tall) return 'Drawn tall; wide when a long video needs it';
@@ -119,14 +126,25 @@ export class PlacesLibrary {
   }
 
   protected async remove(p: Place): Promise<void> {
+    const back = p.built_in;
     if (!(await this.confirm.ask({
-      title: `Delete ${this.label(p.name)}?`,
-      message: p.used_in
-        ? `It is named in ${p.used_in} storyboard${p.used_in === 1 ? '' : 's'}: they show the plain colour background until it is drawn again.`
-        : 'Its drawings are deleted.',
-      confirm: 'Delete', danger: true }))) return;
+      title: back ? `Use the code drawing of ${this.label(p.name)}?` : `Delete ${this.label(p.name)}?`,
+      message: back
+        ? "Claude's drawings of it are deleted and videos use the code drawing again."
+        : p.used_in
+          ? `It is named in ${p.used_in} storyboard${p.used_in === 1 ? '' : 's'}: they show the plain colour background until it is drawn again.`
+          : 'Its drawings are deleted.',
+      confirm: back ? 'Use code drawing' : 'Delete', danger: true }))) return;
     this.api.deletePlace(p.name).subscribe({
-      next: () => this.places.update((list) => list && list.filter((x) => x.name !== p.name)),
+      next: () => {
+        if (back) {
+          this.version = Date.now();
+          this.places.update((list) => list && list.map((x) => (x.name === p.name
+            ? { ...x, redrawn: [], origin: 'code' } : x)));
+        } else {
+          this.places.update((list) => list && list.filter((x) => x.name !== p.name));
+        }
+      },
       error: (err) => this.toasts.error(err),
     });
   }

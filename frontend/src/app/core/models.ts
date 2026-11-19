@@ -574,6 +574,8 @@ export interface Place {
   origin: string;
   updated_at: string | null;
   used_in: number;
+  /** Shapes of a code place that Claude drew instead; deleting the place brings the code drawing back. */
+  redrawn: ('wide' | 'tall')[];
 }
 
 export interface LivelinessScore {

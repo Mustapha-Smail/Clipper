@@ -4,7 +4,9 @@ The planner names a place on shot lines ("12 shot ... in scriptorium"); a shot
 without one stays where the one before was. Six places are drawn by code
 (`cartoon.PLACES`); any other is drawn once by Claude in the house style and
 kept in `studio_places`, wide for long videos and tall for Shorts, each only
-when a cartoon video first needs it. Storyboards planned before places existed
+when a cartoon video first needs it. A code place redrawn from the library gets
+a row too: its drawing replaces the code one in that shape only, and deleting
+the row brings the code drawing back. Storyboards planned before places existed
 get them from a quick call (`assign`) the first time they are drawn as cartoons,
 so changing the look never needs a new plan.
 """
@@ -189,12 +191,19 @@ def prepare(storyboard_id: int, rep: Reporter) -> None:
                  + ", ".join(failed))
 
 
+def stored(place: StudioPlace, tall: bool) -> str | None:
+    """The drawing of a place in the shape asked for. A place drawn by code uses only a drawing of that
+    shape (code draws the other one better); any other falls back to the shape it has."""
+    if place.name in cartoon.PLACES:
+        return place.svg_tall if tall else place.svg
+    return (place.svg_tall or place.svg) if tall else (place.svg or place.svg_tall)
+
+
 def drawings(names: list[str], tall: bool) -> dict[str, str]:
-    """The stored drawings of these places in the shape asked for (the other shape if that is all there is)."""
+    """The stored drawings of these places in the shape asked for (see `stored`)."""
     with session_scope() as db:
         rows = db.scalars(select(StudioPlace).where(StudioPlace.name.in_(names))).all() if names else []
-        return {p.name: (p.svg_tall or p.svg) if tall else (p.svg or p.svg_tall) for p in rows
-                if p.svg or p.svg_tall}
+        return {p.name: svg for p in rows if (svg := stored(p, tall))}
 
 
 def safe_name(name: str) -> str:

@@ -129,7 +129,7 @@ def test_places_in_the_api(client, app_env):
     image = client.get("/api/v1/places/night/image", params={"shape": "tall", "size": 120})
     assert image.status_code == 200 and image.headers["content-type"] == "image/png"
     assert client.delete("/api/v1/places/night").status_code == 404
-    assert client.post("/api/v1/places/night/redraw", json={}).status_code == 400
+
     with session_scope() as db:
         idea = Idea(title="x")
         db.add(idea)
@@ -149,3 +149,28 @@ def test_places_in_the_api(client, app_env):
     names = {p["name"]: p for p in client.get("/api/v1/places").json()}
     assert not names["lighthouse"]["wide"] and names["lighthouse"]["used_in"] == 1
     assert client.get("/api/v1/places/lighthouse/image").status_code == 404
+
+
+def test_a_code_place_can_be_redrawn_and_put_back(client, app_env, monkeypatch):
+    asked = []
+
+    def fake_draw(name, description, tall, instruction=""):
+        asked.append((name, description, tall, instruction))
+        return TALL if tall else WIDE
+
+    monkeypatch.setattr(places, "draw", fake_draw)
+    code_png = client.get("/api/v1/places/night/image", params={"size": 120}).content
+    out = client.post("/api/v1/places/night/redraw", json={"instruction": "more stars"}).json()
+    assert asked == [("night", cartoon.BUILT_IN["night"], False, "more stars")]
+    assert out["built_in"] and out["redrawn"] == ["wide"] and out["origin"] == "claude"
+    assert client.get("/api/v1/places/night/image", params={"size": 120}).content != code_png
+    # only the shape Claude drew replaces the code: a Short still gets the code's tall night
+    assert places.drawings(["night"], tall=False) == {"night": WIDE}
+    assert places.drawings(["night"], tall=True) == {}
+    listed = client.get("/api/v1/places").json()
+    assert [p["name"] for p in listed].count("night") == 1
+    assert client.delete("/api/v1/places/night").status_code == 204
+    night = next(p for p in client.get("/api/v1/places").json() if p["name"] == "night")
+    assert night["redrawn"] == [] and night["origin"] == "code"
+    assert client.get("/api/v1/places/night/image", params={"size": 120}).content == code_png
+    assert client.delete("/api/v1/places/night").status_code == 404
