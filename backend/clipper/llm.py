@@ -38,6 +38,7 @@ TASKS = {
     "ideas": ("writing", "Suggesting ideas"),
     "ideas_proven": ("writing", "Ideas from a proven theme"),
     "theme_insights": ("writing", "Learning from a theme's videos"),
+    "story_map": ("writing", "Planning source-backed story maps"),
     "script_write": ("writing", "Writing scripts"),
     "rewrite": ("writing", "Rewriting a section"),
     "simplify": ("writing", "Making scripts simpler"),

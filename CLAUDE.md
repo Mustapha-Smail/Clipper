@@ -140,12 +140,18 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   YouTube data comes only from the official Data API (`studio/youtube.py`,
   `YOUTUBE_API_KEY`), never from scraping. Editing an idea's text clears its
   check, because the old score no longer applies.
-- `studio/script.py`: research, write and factcheck are worker job stages
-  (`jobs.STAGES`), tied to a script by `params["script_id"]`. The writer may use
-  only the research notes; every web fact keeps its numbered source. Web search
-  goes through `claude.search` (basic `web_search_20250305`, which returns
-  citations); structured answers through `claude.ask`. The two cannot be one
-  call. A fact check stores the hash of the text it checked.
+- `studio/script.py`: research, story map, write and factcheck are worker job
+  stages (`jobs.STAGES`), tied to a script by `params["script_id"]`.
+  `studio/story_map.py` is the source-backed contract between research and prose:
+  the model proposes opening, ordered beats, at most two named open loops and an
+  ending; code filters citations, validates IDs and loop resolution, and hashes
+  every upstream input. A changed title, format, target, audience, idea or cited
+  research makes it stale with an exact reason. Writers and rewrites receive only
+  a current valid map when one exists; redraft rebuilds a missing legacy map and
+  requires confirmation before replacing a stale or edited one. The writer may
+  use only the research notes for facts; every web fact keeps its numbered source.
+  Web search goes through `llm.search`; structured answers through `llm.ask`.
+  The two cannot be one call. A fact check stores the hash of the text it checked.
 - `studio/voice.py`: takes are job stages (speak or prepare, then align) keyed
   by `params["take_id"]`. Every take ends as `voice.wav` (48 kHz mono,
   loudnorm) under `data/studio/script-N/take-M/`, with `timeline.json` (script

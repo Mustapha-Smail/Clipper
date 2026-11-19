@@ -75,6 +75,31 @@ def test_without_youtube_the_score_is_partial_and_says_so():
     assert any("YOUTUBE_API_KEY" in f for f in result["flags"])
 
 
+def test_new_hook_total_is_code_owned_and_each_dimension_has_a_score_line():
+    judged = judgement(hook_score=10, context_score=2, lean_score=1, turn_score=0,
+                       promise_score=2, first_visual_score=1)
+    result = ideas.assess(idea(None, judged, shorts=0))
+    hook_lines = [line for line in result["breakdown"] if line["label"].startswith("Hook ")]
+    assert hook_lines == [
+        {"label": "Hook context 2/2", "points": 3.0},
+        {"label": "Hook reason to lean in 1/2", "points": 1.5},
+        {"label": "Hook truthful turn 0/2", "points": 0.0},
+        {"label": "Hook promise matches answer 2/2", "points": 3.0},
+        {"label": "Hook first visual 1/2", "points": 1.5},
+    ]
+    # The five dimensions contribute 9 points, not the untrusted legacy total's 15.
+    legacy = ideas.assess(idea(None, judgement(hook_score=10), shorts=0))
+    assert result["score"] == legacy["score"] - 6
+
+
+def test_finalise_hook_score_sums_dimensions_and_old_judgements_keep_their_total():
+    fresh = ideas.Judgement(**judgement(hook_score=9, context_score=2, lean_score=2, turn_score=1,
+                                        promise_score=2, first_visual_score=0))
+    assert ideas.finalise_hook_score(fresh).hook_score == 7
+    old = ideas.Judgement(**judgement(hook_score=8))
+    assert ideas.finalise_hook_score(old).hook_score == 8
+
+
 def test_iso_durations():
     assert youtube.seconds("PT1H2M3S") == 3723
     assert youtube.seconds("PT45S") == 45

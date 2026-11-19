@@ -52,11 +52,22 @@ class Drafts(BaseModel):
 
 
 class Judgement(BaseModel):
-    hook_score: int = Field(description="0 to 10: would a casual viewer need to know the answer after the hook? "
-                                        "Ask three things: is the topic clear from its first words, is there a "
-                                        "reason to lean in (stakes or curiosity), and does the answer overturn the "
-                                        "expected guess? Low if any of the three is missing")
+    # hook_score stays in the response and stored JSON for old prompt overrides and API compatibility. New checks
+    # replace it with the arithmetic sum below; an old response with no dimensions keeps its original total.
+    hook_score: int = Field(0, ge=0, le=10, description="Legacy 0 to 10 hook total. Code replaces this with the sum "
+                                                        "of the five hook dimensions when they are present")
     hook_reason: str
+    context_score: int | None = Field(None, ge=0, le=2, description="0 to 2: the subject is clear from the first "
+                                                                    "words")
+    lean_score: int | None = Field(None, ge=0, le=2, description="0 to 2: a concrete stake, benefit, pain or "
+                                                                 "curiosity gap gives the viewer a reason to care")
+    turn_score: int | None = Field(None, ge=0, le=2, description="0 to 2: the answer truthfully and meaningfully "
+                                                                 "redirects the expected guess; useful answers do "
+                                                                 "not need a forced reversal")
+    promise_score: int | None = Field(None, ge=0, le=2, description="0 to 2: the title and hook promise the payoff "
+                                                                    "that the planned answer actually gives")
+    first_visual_score: int | None = Field(None, ge=0, le=2, description="0 to 2: the opening can be shown as one "
+                                                                         "simple actor/object/action, not only text")
     easy_score: int = Field(description="0 to 10: could the audience follow the whole answer on one listen, with "
                                         "no background? Low if it needs terms, names, dates or prior knowledge "
                                         "they lack, or if it starts from something outside their daily life")
@@ -211,7 +222,37 @@ def judge(idea: Idea, research: dict | None) -> Judgement:
               f"Format: {idea.format}\nBeats:\n{beats}\n</idea>\n\n"
               f"<youtube_results query=\"{idea.search_query}\" today=\"{datetime.now(UTC).date()}\">\n"
               f"{results}\n</youtube_results>")
-    return llm.ask("idea_check", JUDGE.format(audience=plain.audience()), prompt, Judgement, effort="medium")
+    return finalise_hook_score(
+        llm.ask("idea_check", JUDGE.format(audience=plain.audience()), prompt, Judgement, effort="medium")
+    )
+
+
+HOOK_DIMENSIONS = (
+    ("context_score", "Hook context"),
+    ("lean_score", "Hook reason to lean in"),
+    ("turn_score", "Hook truthful turn"),
+    ("promise_score", "Hook promise matches answer"),
+    ("first_visual_score", "Hook first visual"),
+)
+
+
+def hook_dimensions(judgement: dict) -> list[tuple[str, int]] | None:
+    """The five explainable hook dimensions, or None for a legacy/partial judgement.
+
+    Custom prompt overrides from before this feature can still return only hook_score. A partial set is treated the
+    same way: the old total is safer than pretending missing dimensions were zero.
+    """
+    if any(judgement.get(key) is None for key, _ in HOOK_DIMENSIONS):
+        return None
+    return [(label, max(0, min(2, int(judgement[key])))) for key, label in HOOK_DIMENSIONS]
+
+
+def finalise_hook_score(judgement: Judgement) -> Judgement:
+    """Make the compatibility total code-owned whenever the new dimensions were returned."""
+    dimensions = hook_dimensions(judgement.model_dump())
+    if dimensions is not None:
+        judgement.hook_score = sum(score for _, score in dimensions)
+    return judgement
 
 
 def apply_draft(idea: Idea, draft: Draft) -> None:
@@ -225,7 +266,7 @@ def validate(idea: Idea) -> None:
     if config.youtube_api_key():
         research = youtube.research(idea.search_query or idea.title)
     idea.research = research
-    idea.judgement = judge(idea, research).model_dump()
+    idea.judgement = finalise_hook_score(judge(idea, research)).model_dump()
     idea.validated_at = utcnow()
     log.info("idea checked", extra={"idea_id": idea.id, "youtube": research is not None,
                                     "results": len((research or {}).get("videos", []))})
@@ -370,7 +411,13 @@ def assess(idea: Idea) -> dict:
     else:
         parts.append(("Angle not used by the top results", 5.0))
 
-    parts.append((f"Hook {judgement['hook_score']}/10", judgement["hook_score"] * 1.5))
+    dimensions = hook_dimensions(judgement)
+    if dimensions is None:
+        parts.append((f"Hook {judgement['hook_score']}/10", judgement["hook_score"] * 1.5))
+    else:
+        # Five 0-2 lines keep the hook's existing 15-point weight while making every point explainable.
+        for label, value in dimensions:
+            parts.append((f"{label} {value}/2", value * 1.5))
     easy = judgement.get("easy_score")
     if easy is None:
         parts.append(("Easy to follow: not checked yet (check the idea again)", 0.0))

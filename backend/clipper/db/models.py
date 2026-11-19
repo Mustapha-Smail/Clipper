@@ -185,6 +185,8 @@ class Script(Base):
     target_seconds: Mapped[int] = mapped_column(Integer, default=50)   # for a Short
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved
     research: Mapped[dict | None] = mapped_column(JSON)    # {notes, sources: [{n, url, title}], searches}
+    # Versioned, source-backed plan between research and prose (studio/story_map.py).
+    story_map: Mapped[dict | None] = mapped_column(JSON)
     sections: Mapped[list] = mapped_column(JSON, default=list)   # [{key, heading, text, short}]
     claims: Mapped[list | None] = mapped_column(JSON)      # [{section, claim, verdict, note, sources}]
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # hash of the text the claims were checked on

@@ -137,8 +137,14 @@ def write(script_id: int, rep: Reporter) -> None:
     script = _load(script_id)
     if not script.research:
         raise RuntimeError("Research the script first")
+    from . import story_map
+
+    # Old queued jobs can still reach this stage without a map. New pipelines and redrafts build one first.
+    # When a map exists it must be current and valid; it is never silently omitted.
+    map_context = story_map.prompt_value(script)
     prompt = (f"<video>\n{_brief(script)}\n</video>\n\n"
-              f"<research_notes>\n{script.research['notes']}\n</research_notes>")
+              + (f"<story_map>\n{map_context}\n</story_map>\n\n" if map_context else "")
+              + f"<research_notes>\n{script.research['notes']}\n</research_notes>")
     rep.info("Writing the narration")
     draft = llm.ask("script_write", WRITE.format(plain=plain.rules()), prompt, Draft, effort="high")
     sections = [{"key": uuid.uuid4().hex[:8], **s.model_dump()} for s in draft.sections]
@@ -148,7 +154,10 @@ def write(script_id: int, rep: Reporter) -> None:
     rep.info(f"Draft written: {len(sections)} sections, {words} words, about {words / WORDS_PER_MINUTE:.1f} minutes")
     with session_scope() as db:
         row = db.get(Script, script_id)
-        row.title = draft.title
+        # The title is one of the map's promises and one of its hashed inputs. A map-based draft must not silently
+        # replace it and make its own plan stale as soon as writing finishes. Legacy direct writes keep old behaviour.
+        if not script.story_map:
+            row.title = draft.title
         row.sections = sections
         row.claims = None
         row.checked_hash = None
@@ -166,9 +175,13 @@ def rewrite_section(script: Script, key: str, instruction: str) -> str:
     section = next((s for s in script.sections if s["key"] == key), None)
     if section is None:
         raise ValueError("Section not found")
+    from . import story_map
+
+    map_context = story_map.prompt_value(script)
     prompt = (f"<research_notes>\n{(script.research or {}).get('notes', '')}\n</research_notes>\n\n"
-              f"<script>\n{numbered(script.sections)}\n</script>\n\n"
-              f"Rewrite the section with key \"{key}\" ({section['heading']}). Instruction: {instruction}")
+              + (f"<story_map>\n{map_context}\n</story_map>\n\n" if map_context else "")
+              + f"<script>\n{numbered(script.sections)}\n</script>\n\n"
+              + f"Rewrite the section with key \"{key}\" ({section['heading']}). Instruction: {instruction}")
     return llm.ask("rewrite", REWRITE.format(plain=plain.rules()), prompt, Rewrite, effort="medium").text.strip()
 
 
@@ -189,9 +202,13 @@ def make_spoken(script_id: int, rep: Reporter) -> None:
     script = _load(script_id)
     if not script.sections:
         raise RuntimeError("The script has no text yet")
+    from . import story_map
+
+    map_context = story_map.prompt_value(script)
+    prompt = ((f"<story_map>\n{map_context}\n</story_map>\n\n" if map_context else "")
+              + f"<script>\n{numbered(script.sections)}\n</script>")
     rep.info("Rewriting the script so it sounds spoken")
-    result = llm.ask("script_write", MAKE_SPOKEN, f"<script>\n{numbered(script.sections)}\n</script>",
-                     SpokenScript, effort="high")
+    result = llm.ask("script_write", MAKE_SPOKEN, prompt, SpokenScript, effort="high")
     by_key = {s.key: s.text.strip() for s in result.sections if s.text.strip()}
     missing = [s["heading"] for s in script.sections if s["key"] not in by_key]
     if missing:
@@ -217,8 +234,12 @@ def make_simpler(script_id: int, rep: Reporter) -> None:
         raise RuntimeError("The script has no text yet")
     before_check = plain.check(script.sections, plain.level(), script.title)
     rep.info(f"Making the script simpler for: {plain.audience()}")
+    from . import story_map
+
+    map_context = story_map.prompt_value(script)
     notes = (script.research or {}).get("notes", "")
     prompt = (f"<research_notes>\n{notes}\n</research_notes>\n\n" if notes else "") + \
+        (f"<story_map>\n{map_context}\n</story_map>\n\n" if map_context else "") + \
         f"<script>\n{numbered(script.sections)}\n</script>"
     result = llm.ask("simplify", MAKE_SIMPLER.format(plain=plain.rules()), prompt, SpokenScript, effort="high")
     by_key = {x.key: x.text.strip() for x in result.sections if x.text.strip()}

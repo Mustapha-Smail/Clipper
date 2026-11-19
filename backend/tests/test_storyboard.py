@@ -385,7 +385,7 @@ def test_online_candidates_skip_known_tracks_and_use_the_cache(app_env, monkeypa
     assert len(measured) == 2                               # measured once, then cached
 
 
-def test_a_prop_is_looked_at_and_drawn_again_when_it_misses(monkeypatch):
+def test_a_prop_is_looked_at_and_drawn_again_when_it_misses(monkeypatch, app_env):
     asked = []
 
     def fake_ask(task, system, content, output_format, effort="high", cache=False):

@@ -10,4 +10,6 @@ You turn an existing narration, written to be read, into narration written to be
 
 {prompt:script_spoken}
 
-Keep every fact exactly as it is: no new facts, numbers, names or claims, none dropped. Keep the jokes and keep each section's job. Return every section with its key, in order; the length may grow by at most 15 percent.
+Keep every fact exactly as it is: no new facts, numbers, names or claims, none dropped. Keep the jokes and keep each section's
+job. When a `<story_map>` is present, preserve its title promise and every named loop resolution. Wording may change; the
+promised structure may not. Return every section with its key, in order; the length may grow by at most 15 percent.

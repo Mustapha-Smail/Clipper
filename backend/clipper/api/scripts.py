@@ -14,6 +14,7 @@ from ..db import get_db
 from ..db.models import Idea, Job, Script
 from ..studio import compliance, hold, plain
 from ..studio import script as script_mod
+from ..studio import story_map as story_map_mod
 from ..studio import voice as voice_mod
 from . import schemas as s
 
@@ -59,11 +60,12 @@ def summary_out(script: Script, job: Job | None) -> s.ScriptSummary:
 
 def script_out(script: Script, job: Job | None) -> s.ScriptOut:
     fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job",
-                                              "can_undo_rewrite", "plain", "hold"}
+                                              "can_undo_rewrite", "plain", "hold", "story_map"}
     return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
                        can_undo_rewrite=bool(script.previous_sections),
                        plain=plain.check(script.sections or [], plain.level(), script.title),
-                       hold=hold.score(script.sections or [], script.hold, script.video))
+                       hold=hold.score(script.sections or [], script.hold, script.video),
+                       story_map=story_map_mod.out(script))
 
 
 def _require_idle(db: Session, script: Script) -> None:
@@ -71,9 +73,9 @@ def _require_idle(db: Session, script: Script) -> None:
         raise HTTPException(409, "The script is being worked on. Wait for the job to finish or cancel it.")
 
 
-def _start(db: Session, script: Script, kind: str) -> Job:
+def _start(db: Session, script: Script, kind: str, stages: list[str] | None = None) -> Job:
     _require_idle(db, script)
-    return jobs.enqueue(db, kind, script.title, {"script_id": script.id})
+    return jobs.enqueue(db, kind, script.title, {"script_id": script.id}, stages=stages)
 
 
 @router.post("/ideas/{idea_id}/script", response_model=s.ScriptOut, status_code=202)
@@ -150,7 +152,8 @@ def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script)
     except ValueError as err:
         raise HTTPException(404, str(err)) from err
     except RuntimeError as err:
-        raise HTTPException(502, str(err)) from err
+        status = 409 if "story map" in str(err).lower() else 502
+        raise HTTPException(status, str(err)) from err
     heading = next((x["heading"] for x in script.sections if x["key"] == body.key), body.key)
     compliance.record(db, script.id, "rewrite", "ai",
                       f"Rewrote '{heading}' on your instruction: {body.instruction.strip()[:200]}")
@@ -169,6 +172,10 @@ def make_spoken(script: Script = Depends(get_script), db: Session = Depends(get_
     """Rewrite the whole script so it sounds spoken, keeping the facts. Undo brings the old text back."""
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
+    try:
+        story_map_mod.prompt_value(script)
+    except RuntimeError as err:
+        raise HTTPException(409, str(err)) from err
     return _start(db, script, "spoken")
 
 
@@ -178,6 +185,10 @@ def make_simpler(script: Script = Depends(get_script), db: Session = Depends(get
     Undo brings the old text back; check the facts again afterwards."""
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
+    try:
+        story_map_mod.prompt_value(script)
+    except RuntimeError as err:
+        raise HTTPException(409, str(err)) from err
     return _start(db, script, "simpler")
 
 
@@ -187,6 +198,32 @@ def check_hold(script: Script = Depends(get_script), db: Session = Depends(get_d
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
     return _start(db, script, "hold")
+
+
+@router.post("/scripts/{script_id}/story-map", response_model=s.JobOut, status_code=202)
+def rebuild_story_map(body: s.StoryMapRebuild | None = None, script: Script = Depends(get_script),
+                      db: Session = Depends(get_db)):
+    """Build a map from the saved research. Replacing an existing map requires explicit confirmation."""
+    _require_idle(db, script)
+    if not script.research:
+        raise HTTPException(409, "Research the script before building its story map")
+    if script.story_map and not (body and body.confirm):
+        raise HTTPException(409, "Rebuilding replaces the current story map and its edits. Confirm that replacement.")
+    return _start(db, script, "story_map")
+
+
+@router.put("/scripts/{script_id}/story-map", response_model=s.ScriptOut)
+def save_story_map(body: s.StoryMapEdit, script: Script = Depends(get_script), db: Session = Depends(get_db)):
+    """Save a structurally valid user edit. Source numbers not in the research are refused."""
+    _require_idle(db, script)
+    try:
+        value, _warnings = story_map_mod.user_edit(script, body.model_dump())
+    except ValueError as err:
+        raise HTTPException(422, str(err)) from err
+    script.story_map = value
+    compliance.record(db, script.id, "story_map_edit", "you", "Edited the story map")
+    db.flush()
+    return script_out(script, None)
 
 
 @router.post("/scripts/{script_id}/undo-rewrite", response_model=s.ScriptOut)
@@ -203,10 +240,24 @@ def undo_rewrite(script: Script = Depends(get_script), db: Session = Depends(get
 
 
 @router.post("/scripts/{script_id}/redraft", response_model=s.JobOut, status_code=202)
-def redraft(script: Script = Depends(get_script), db: Session = Depends(get_db)):
-    """Write the script again from the same research. Your edits are replaced."""
-    kind = "redraft" if script.research else "script"
-    return _start(db, script, kind)
+def redraft(body: s.RedraftRequest | None = None, script: Script = Depends(get_script),
+            db: Session = Depends(get_db)):
+    """Write again from a current map. Legacy scripts get a map first; stale maps need explicit replacement."""
+    _require_idle(db, script)
+    if not script.research:
+        return _start(db, script, "script")
+    if not script.story_map:
+        return _start(db, script, "redraft", ["story_map", "write", "factcheck", "hold"])
+    current, reasons = story_map_mod.status(script)
+    rebuild = bool(body and body.rebuild_story_map)
+    if not current and not rebuild:
+        raise HTTPException(409, "The story map is out of date: " + " ".join(reasons)
+                            + " Rebuild it from research before replacing the narration.")
+    if not rebuild and story_map_mod.problems(script):
+        # Kept separate from staleness: a current but malformed future/legacy payload must never reach the writer.
+        raise HTTPException(409, "The story map has validation problems. Rebuild it from research.")
+    stages = ["story_map", "write", "factcheck", "hold"] if rebuild else None
+    return _start(db, script, "redraft", stages)
 
 
 @router.delete("/scripts/{script_id}", status_code=204)

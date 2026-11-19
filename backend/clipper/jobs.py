@@ -34,7 +34,8 @@ STAGES = {
     "banner": ["banner"],
     "ideas": ["ideas"],
     # Studio scripts
-    "script": ["research", "write", "factcheck", "hold"],
+    "script": ["research", "story_map", "write", "factcheck", "hold"],
+    "story_map": ["story_map"],
     "redraft": ["write", "factcheck", "hold"],
     "factcheck": ["factcheck"],
     "spoken": ["spoken", "hold"],
@@ -63,6 +64,7 @@ STAGE_LABELS = {
     "banner": "Drawing the theme's banner",
     "ideas": "Writing new ideas",
     "research": "Researching with web sources",
+    "story_map": "Planning the story from the research",
     "write": "Writing the script",
     "factcheck": "Checking the facts",
     "spoken": "Rewriting the script to sound spoken",

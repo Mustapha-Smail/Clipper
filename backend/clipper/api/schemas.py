@@ -546,6 +546,60 @@ class ScriptClaim(BaseModel):
     note: str
 
 
+StoryTemplate = Literal["mechanism", "story_loop", "journey", "ranking"]
+StoryPurpose = Literal["question", "evidence", "answer", "twist", "payoff", "callback"]
+
+
+class StoryMapOpening(BaseModel):
+    context: str
+    lean: str
+    turn: str = ""
+    promise: str
+    first_visual: str
+    source_numbers: list[int] = Field(default_factory=list)
+
+
+class StoryMapBeat(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    purpose: StoryPurpose
+    summary: str
+    source_numbers: list[int] = Field(default_factory=list)
+    opens: list[str] = Field(default_factory=list)
+    resolves: list[str] = Field(default_factory=list)
+    visual_event: str
+
+
+class StoryMapEnding(BaseModel):
+    payoff: str
+    callback: str = ""
+    source_numbers: list[int] = Field(default_factory=list)
+
+
+class StoryMapEdit(BaseModel):
+    template: StoryTemplate
+    opening: StoryMapOpening
+    beats: list[StoryMapBeat]
+    ending: StoryMapEnding
+
+
+class StoryMapOut(StoryMapEdit):
+    version: int = 1
+    input_hash: str
+    made_at: UtcDatetime
+    by: Literal["ai", "you"]
+    current: bool
+    stale_reasons: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
+
+
+class StoryMapRebuild(BaseModel):
+    confirm: bool = False
+
+
+class RedraftRequest(BaseModel):
+    rebuild_story_map: bool = False
+
+
 class ScriptSummary(Model):
     id: int
     idea_id: int | None
@@ -570,6 +624,7 @@ class ScriptOut(ScriptSummary):
     theme: str
     notes: str
     research: ScriptResearch | None
+    story_map: StoryMapOut | None = None
     sections: list[ScriptSection]
     claims: list[ScriptClaim] | None
     can_undo_rewrite: bool = False

@@ -404,6 +404,10 @@ export interface Idea {
   research: { query: string; checked_at: string; videos: IdeaVideo[] } | null;
   judgement: {
     hook_score: number; hook_reason: string;
+    /** Explainable 0-2 hook dimensions; absent on checks saved before v1. */
+    context_score?: number | null; lean_score?: number | null; turn_score?: number | null;
+    promise_score?: number | null; first_visual_score?: number | null;
+    easy_score?: number | null; easy_reason?: string;
     drawable_score: number; drawable_reason: string;
     facts_score: number; facts_reason: string;
     ad_friendly: boolean; ad_reason: string;
@@ -446,6 +450,52 @@ export interface ScriptClaim {
   note: string;
 }
 
+export type StoryTemplate = 'mechanism' | 'story_loop' | 'journey' | 'ranking';
+export type StoryPurpose = 'question' | 'evidence' | 'answer' | 'twist' | 'payoff' | 'callback';
+
+export interface StoryMapOpening {
+  context: string;
+  lean: string;
+  turn: string;
+  promise: string;
+  first_visual: string;
+  source_numbers: number[];
+}
+
+export interface StoryMapBeat {
+  id: string;
+  purpose: StoryPurpose;
+  summary: string;
+  source_numbers: number[];
+  opens: string[];
+  resolves: string[];
+  visual_event: string;
+}
+
+export interface StoryMapEnding {
+  payoff: string;
+  callback: string;
+  source_numbers: number[];
+}
+
+export interface StoryMapEdit {
+  template: StoryTemplate;
+  opening: StoryMapOpening;
+  beats: StoryMapBeat[];
+  ending: StoryMapEnding;
+}
+
+/** A source-backed plan, not an approval or quality score. */
+export interface StoryMap extends StoryMapEdit {
+  version: number;
+  input_hash: string;
+  made_at: string;
+  by: 'ai' | 'you';
+  current: boolean;
+  stale_reasons: string[];
+  problems: string[];
+}
+
 export interface ScriptSummary {
   id: number;
   idea_id: number | null;
@@ -469,6 +519,7 @@ export interface Script extends ScriptSummary {
   theme: string;
   notes: string;
   research: { notes: string; sources: { n: number; url: string; title: string }[]; searches: number } | null;
+  story_map: StoryMap | null;
   sections: ScriptSection[];
   claims: ScriptClaim[] | null;
   can_undo_rewrite: boolean;
