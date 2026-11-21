@@ -140,12 +140,18 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   YouTube data comes only from the official Data API (`studio/youtube.py`,
   `YOUTUBE_API_KEY`), never from scraping. Editing an idea's text clears its
   check, because the old score no longer applies.
-- `studio/script.py`: research, write and factcheck are worker job stages
-  (`jobs.STAGES`), tied to a script by `params["script_id"]`. The writer may use
-  only the research notes; every web fact keeps its numbered source. Web search
-  goes through `claude.search` (basic `web_search_20250305`, which returns
-  citations); structured answers through `claude.ask`. The two cannot be one
-  call. A fact check stores the hash of the text it checked.
+- `studio/script.py`: research, story map, write and factcheck are worker job
+  stages (`jobs.STAGES`), tied to a script by `params["script_id"]`.
+  `studio/story_map.py` is the source-backed contract between research and prose:
+  the model proposes opening, ordered beats, at most two named open loops and an
+  ending; code filters citations, validates IDs and loop resolution, and hashes
+  every upstream input. A changed title, format, target, audience, idea or cited
+  research makes it stale with an exact reason. Writers and rewrites receive only
+  a current valid map when one exists; redraft rebuilds a missing legacy map and
+  requires confirmation before replacing a stale or edited one. The writer may
+  use only the research notes for facts; every web fact keeps its numbered source.
+  Web search goes through `llm.search`; structured answers through `llm.ask`.
+  The two cannot be one call. A fact check stores the hash of the text it checked.
 - `studio/voice.py`: takes are job stages (speak or prepare, then align) keyed
   by `params["take_id"]`. Every take ends as `voice.wav` (48 kHz mono,
   loudnorm) under `data/studio/script-N/take-M/`, with `timeline.json` (script
@@ -188,8 +194,10 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   every verdict and refusal is in the log and in `storyboards.director`, which
   keeps the plan from before for one undo (refused once the plan was edited).
   Runs from a button, or after every plan when `Settings.director_pass` is on.
-  Stills show no motion: it never judges pacing.
-- Storyboards have a `style`: `ink` (default) or `flat`. Ink storyboards are
+  Stills show no motion: it never judges pacing. The prompt asks only about
+  visible continuity; deterministic advisory continuity findings come from
+  `studio/continuity.py` and are never stored as a score.
+- Storyboards have a `style`: `ink` (default), `flat` or `film`. Ink storyboards are
   shots of beat lines (`studio/beats.py`: "12 do narrator push fridge"), never
   JSON from the model; `beats.clean()` makes any plan or edit safe and counts
   what it drops. `studio/ink.py` draws (brush strokes, the figure rig with
@@ -199,9 +207,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   fps, the camera at 24. Keep the liveliness score (`beats.score`) arithmetic,
   every deduction in its lines. New actions go in the beat language and the
   stage, and in the planner prompt and the page's cheat sheet.
-- Looks (`studio/looks.py`): `storyboards.look` is ink, paper or blueprint and
-  changes only drawing (backgrounds, sprites dressed per sprite and cached,
-  pop-on, shadow), never the plan. Photos, flags and maps are never recoloured.
+- Looks (`studio/looks.py`): `storyboards.look` changes only drawing, never the
+  plan. Explicit render profiles centralise background, line weight, jitter,
+  fill palette, shadow and entrance. Existing `ink`, `paper`, `blueprint` and
+  `cartoon` remain unchanged; opt-in `clean_doodle` and `rough_paint` are
+  code-native flat-palette looks. Photos, flags and maps are never recoloured.
 - Cartoon look (`studio/cartoon.py`, `studio/places.py`): colour characters on the
   ink rig (`ink.joints`), never a separate skeleton. Shots carry a `place`
   (`in NAME` on the shot line), inherited by later shots (`places.resolved`).
@@ -217,6 +227,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   only. `doc` pages are recreations marked on the page and quote only real
   words. The video runs `FilmComposer.tail` seconds past the voice (the closing
   pull-back); `animate.render` pads the audio for it.
+- `studio/visual_qa.py` observes the compositor's pre-caption frames in the
+  existing render pass (6 fps, small samples). It reports the first meaningful
+  visual and sustained near-empty narration stretches, ignores film tail and
+  catches its own failures. Findings live in `storyboards.render_meta` and are
+  advisory; QA never destroys or fails a valid render.
 - `studio/compliance.py` advises before publishing and never approves. User
   steps are logged with `compliance.record` from the routes, finished jobs with
   `compliance.record_job` in the worker (`studio_events`). The similarity and
@@ -321,7 +336,10 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   quick tier (`llm` task `hold`, prompt `script_hold`) labels each sentence
   (`plain.sentences`, numbered across sections) with one role; `hold.score` is
   arithmetic on those roles (topic named, first twist, longest gap, filler,
-  ending, stakes; thresholds in `hold.TARGETS`), every point in its lines. It
+  ending, stakes; thresholds in `hold.TARGETS`), every point in its lines. The
+  model also labels the main promise, open loops and rehooks; code deducts for
+  a missing/partial main payoff, unresolved secondary loops, empty rehooks and
+  loop overload, capped separately and explained line by line. It
   advises only. `scripts.hold` stores the labels with the hash of the text they
   label: an edit makes it out of date, never wrong. Runs after every write or
   rewrite job; an AI failure is logged and the job still succeeds.
@@ -332,17 +350,21 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   `write ... big` and film's `big ... bar` on at most `MAX_BIG` lines (payoff
   first) and lists the rest; it is not in `clean`, so the director's rule that
   `clean` leaves other shots unchanged still holds.
-  Settings `sound_starter` and `sound_riser` (off: weak evidence) add a
-  synthesised attention sound at 0 s and 1.5 s risers ending on the first word
-  of the first twist and of the payoff (`animate.attention_events`, needs a
-  current check, says in the log what it skipped). Chatterbox direction gets
+  Global `sound_starter` and `sound_riser` remain off by default; each storyboard
+  may inherit, force on or force off either sound. `animate.attention_state` is
+  shared by preview and render. A successful render stores the resolved modes,
+  look, story-map craft, hold timing, measured WPM and visual QA in versioned
+  `storyboards.render_meta`; failed renders preserve the prior snapshot.
+  `animate.attention_events` needs a current check and says in the log what it
+  skipped. Chatterbox direction gets
   the Short flag and the rehook sentences (`voice.lifted`, matched by text).
-  Each take's measured pace (`alignment.wpm`) is shown and logged after align;
-  `WORDS_PER_MINUTE` stays 150 until our own numbers say otherwise.
-  Learning shows each published video's craft (`learning.craft`: hold score,
-  first twist, longest gap, opening roles, pace), worked out on read and blank
-  when unknown (no check, text changed since the take, a Short cut from a long
-  script). `theme_insights` may name a craft pattern only across 3 videos.
+  Hold timing uses a matching chosen take's `alignment.wpm` and labels it
+  measured; otherwise it estimates at `WORDS_PER_MINUTE` (150).
+  Learning reads render-time craft from the snapshot and falls back to the old
+  live calculation for legacy boards. General lessons still need 3 videos;
+  code-generated craft comparisons need 6 comparable videos in one theme,
+  format and (when materially different) duration band, with at least 3 in each
+  group. They report counts, medians and ranges and use non-causal language.
 - Connect YouTube (`studio/youtube_auth.py`, `api/youtube.py`, `studio/analytics.py`): OAuth code flow
   with PKCE and a single-use `state` (in the API's memory, 10 minutes), scopes `yt-analytics.readonly` and
   `youtube.readonly` (reports.query needs both). Client id and secret from `.env` only; the redirect URI is
@@ -352,9 +374,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   `learning.refresh` (daily pass and `stats` job, each video at most every 20 h): matched only by known ids
   (`published_url`, Buffer's `posts.link`), unmatched ones listed with why; one `reports.query` per 200
   videos for the summary, one per video for retention (the API takes one). Rows in `video_analytics`.
-  Retention at the first twist and the payoff is arithmetic (`analytics.for_video`: word time through
-  `storyboard.turn_marks`, linear between curve points), blank with a reason when the hold check is not
-  current. Impressions, thumbnail CTR and the Shorts swipe-away share are not in this API: never fake them.
+  Retention at five seconds, the first twist and the payoff is arithmetic
+  (`analytics.for_video`: straight-line interpolation between curve points; turn
+  times through `storyboard.turn_marks`), blank with a reason when unavailable.
+  Impressions, thumbnail CTR and the Shorts swipe-away share are not in this API:
+  never fake them or infer them from views, engagement or comments.
 - Ideas have `expected`: what most viewers would guess; the answer overturns it.
   It is judged text (editing it clears the check) and `_brief` passes it to the writer.
 - `studio/music_pick.py`: music is chosen from measurements

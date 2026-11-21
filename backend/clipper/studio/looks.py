@@ -1,9 +1,11 @@
-"""Looks for the ink engine: the same storyboard, drawn three ways.
+"""Looks for the ink engine: the same storyboard, drawn several ways.
 
   ink        black brush lines on off-white paper, drawn on, a light boil (the default)
   paper      a cut-out look: kraft paper, props in their full flat colours, a drop
              shadow under every piece, pieces that pop on instead of being drawn
   blueprint  a technical drawing: blue paper with a grid, lines in white
+  clean_doodle thin, steady dark lines and a small flat palette on near-white
+  rough_paint heavy uneven lines and sparse flat colour on white
 
 A look changes only how things are drawn, never the plan, so a storyboard can
 switch looks and render again without planning anew. Archive photos and flags
@@ -15,25 +17,60 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-LOOK_NAMES = ("ink", "paper", "blueprint", "cartoon")
+LOOK_NAMES = ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint")
+
+Palette = tuple[tuple[int, int, int], ...]
 
 
 @dataclass(frozen=True)
 class Look:
     name: str
-    pop: bool = False            # pieces pop on (cut-out) instead of drawing themselves
-    boil: bool = True            # lines wobble like hand-drawn animation
+    background_kind: str = "ink_paper"  # ink_paper, kraft, blueprint, near_white or white
+    line_profile: str = "brush"          # brush, blueprint, cartoon, uniform or rough
+    line_width: float = 1.0               # relative to the current brush line
+    jitter: float = 1.0                   # multiplier for the chosen global wobble setting
+    fill_mode: str = "wash"               # wash, native_flat, blueprint, cartoon or locked_flat
+    palette: Palette = ()
     shadow: bool = False         # a drop shadow under every piece
-    flat_props: bool = False     # props in their own flat colours, not ink lines and a wash
-    recolour: str = ""           # "blueprint": ink becomes white lines
-    cartoon: bool = False        # colour characters in front of drawn places (trial)
+    entrance_mode: str = "draw"           # draw or pop
+    scene_mode: str = "page"               # page or place
+
+    @property
+    def pop(self) -> bool:
+        return self.entrance_mode == "pop"
+
+    @property
+    def boil(self) -> bool:
+        return self.jitter > 0
+
+    @property
+    def flat_props(self) -> bool:
+        return self.fill_mode in ("native_flat", "cartoon")
+
+    @property
+    def recolour(self) -> str:
+        return "blueprint" if self.line_profile == "blueprint" else ""
+
+    @property
+    def cartoon(self) -> bool:
+        return self.scene_mode == "place"
 
 
 LOOKS = {
     "ink": Look("ink"),
-    "paper": Look("paper", pop=True, boil=False, shadow=True, flat_props=True),
-    "blueprint": Look("blueprint", recolour="blueprint"),
-    "cartoon": Look("cartoon", pop=True, boil=False, flat_props=True, cartoon=True),
+    # These four profiles deliberately encode the old boolean combinations exactly.
+    "paper": Look("paper", background_kind="kraft", jitter=0, fill_mode="native_flat", shadow=True,
+                  entrance_mode="pop"),
+    "blueprint": Look("blueprint", background_kind="blueprint", line_profile="blueprint",
+                      fill_mode="blueprint"),
+    "cartoon": Look("cartoon", line_profile="cartoon", jitter=0, fill_mode="cartoon",
+                    entrance_mode="pop", scene_mode="place"),
+    "clean_doodle": Look("clean_doodle", background_kind="near_white", line_profile="uniform",
+                         line_width=0.7, jitter=0, fill_mode="locked_flat",
+                         palette=((236, 184, 71), (81, 139, 126), (218, 111, 92))),
+    "rough_paint": Look("rough_paint", background_kind="white", line_profile="rough",
+                        line_width=1.8, jitter=2.0, fill_mode="locked_flat",
+                        palette=((230, 88, 67), (35, 118, 156), (238, 184, 50))),
 }
 POPPED = ("actor", "prop", "photo", "flag", "map", "text", "timeline")   # what pops on in a cut-out look
 
@@ -84,10 +121,16 @@ def blueprint(width: int, height: int, seed: int = 31) -> np.ndarray:
 
 
 def background(look: Look, width: int, height: int, ink_paper) -> np.ndarray:
-    if look.name == "paper":
+    if look.background_kind == "kraft":
         return kraft(width, height)
-    if look.name == "blueprint":
+    if look.background_kind == "blueprint":
         return blueprint(width, height)
+    if look.background_kind == "near_white":
+        out = np.empty((height, width, 3), np.uint8)
+        out[:] = (250, 249, 246)
+        return out
+    if look.background_kind == "white":
+        return np.full((height, width, 3), 255, np.uint8)
     return ink_paper(width, height)
 
 
@@ -109,6 +152,59 @@ def blueprint_sprite(image: Image.Image) -> Image.Image:
     new_alpha = alpha * np.clip(inky + colour * 0.4 + (1 - inky) * (1 - colour) * 0.12, 0, 1)
     out = np.concatenate([new_rgb, new_alpha], axis=2)
     return Image.fromarray(np.clip(out * 255, 0, 255).astype(np.uint8), "RGBA")
+
+
+def profiled_sprite(image: Image.Image, look: Look) -> Image.Image:
+    """Apply a code-native line/fill profile without changing the sprite's box.
+
+    The established profiles are returned byte-for-byte. The two opt-in profiles
+    flatten drawn washes into a locked palette and make line weight explicit.
+    """
+    if look.line_profile not in ("uniform", "rough"):
+        return image
+
+    import cv2
+
+    source = np.asarray(image)
+    alpha = source[..., 3]
+    rgb = source[..., :3]
+    visible = alpha > 12
+    lum = (rgb[..., 0].astype(np.uint16) * 30 + rgb[..., 1].astype(np.uint16) * 59
+           + rgb[..., 2].astype(np.uint16) * 11) // 100
+    line = (visible & (lum < 118)).astype(np.uint8) * 255
+    if look.line_width < 1:
+        # One deterministic erosion produces a steadier, thinner line without
+        # inventing detail or moving the sprite.
+        line = cv2.erode(line, np.ones((2, 2), np.uint8), iterations=1)
+    elif look.line_width > 1:
+        radius = max(1, round(look.line_width))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (radius * 2 + 1, radius * 2 + 1))
+        line = cv2.dilate(line, kernel, iterations=1)
+        # Break only the outer fringe with a fixed coordinate pattern. The core
+        # remains solid and readable; the edge reads as deliberately uneven.
+        core = cv2.erode(line, np.ones((3, 3), np.uint8), iterations=1)
+        yy, xx = np.indices(line.shape)
+        fringe = (line > 0) & (core == 0)
+        line[fringe & (((xx * 17 + yy * 29) % 13) == 0)] = 0
+
+    line_mask = line > 0
+    fill = visible & ~line_mask
+    out = np.zeros_like(source)
+    out[..., :3] = (35, 35, 33) if look.line_profile == "uniform" else (30, 27, 25)
+    out[..., 3] = np.where(line_mask, np.maximum(alpha, 230), 0)
+    if fill.any() and look.palette:
+        palette = np.asarray(look.palette, np.int32)
+        pixels = rgb.astype(np.int32)
+        distance = ((pixels[..., None, :] - palette[None, None, ...]) ** 2).sum(axis=3)
+        chosen = palette[distance.argmin(axis=2)].astype(np.uint8)
+        if look.line_profile == "rough":
+            # Sparse colour: retain the original wash footprint, but leave light
+            # neutral regions unpainted rather than turning them into a solid fill.
+            saturation = rgb.max(axis=2).astype(np.int16) - rgb.min(axis=2).astype(np.int16)
+            fill &= (saturation > 18) | (lum < 225)
+        out[fill, :3] = chosen[fill]
+        out[fill, 3] = alpha[fill]
+    return Image.fromarray(out, "RGBA")
 
 
 CARD = (250, 246, 236)

@@ -1230,8 +1230,11 @@ class FilmComposer:
     def frame(self, t: float) -> Image.Image:
         return Image.fromarray(self.frame_rgb(t), "RGB").convert("RGBA")
 
-    def bgr(self, t: float) -> np.ndarray:
-        out = cv2.cvtColor(self.frame_rgb(t), cv2.COLOR_RGB2BGR)
+    def bgr(self, t: float, observer: animate.visual_qa.FrameObserver | None = None) -> np.ndarray:
+        rgb = self.frame_rgb(t)
+        if observer is not None:
+            observer.observe(t, rgb)       # intentionally before captions
+        out = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         if self.captions is not None:
             self.captions.draw(out, t)
         return out

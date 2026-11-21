@@ -95,10 +95,21 @@ import { Toasts } from '../core/toast';
                       @if (v.wpm) { {{ v.wpm }} words a minute }
                     </p>
                   }
+                  @if (v.story_template || v.hook_shape || v.starter !== null || v.riser !== null || v.first_visual_event !== null) {
+                    <p class="small muted">Rendered as {{ v.look }}
+                      @if (v.story_template) { · {{ v.story_template }} template }
+                      @if (v.hook_shape) { · hook {{ v.hook_shape }} }
+                      @if (v.starter !== null) { · starter {{ v.starter ? 'on' : 'off' }} }
+                      @if (v.riser !== null) { · riser {{ v.riser ? 'on' : 'off' }} }
+                      @if (v.first_visual_event !== null) { · first visual {{ v.first_visual_event.toFixed(1) }} s }
+                    </p>
+                  }
                   @if (v.retention; as r) {
                     <div class="watch">
                       <div class="figs">
                         <div><strong class="num">{{ pct(v.avg_viewed) }}</strong><small>average viewed</small></div>
+                        <div [title]="r.why['kept_at_5s'] ?? ''"><strong class="num">{{ pct(v.kept_at_5s) }}</strong>
+                          <small>still watching at 5 seconds</small></div>
                         <div [title]="r.why['kept_at_twist'] ?? ''"><strong class="num">{{ pct(v.kept_at_twist) }}</strong>
                           <small>still watching at the first twist</small></div>
                         <div [title]="r.why['kept_at_payoff'] ?? ''"><strong class="num">{{ pct(v.kept_at_payoff) }}</strong>
@@ -285,7 +296,9 @@ export class ThemePerformance {
 
   /** Why a figure is blank, once per reason. */
   protected whys(why: Record<string, string>): string[] {
-    const names: Record<string, string> = { kept_at_twist: 'First twist', kept_at_payoff: 'Payoff' };
+    const names: Record<string, string> = {
+      kept_at_5s: 'Five-second retention', kept_at_twist: 'First twist', kept_at_payoff: 'Payoff'
+    };
     const seen = new Map<string, string[]>();
     for (const [k, reason] of Object.entries(why)) seen.set(reason, [...(seen.get(reason) ?? []), names[k] ?? k]);
     return [...seen].map(([reason, keys]) => `${keys.join(' and ')} not measured: ${reason}.`);

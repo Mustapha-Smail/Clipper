@@ -68,6 +68,7 @@ def test_make_it_simpler_keeps_keys_and_can_be_undone(client, idea, fake_claude,
     with session_scope() as db:
         db.get(Job, job["id"]).state = "succeeded"
     assert seen["task"] == "simplify" and "12-year-old" in seen["system"] and "<research_notes>" in seen["content"]
+    assert "<story_map>" in seen["content"] and "heat_path" in seen["content"]
     after = client.get(f"/api/v1/scripts/{body['id']}").json()
     assert [s["key"] for s in after["sections"]] == keys and after["sections"][0]["text"].startswith("Your fridge?")
     assert after["can_undo_rewrite"] and not after["checked_current"]

@@ -111,7 +111,8 @@ def _numbers(board: Storyboard, posts: list[Post]) -> dict:
     return out
 
 
-CRAFT = ("hold_score", "first_twist", "longest_gap", "opening", "wpm")
+CRAFT = ("hold_score", "first_twist", "longest_gap", "opening", "wpm", "story_template", "hook_shape",
+         "starter", "riser", "first_visual_event")
 
 
 def craft(board: Storyboard, script: Script) -> dict:
@@ -122,6 +123,15 @@ def craft(board: Storyboard, script: Script) -> dict:
     from . import hold
 
     out = dict.fromkeys(CRAFT)
+    out["look"] = board.look
+    meta = board.render_meta or {}
+    if meta.get("version") == 1:
+        out.update(hold_score=meta.get("hold_score"), first_twist=meta.get("first_twist_s"),
+                   longest_gap=meta.get("longest_gap_s"), opening=meta.get("hook_shape"),
+                   wpm=meta.get("wpm"), story_template=meta.get("story_template"),
+                   hook_shape=meta.get("hook_shape"), starter=meta.get("starter"), riser=meta.get("riser"),
+                   look=meta.get("look") or board.look, first_visual_event=meta.get("first_visual_event_s"))
+        return out
     take = board.take
     if take is not None and take.alignment:
         out["wpm"] = take.alignment.get("wpm")
@@ -311,18 +321,94 @@ def _craft_text(v: dict) -> str:
         gap = "n/a" if v["longest_gap"] is None else f"{v['longest_gap']} s"
         hold_part = (f"hold {v['hold_score']}/100, first twist {twist}, longest gap {gap}, "
                      f"opens {v['opening']}")
-    pace = f"pace {v['wpm']} wpm" if v.get("wpm") else "pace not measured"
-    return f"\n    Craft: {hold_part}; {pace}"
+    pace = f"pace {v['wpm']} wpm (measured)" if v.get("wpm") else "pace not measured"
+    rendered = [f"look {v['look']}"]
+    if v.get("story_template"):
+        rendered.append(f"template {v['story_template']}")
+    if v.get("hook_shape"):
+        rendered.append(f"hook {v['hook_shape']}")
+    for key in ("starter", "riser"):
+        rendered.append(f"{key} {'on' if v[key] else 'off'}" if v.get(key) is not None else f"{key} not measured")
+    rendered.append("first visual not measured" if v.get("first_visual_event") is None
+                    else f"first visual {v['first_visual_event']} s")
+    return f"\n    Craft: {hold_part}; {pace}; " + ", ".join(rendered)
 
 
 def _watch_text(v: dict) -> str:
     """The YouTube Analytics columns of one video; 'not measured' rather than a guess when blank."""
-    if v.get("avg_viewed") is None and v.get("kept_at_twist") is None and v.get("kept_at_payoff") is None:
+    if (v.get("avg_viewed") is None and v.get("kept_at_5s") is None and v.get("kept_at_twist") is None
+            and v.get("kept_at_payoff") is None):
         return "\n    Watch: not measured"
     parts = ["average viewed not measured" if v.get("avg_viewed") is None else f"average viewed {v['avg_viewed']}%"]
-    for key, name in (("kept_at_twist", "at the first twist"), ("kept_at_payoff", "at the payoff")):
+    for key, name in (("kept_at_5s", "at five seconds"), ("kept_at_twist", "at the first twist"),
+                      ("kept_at_payoff", "at the payoff")):
         parts.append(f"{name} not measured" if v.get(key) is None else f"{v[key]}% still watching {name}")
     return "\n    Watch: " + ", ".join(parts)
+
+
+COMPARISON_FIELDS = ("story_template", "hook_shape", "starter", "riser", "look", "first_visual_event", "wpm")
+COMPARISON_OUTCOMES = (("kept_at_5s", "five-second retention"), ("avg_viewed", "average viewed"))
+
+
+def _duration_band(seconds: int | None, fmt: str) -> str:
+    if seconds is None:
+        return "duration unknown"
+    if fmt == "short":
+        return "up to 30 s" if seconds <= 30 else "31–60 s" if seconds <= 60 else "over 60 s"
+    return "up to 5 min" if seconds <= 300 else "5–10 min" if seconds <= 600 else "over 10 min"
+
+
+def _comparison_group(row: dict, field: str) -> str | None:
+    value = row.get(field)
+    if value is None:
+        return None
+    if field in ("starter", "riser"):
+        return "on" if value else "off"
+    if field == "first_visual_event":
+        return "by 1.0 s" if value <= 1 else "after 1.0 s"
+    if field == "wpm":
+        return "under 145 wpm" if value < 145 else "145–165 wpm" if value <= 165 else "over 165 wpm"
+    return str(value)
+
+
+def craft_comparisons(videos: list[dict]) -> list[str]:
+    """Code-counted craft comparisons safe to show the model.
+
+    Each comparison stays within one format and, only when durations differ materially,
+    one duration band. It needs at least two groups of three and reports median plus range.
+    """
+    material: dict[str, bool] = {}
+    for fmt in {v.get("format") for v in videos}:
+        lengths = [v["seconds"] for v in videos if v.get("format") == fmt and v.get("seconds")]
+        material[fmt] = bool(len(lengths) > 1 and max(lengths) - min(lengths) >= (15 if fmt == "short" else 120)
+                             and max(lengths) >= min(lengths) * 1.35)
+    strata: dict[tuple[str, str], list[dict]] = {}
+    for video in videos:
+        fmt = video.get("format")
+        band = _duration_band(video.get("seconds"), fmt) if material.get(fmt, False) else "similar duration"
+        strata.setdefault((fmt, band), []).append(video)
+
+    lines: list[str] = []
+    for (fmt, band), rows in sorted(strata.items()):
+        for field in COMPARISON_FIELDS:
+            for outcome, outcome_label in COMPARISON_OUTCOMES:
+                groups: dict[str, list[float]] = {}
+                for row in rows:
+                    group, value = _comparison_group(row, field), row.get(outcome)
+                    if group is not None and value is not None:
+                        groups.setdefault(group, []).append(float(value))
+                eligible = {name: values for name, values in groups.items() if len(values) >= 3}
+                if len(eligible) < 2 or sum(map(len, eligible.values())) < 6:
+                    continue
+                parts = []
+                for name, values in sorted(eligible.items()):
+                    median = statistics.median(values)
+                    parts.append(f"{name}: n={len(values)}, median {median:g}%, range {min(values):g}–{max(values):g}%")
+                scope = f"{fmt}, {band}" if band != "similar duration" else f"{fmt}, similar durations"
+                lines.append(f"{scope} — {field} and {outcome_label}: " + "; ".join(parts))
+                break
+    return lines or ["not enough comparable videos (need at least 6 in the same format and duration group, "
+                     "with at least 3 videos in each craft group)"]
 
 
 def _video_table(videos: list[dict]) -> str:
@@ -354,7 +440,8 @@ def insights(theme_id: int) -> dict:
                           "Statistics come from Buffer for posted Shorts and from YouTube for linked long videos.")
     prompt = (f"<theme>{name}</theme>\n" + (f"<about>{description}</about>\n" if description else "")
               + f"\n<videos median_views=\"{table['median_views']}\" today=\"{datetime.now(UTC).date()}\">\n"
-              + _video_table(table["videos"]) + "\n</videos>")
+              + _video_table(table["videos"]) + "\n</videos>\n\n<craft_comparisons>\n"
+              + "\n".join(craft_comparisons(table["videos"])) + "\n</craft_comparisons>")
     with llm.attribute(f"theme:{theme_id}"):
         answer: Lessons = llm.ask("theme_insights", prompts.Prompt("theme_insights"), prompt, Lessons,
                                   effort="medium")

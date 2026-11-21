@@ -404,6 +404,10 @@ export interface Idea {
   research: { query: string; checked_at: string; videos: IdeaVideo[] } | null;
   judgement: {
     hook_score: number; hook_reason: string;
+    /** Explainable 0-2 hook dimensions; absent on checks saved before v1. */
+    context_score?: number | null; lean_score?: number | null; turn_score?: number | null;
+    promise_score?: number | null; first_visual_score?: number | null;
+    easy_score?: number | null; easy_reason?: string;
     drawable_score: number; drawable_reason: string;
     facts_score: number; facts_reason: string;
     ad_friendly: boolean; ad_reason: string;
@@ -446,6 +450,52 @@ export interface ScriptClaim {
   note: string;
 }
 
+export type StoryTemplate = 'mechanism' | 'story_loop' | 'journey' | 'ranking';
+export type StoryPurpose = 'question' | 'evidence' | 'answer' | 'twist' | 'payoff' | 'callback';
+
+export interface StoryMapOpening {
+  context: string;
+  lean: string;
+  turn: string;
+  promise: string;
+  first_visual: string;
+  source_numbers: number[];
+}
+
+export interface StoryMapBeat {
+  id: string;
+  purpose: StoryPurpose;
+  summary: string;
+  source_numbers: number[];
+  opens: string[];
+  resolves: string[];
+  visual_event: string;
+}
+
+export interface StoryMapEnding {
+  payoff: string;
+  callback: string;
+  source_numbers: number[];
+}
+
+export interface StoryMapEdit {
+  template: StoryTemplate;
+  opening: StoryMapOpening;
+  beats: StoryMapBeat[];
+  ending: StoryMapEnding;
+}
+
+/** A source-backed plan, not an approval or quality score. */
+export interface StoryMap extends StoryMapEdit {
+  version: number;
+  input_hash: string;
+  made_at: string;
+  by: 'ai' | 'you';
+  current: boolean;
+  stale_reasons: string[];
+  problems: string[];
+}
+
 export interface ScriptSummary {
   id: number;
   idea_id: number | null;
@@ -469,6 +519,7 @@ export interface Script extends ScriptSummary {
   theme: string;
   notes: string;
   research: { notes: string; sources: { n: number; url: string; title: string }[]; searches: number } | null;
+  story_map: StoryMap | null;
   sections: ScriptSection[];
   claims: ScriptClaim[] | null;
   can_undo_rewrite: boolean;
@@ -636,6 +687,8 @@ export interface StoryboardSummary {
   music_id: number | null;
   music_db: number;
   effects: boolean;
+  starter_mode: AttentionMode;
+  riser_mode: AttentionMode;
   duration: number;
   scene_count: number;
   has_video: boolean;
@@ -673,6 +726,40 @@ export interface Storyboard extends StoryboardSummary {
   export: ExportInfo | null;
   /** Long videos: three thumbnails for YouTube's A/B test, or null until made. */
   thumbnails: Thumbnails | null;
+  render_meta: RenderMeta | null;
+  sound_starter_default: boolean;
+  sound_riser_default: boolean;
+  continuity: string[];
+}
+
+export type AttentionMode = 'default' | 'on' | 'off';
+
+export interface VisualQa {
+  sample_hz: number;
+  samples: number;
+  first_visual_event_s: number | null;
+  empty_runs: { start_s: number; end_s: number; duration_s: number }[];
+  warnings: string[];
+  problem: string | null;
+}
+
+export interface RenderMeta {
+  version: number;
+  at: string;
+  look: string;
+  style: string;
+  story_template: StoryTemplate | null;
+  hook_shape: string | null;
+  starter: boolean;
+  riser: boolean;
+  effects: boolean;
+  wpm: number | null;
+  hold_hash: string | null;
+  hold_score: number | null;
+  first_twist_s: number | null;
+  longest_gap_s: number | null;
+  first_visual_event_s: number | null;
+  visual_qa: VisualQa;
 }
 
 export type ThumbnailAngle = 'reaction' | 'stakes' | 'mystery';
@@ -768,13 +855,17 @@ export interface HoldCheck {
   verdict?: 'holds well' | 'some slack' | 'likely to lose people';
   topic?: string;
   lines?: { points: number; label: string; detail: string }[];
-  stats?: { seconds: number; first_twist: number | null; longest_gap: number | null; topic_at: number | null };
+  stats?: { seconds: number; first_twist: number | null; longest_gap: number | null; topic_at: number | null;
+            timing: 'estimated' | 'measured'; wpm: number };
+  promise?: { verdict: 'paid' | 'partial' | 'missing'; answer_sentence: number | null; reason: string };
+  loops?: { id: string; question: string; opener_sentence: number; resolver_sentence: number | null; main: boolean }[];
+  rehooks?: { sentence: number; delivers_new_information: boolean; opens_loop: string | null; reason: string }[];
   sentences?: { n: number; section: string; text: string; role: HoldRole | null; at: number;
                 title_question: boolean }[];
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
-export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon';
+export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon' | 'clean_doodle' | 'rough_paint';
 /** How a film storyboard (the documentary wall) is drawn. */
 export type FilmLook = 'wall' | 'studio';
 export type Look = InkLook | FilmLook;
@@ -786,6 +877,8 @@ export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'paper', label: 'Paper cut-out', hint: 'colour pieces on kraft card, popping on with a shadow' },
   { value: 'blueprint', label: 'Blueprint', hint: 'white lines on a blue grid' },
   { value: 'cartoon', label: 'Cartoon', hint: 'colour characters in drawn places, one per setting' },
+  { value: 'clean_doodle', label: 'Clean doodle', hint: 'thin steady lines and a small flat palette on near-white' },
+  { value: 'rough_paint', label: 'Rough paint', hint: 'heavy uneven outlines, hand jitter and sparse colour' },
 ];
 
 export const FILM_LOOKS: { value: FilmLook; label: string; hint: string }[] = [
@@ -1060,6 +1153,7 @@ export interface ThemeVideo {
   hook: string;
   format: 'short' | 'long';
   style: string;
+  look: Look;
   seconds: number | null;
   published_at: string | null;
   published_url: string | null;
@@ -1076,8 +1170,14 @@ export interface ThemeVideo {
   longest_gap: number | null;
   opening: string | null;
   wpm: number | null;
-  /** YouTube Analytics once connected: average % viewed, % still watching at the first twist and the payoff. */
+  story_template: StoryTemplate | null;
+  hook_shape: string | null;
+  starter: boolean | null;
+  riser: boolean | null;
+  first_visual_event: number | null;
+  /** YouTube Analytics once connected: average % viewed and % retained at measured landmarks. */
   avg_viewed: number | null;
+  kept_at_5s: number | null;
   kept_at_twist: number | null;
   kept_at_payoff: number | null;
   retention: VideoRetention | null;

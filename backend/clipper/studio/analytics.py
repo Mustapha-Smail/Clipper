@@ -224,13 +224,13 @@ def watching_at(curve: list[list], x: float) -> tuple[float, str]:
     return points[-1][1], "YouTube's last point"           # not reached: the points cover x
 
 
-COLUMNS = ("avg_viewed", "kept_at_twist", "kept_at_payoff")
+COLUMNS = ("avg_viewed", "kept_at_5s", "kept_at_twist", "kept_at_payoff")
 
 
 def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> dict:
     """The retention columns of one video for Learning, every number with its lines, blanks with their reason.
 
-    {avg_viewed, kept_at_twist, kept_at_payoff, retention: {...} | None}"""
+    {avg_viewed, kept_at_5s, kept_at_twist, kept_at_payoff, retention: {...} | None}"""
     from . import storyboard as storyboard_mod
 
     out: dict = dict.fromkeys(COLUMNS)
@@ -257,6 +257,18 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
     curve = row.retention or []
     marks, reason = ({}, "") if not curve else storyboard_mod.turn_marks(board.words or [], script.sections or [],
                                                                         script.hold)
+    if not curve:
+        why["kept_at_5s"] = row.note or "YouTube gives no retention curve for it yet"
+    elif not duration:
+        why["kept_at_5s"] = "the video's length is unknown"
+    elif duration < 5:
+        why["kept_at_5s"] = "the video ends before five seconds"
+    else:
+        x = 5 / duration
+        ratio, how = watching_at(curve, x)
+        out["kept_at_5s"] = round(100 * ratio)
+        lines.append(f"Five-second mark: 5.0 / {duration:.0f} s = {x:.0%} in; {how}, "
+                     f"so {ratio:.2f} = {100 * ratio:.0f}% still watching")
     for key, roles, name in (("kept_at_twist", ("twist", "rehook"), "first twist"),
                              ("kept_at_payoff", ("payoff",), "payoff")):
         if not curve:

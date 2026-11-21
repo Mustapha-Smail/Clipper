@@ -3,7 +3,7 @@ from test_scripts import fake_claude, idea, run_job  # noqa: F401 - fixtures are
 from clipper import llm, prompts
 from clipper.ai_errors import AiUnavailable
 from clipper.db import session_scope
-from clipper.db.models import Job, Script
+from clipper.db.models import Job, Script, VoiceTake
 from clipper.jobs import STAGES, ConsoleReporter
 from clipper.studio import hold
 from clipper.studio import script as script_mod
@@ -33,7 +33,7 @@ def test_a_short_that_starts_slow_loses_points_line_by_line():
     result = hold.score(sections, stored_for(sections, roles), "short")
 
     assert result["current"] and result["stats"] == {"seconds": 56, "first_twist": 24, "longest_gap": 28,
-                                                      "topic_at": 2}
+                                                      "topic_at": 2, "timing": "estimated", "wpm": 150}
     assert by_label(result, "Topic named only in sentence 2")["points"] == -12        # 4 s x 3
     assert by_label(result, "First twist at 24 s")["points"] == -20                    # 14 s over, capped
     assert by_label(result, "Longest stretch")["points"] == 0                          # 28 s, within 30
@@ -123,4 +123,50 @@ def test_the_stage_follows_every_rewrite_and_the_prompt_is_complete():
         assert STAGES[kind][-1] == "hold"
     assert llm.TASKS["hold"][0] == "quick"
     prompt = prompts.Prompt("script_hold")
-    assert "{" not in str(prompt) and "rehook" in str(prompt)
+    assert "{" not in str(prompt) and "rehook" in str(prompt) and "promise" in str(prompt)
+
+
+def test_promises_loops_and_empty_rehooks_are_arithmetic_with_one_cap():
+    sections = [{"key": "a", "heading": "Short", "text": " ".join(say(5, f"fridge {n}") for n in range(1, 9))}]
+    stored = stored_for(sections, ["hook", "question", "rehook", "question", "fact", "fact", "fact", "payoff"])
+    stored.update(
+        promise={"verdict": "missing", "answer_sentence": None, "reason": "The title is never answered."},
+        loops=[
+            {"id": "main", "question": "Does it make cold?", "opener_sentence": 1,
+             "resolver_sentence": None, "main": True},
+            {"id": "a", "question": "Where does heat go?", "opener_sentence": 2,
+             "resolver_sentence": None, "main": False},
+            {"id": "b", "question": "Why are coils warm?", "opener_sentence": 3,
+             "resolver_sentence": None, "main": False},
+        ],
+        rehooks=[{"sentence": 3, "delivers_new_information": False, "opens_loop": None, "reason": "Vague"}],
+    )
+    result = hold.score(sections, stored, "short")
+    assert by_label(result, "The title promise is not paid")["points"] == -15
+    assert by_label(result, "2 secondary loops left open")["points"] == -8   # the main loop is not counted again
+    assert by_label(result, "1 empty rehook")["points"] == -5
+    assert by_label(result, "3 loops open at once")["points"] == -2          # combined additions stop at 30
+    additions = [line for line in result["lines"] if line["label"].startswith(
+        ("The title", "2 secondary", "1 empty", "3 loops"))]
+    assert sum(line["points"] for line in additions) == -30
+
+
+def test_measured_timing_uses_only_a_chosen_matching_take(app_env):
+    sections = [{"key": "a", "heading": "Short", "text": " ".join([say(25, "fridge"), say(25), say(25)])}]
+    with session_scope() as db:
+        script = Script(title="Fridge", theme="", sections=sections, video="short")
+        db.add(script)
+        db.flush()
+        script.hold = stored_for(sections, ["hook", "twist", "payoff"])
+        take = VoiceTake(script_id=script.id, source="recording", voice="me.wav",
+                         script_hash=script_mod.text_hash(sections), chosen=True,
+                         alignment={"wpm": 100, "script_hash": script_mod.text_hash(sections)})
+        db.add(take)
+        db.flush()
+        result = hold.score_script(script)
+        assert result["stats"]["timing"] == "measured" and result["stats"]["wpm"] == 100
+        assert result["stats"]["first_twist"] == 15
+        take.script_hash = "old"
+        fallback = hold.score_script(script)
+        assert fallback["stats"]["timing"] == "estimated" and fallback["stats"]["wpm"] == 150
+        assert fallback["stats"]["first_twist"] == 10

@@ -20,4 +20,10 @@ Structure:
 - Link to the viewer's own life at least once per section: their kitchen, their phone, their school, their habits.
 - A short outro that lands the final surprise in one memorable line. One light line asking to subscribe is fine; no begging.
 
+The `<story_map>` is the structural contract. Keep its opening promise, follow its beat order, and open and resolve the
+named loops where the map says. A rehook must contain a specific fact, noun or question that gives the viewer new value;
+"here is the strange part" and similar empty phrases are filler by themselves. State the opening turn only when its cited
+research supports it. Resolve every promised question before the ending. The ending may hold the largest insight, but not
+the first useful answer. Do not put a call to action before the title promise is paid.
+
 Use only facts from the research notes, and only those the one idea needs: leaving a true detail out is better than crowding the viewer. Where the notes give a named source or an exact figure, prefer it to a vague phrase ("a long time ago", "many scientists"), within the audience's limits on numbers and names above, which always win; if the notes have none, stay plain. Do not add numbers, dates, names or claims that the notes do not contain, and never present an item from "Myths and disputes" as true; the myth itself can be a joke or a setup if the script corrects it. Hit the target length within about 10 percent.

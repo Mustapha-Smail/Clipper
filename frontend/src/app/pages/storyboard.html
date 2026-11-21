@@ -71,6 +71,17 @@
             <div class="notice small"><span>Props not drawn yet: {{ b.missing_props.join(', ') }}. They are drawn when you render,
               or now from <a routerLink="/props">Props</a>.</span></div>
           }
+          @if (b.render_meta?.visual_qa; as qa) {
+            @if (qa.warnings.length || qa.problem) {
+              <div class="notice warn small visual-qa"><span><strong>Visual QA advice.</strong>
+                @for (warning of qa.warnings; track warning) { {{ warning }} }
+                @if (qa.problem) { {{ qa.problem }} }
+                Captions were excluded from this measurement.</span></div>
+            } @else if (qa.first_visual_event_s !== null) {
+              <p class="small muted">First meaningful visual event at {{ qa.first_visual_event_s.toFixed(1) }} s.
+                Measured before captions; advice only.</p>
+            }
+          }
           <div class="row">
             <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
               {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
@@ -104,6 +115,13 @@
               <p class="small muted">No deductions: every few seconds something is drawn, moves or gets marked.</p>
             }
             <p class="small muted">Plain arithmetic on the saved plan, every point shown. It advises; you decide.</p>
+          </section>
+        }
+        @if (b.continuity.length) {
+          <section class="card continuity">
+            <h3>Continuity advice</h3>
+            <ul>@for (line of b.continuity; track line) { <li>{{ line }}</li> }</ul>
+            <p class="small muted">Deterministic checks of the saved IDs, definitions, settings and callback. Advice only.</p>
           </section>
         }
 
@@ -399,6 +417,22 @@
                 ? 'Pins, stamps, counter ticks, a marker, string and a whoosh between clusters.'
                 : beats() ? 'A pen scratch as things draw themselves, a whoosh between shots, an eraser.'
                 : 'Quiet sounds when things appear.' }}</small></span></label>
+            <label class="field"><span>Opening attention sound</span>
+              <select [ngModel]="b.starter_mode" (ngModelChange)="setSound({ starter_mode: $event })">
+                <option value="default">Settings default ({{ b.sound_starter_default ? 'on' : 'off' }})</option>
+                <option value="on">On for this video</option>
+                <option value="off">Off for this video</option>
+              </select>
+              <small>An experiment, not a proven retention rule. Requires effects.</small>
+            </label>
+            <label class="field"><span>Twist and payoff risers</span>
+              <select [ngModel]="b.riser_mode" (ngModelChange)="setSound({ riser_mode: $event })">
+                <option value="default">Settings default ({{ b.sound_riser_default ? 'on' : 'off' }})</option>
+                <option value="on">On for this video</option>
+                <option value="off">Off for this video</option>
+              </select>
+              <small>An experiment, only where a current hold check marks an eligible turn. Requires effects.</small>
+            </label>
           </div>
           <div class="row sound-tools">
             <button class="sm" (click)="suggest()" [disabled]="suggesting()">

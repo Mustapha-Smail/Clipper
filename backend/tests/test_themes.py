@@ -226,6 +226,50 @@ def test_craft_columns_show_for_measured_videos_and_stay_blank_for_older_ones(ap
     assert "at least 3 videos" in str(learning.prompts.Prompt("theme_insights"))
 
 
+def test_learning_prefers_the_successful_render_snapshot(app_env):
+    with session_scope() as db:
+        theme = _theme(db)
+        board = _published(db, theme, "Snapshot", 5000)
+        board.render_meta = {"version": 1, "hold_score": 88, "first_twist_s": 6, "longest_gap_s": 21,
+                             "story_template": "mystery", "hook_shape": "context > lean > turn", "wpm": 171,
+                             "starter": True, "riser": False, "look": "clean_doodle",
+                             "first_visual_event_s": 0.7}
+        row = learning.published(db, theme.id)[0]
+    assert {key: row[key] for key in learning.CRAFT} == {
+        "hold_score": 88, "first_twist": 6, "longest_gap": 21,
+        "opening": "context > lean > turn", "wpm": 171, "story_template": "mystery",
+        "hook_shape": "context > lean > turn", "starter": True, "riser": False,
+        "first_visual_event": 0.7,
+    }
+    assert row["look"] == "clean_doodle"
+
+
+def test_craft_comparisons_require_three_per_group_and_never_cross_formats():
+    def video(fmt, starter, outcome, seconds=25):
+        return {"format": fmt, "seconds": seconds, "starter": starter, "riser": None, "look": "ink",
+                "story_template": None, "hook_shape": None, "first_visual_event": None, "wpm": None,
+                "kept_at_5s": outcome, "avg_viewed": None}
+
+    too_small = [video("short", False, n) for n in (60, 62)] + [video("short", True, n) for n in (70, 72, 74)]
+    assert learning.craft_comparisons(too_small)[0].startswith("not enough comparable videos")
+    crossed = [video("short", False, n) for n in (60, 62, 64)] + [
+        video("long", True, n, 600) for n in (70, 72, 74)]
+    assert learning.craft_comparisons(crossed)[0].startswith("not enough comparable videos")
+
+    comparable = [video("short", False, n) for n in (58, 60, 66)] + [
+        video("short", True, n) for n in (70, 74, 90)]
+    lines = learning.craft_comparisons(comparable)
+    assert lines == ["short, similar durations — starter and five-second retention: "
+                     "off: n=3, median 60%, range 58–66%; on: n=3, median 74%, range 70–90%"]
+
+
+def test_theme_prompt_uses_only_non_causal_craft_language():
+    prompt = str(learning.prompts.Prompt("theme_insights"))
+    assert all(term in prompt for term in ("associated with", "coincided with", "worth testing"))
+    assert "Never say it caused an outcome, proved a rule or is known to work" in prompt
+    assert "comment call-to-action" in prompt and "retention evidence" in prompt
+
+
 def test_proven_examples_put_the_evidence_first_and_new_ideas_say_what_they_build_on(client, monkeypatch):
     with session_scope() as db:
         theme = _theme(db)

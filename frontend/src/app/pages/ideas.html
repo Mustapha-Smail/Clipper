@@ -277,6 +277,17 @@
                     <h4>Claude's reading</h4>
                     <ul class="reasons">
                       <li><strong>Hook {{ j.hook_score }}/10.</strong> {{ j.hook_reason }}</li>
+                      @if (j.context_score !== undefined && j.context_score !== null &&
+                           j.lean_score !== undefined && j.lean_score !== null &&
+                           j.turn_score !== undefined && j.turn_score !== null &&
+                           j.promise_score !== undefined && j.promise_score !== null &&
+                           j.first_visual_score !== undefined && j.first_visual_score !== null) {
+                        <li><strong>Context {{ j.context_score }}/2.</strong> Subject clear from the first words.</li>
+                        <li><strong>Lean {{ j.lean_score }}/2.</strong> Concrete reason to care or stay curious.</li>
+                        <li><strong>Truthful turn {{ j.turn_score }}/2.</strong> Expected guess meaningfully redirected.</li>
+                        <li><strong>Promise {{ j.promise_score }}/2.</strong> Hook and answer commit to the same payoff.</li>
+                        <li><strong>First visual {{ j.first_visual_score }}/2.</strong> Opening works as a simple drawn action.</li>
+                      }
                       <li><strong>Drawable {{ j.drawable_score }}/10.</strong> {{ j.drawable_reason }}</li>
                       <li><strong>Facts {{ j.facts_score }}/10.</strong> {{ j.facts_reason }}</li>
                       <li><strong>{{ j.angle_taken ? 'Angle taken.' : 'Angle free.' }}</strong> {{ j.angle_reason }}</li>

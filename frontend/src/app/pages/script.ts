@@ -4,7 +4,10 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { ClaimVerdict, HoldRole, Script, ScriptClaim, ScriptSection } from '../core/models';
+import {
+  ClaimVerdict, HoldRole, Script, ScriptClaim, ScriptSection, StoryMap, StoryMapBeat, StoryMapEdit, StoryPurpose,
+  StoryTemplate,
+} from '../core/models';
 import { ThemesStore } from '../core/themes-store';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -55,6 +58,15 @@ export class ScriptPage {
   protected readonly drafts = signal<ScriptSection[]>([]);
   protected readonly saving = signal(false);
   protected readonly proposal = signal<Proposal | null>(null);
+  protected readonly storyMapDraft = signal<StoryMapEdit | null>(null);
+  protected readonly storyMapSaving = signal(false);
+  protected readonly storyTemplates: { value: StoryTemplate; label: string }[] = [
+    { value: 'mechanism', label: 'Mechanism' }, { value: 'story_loop', label: 'Story loop' },
+    { value: 'journey', label: 'Journey' }, { value: 'ranking', label: 'Ranking' },
+  ];
+  protected readonly storyPurposes: StoryPurpose[] = [
+    'question', 'evidence', 'answer', 'twist', 'payoff', 'callback',
+  ];
   protected readonly verdictLabels: Record<ClaimVerdict, string> = {
     supported: 'Supported', contradicted: 'Contradicted', unclear: 'Unclear', joke: 'Joke',
   };
@@ -270,9 +282,131 @@ export class ScriptPage {
   }
 
   protected async redraft(): Promise<void> {
-    if (!(await this.confirm.ask({ title: 'Write the whole script again?', message: 'It is written again from the same research. Your edits are replaced.',
-      confirm: 'Write again', danger: true }))) return;
-    this.queue(this.api.redraft(this.id), 'Redraft queued');
+    const map = this.script()?.story_map;
+    const rebuild = !!map && (!map.current || map.problems.length > 0);
+    const reason = map?.stale_reasons.join(' ') || map?.problems.join(' ');
+    const title = rebuild ? 'Rebuild the story map and write again?' : 'Write the whole script again?';
+    const message = rebuild
+      ? `${reason} Rebuilding replaces the current map and its edits, then replaces the narration.`
+      : map
+        ? 'The narration is written again from this story map and research. Your script edits are replaced.'
+        : 'A story map is built from the research first, then the narration is written. Your script edits are replaced.';
+    if (!(await this.confirm.ask({ title, message, confirm: rebuild ? 'Rebuild and write' : 'Write again', danger: true }))) return;
+    this.queue(this.api.redraft(this.id, rebuild), rebuild ? 'Story-map rebuild and redraft queued' : 'Redraft queued');
+  }
+
+  // --- story map --------------------------------------------------------------------
+
+  protected editStoryMap(): void {
+    const map = this.script()?.story_map;
+    if (!map) return;
+    this.storyMapDraft.set(cloneStoryMap(map));
+  }
+
+  protected cancelStoryMapEdit(): void {
+    this.storyMapDraft.set(null);
+  }
+
+  protected saveStoryMap(): void {
+    const draft = this.storyMapDraft();
+    if (!draft) return;
+    this.storyMapSaving.set(true);
+    this.api.saveStoryMap(this.id, draft).subscribe({
+      next: (script) => {
+        this.storyMapSaving.set(false);
+        this.storyMapDraft.set(null);
+        this.script.set(script);
+        this.toasts.ok('Story map saved');
+      },
+      error: (err) => {
+        this.storyMapSaving.set(false);
+        this.toasts.error(errorMessage(err));
+      },
+    });
+  }
+
+  protected async rebuildStoryMap(): Promise<void> {
+    const script = this.script();
+    if (!script?.research) {
+      this.toasts.error('Research the script before building its story map');
+      return;
+    }
+    const replacing = !!script.story_map;
+    if (replacing && !(await this.confirm.ask({
+      title: 'Rebuild the story map from research?',
+      message: 'The current map and any edits to it are replaced. The narration is not changed until you redraft it.',
+      confirm: 'Rebuild map', danger: true,
+    }))) return;
+    this.storyMapDraft.set(null);
+    this.queue(this.api.rebuildStoryMap(this.id, replacing), replacing ? 'Story-map rebuild queued' : 'Story map queued');
+  }
+
+  protected moveStoryBeat(index: number, by: number): void {
+    const to = index + by;
+    this.storyMapDraft.update((map) => {
+      if (!map || to < 0 || to >= map.beats.length) return map;
+      const beats = map.beats.map((beat) => ({ ...beat }));
+      [beats[index], beats[to]] = [beats[to], beats[index]];
+      return { ...map, beats };
+    });
+  }
+
+  protected addStoryBeat(after: number): void {
+    this.storyMapDraft.update((map) => {
+      if (!map) return map;
+      const used = new Set(map.beats.map((beat) => beat.id));
+      let number = map.beats.length + 1;
+      while (used.has(`beat_${number}`)) number += 1;
+      const beat: StoryMapBeat = { id: `beat_${number}`, purpose: 'evidence', summary: '', source_numbers: [],
+        opens: [], resolves: [], visual_event: '' };
+      return { ...map, beats: [...map.beats.slice(0, after + 1), beat, ...map.beats.slice(after + 1)] };
+    });
+  }
+
+  protected async removeStoryBeat(index: number): Promise<void> {
+    const beat = this.storyMapDraft()?.beats[index];
+    if (!beat || !(await this.confirm.ask({
+      title: `Remove beat ${index + 1}?`,
+      message: `“${beat.summary || beat.id}” leaves the map. Open loops must still resolve before it can be saved.`,
+      confirm: 'Remove', danger: true,
+    }))) return;
+    this.storyMapDraft.update((map) => map ? { ...map, beats: map.beats.filter((_, i) => i !== index) } : map);
+  }
+
+  protected setBeatList(index: number, field: 'opens' | 'resolves', value: string): void {
+    const items = parseTextList(value);
+    this.storyMapDraft.update((map) => map ? {
+      ...map, beats: map.beats.map((beat, i) => i === index ? { ...beat, [field]: items } : beat),
+    } : map);
+  }
+
+  protected setStorySources(where: 'opening' | 'ending', value: string): void {
+    const source_numbers = parseNumbers(value);
+    this.storyMapDraft.update((map) => map ? { ...map, [where]: { ...map[where], source_numbers } } : map);
+  }
+
+  protected setBeatSources(index: number, value: string): void {
+    const source_numbers = parseNumbers(value);
+    this.storyMapDraft.update((map) => map ? {
+      ...map, beats: map.beats.map((beat, i) => i === index ? { ...beat, source_numbers } : beat),
+    } : map);
+  }
+
+  protected mapTemplateLabel(value: StoryTemplate): string {
+    return this.storyTemplates.find((option) => option.value === value)?.label ?? value;
+  }
+
+  protected loopSummary(map: StoryMap | StoryMapEdit): string {
+    const opened = new Set(map.beats.flatMap((beat) => beat.opens));
+    const resolved = new Set(map.beats.flatMap((beat) => beat.resolves));
+    if (!opened.size) return 'No named loops';
+    const count = [...opened].filter((loop) => resolved.has(loop)).length;
+    return count === opened.size ? `All ${opened.size} ${opened.size === 1 ? 'loop resolves' : 'loops resolve'}`
+      : `${count} of ${opened.size} loops resolve`;
+  }
+
+  protected listText(values: (string | number)[]): string {
+    return values.join(', ');
   }
 
   // --- the script as a whole ---------------------------------------------------------
@@ -363,4 +497,23 @@ function count(text: string): number {
 
 function strip(s: ScriptSection): ScriptSection {
   return { key: s.key, heading: s.heading.trim(), text: s.text.trim(), short: s.short };
+}
+
+function cloneStoryMap(map: StoryMap): StoryMapEdit {
+  return {
+    template: map.template,
+    opening: { ...map.opening, source_numbers: [...map.opening.source_numbers] },
+    beats: map.beats.map((beat) => ({ ...beat, source_numbers: [...beat.source_numbers],
+      opens: [...beat.opens], resolves: [...beat.resolves] })),
+    ending: { ...map.ending, source_numbers: [...map.ending.source_numbers] },
+  };
+}
+
+function parseTextList(value: string): string[] {
+  return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+}
+
+function parseNumbers(value: string): number[] {
+  return [...new Set(value.split(',').map((item) => Number(item.trim()))
+    .filter((number) => Number.isInteger(number) && number > 0))];
 }

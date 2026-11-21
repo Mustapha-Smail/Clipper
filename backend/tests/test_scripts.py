@@ -6,6 +6,7 @@ from clipper.db.models import Idea, Job, Script
 from clipper.jobs import ConsoleReporter
 from clipper.studio import hold
 from clipper.studio import script as script_mod
+from clipper.studio import story_map as story_map_mod
 
 NOTES = "## Fridges\n- A fridge moves heat out of the box.[1]\n- The coils at the back get warm.[2]"
 
@@ -37,6 +38,24 @@ def fake_claude(monkeypatch):
 
     def fake_ask(task, system, content, output_format, effort="high"):
         calls.append((output_format.__name__, content))
+        if output_format is story_map_mod.Draft:
+            return story_map_mod.Draft(
+                template="mechanism",
+                opening=story_map_mod.Opening(context="A fridge is warming up", lean="The food depends on it",
+                                               turn="It moves heat", promise="Explain where the heat goes",
+                                               first_visual="A person puts warm food into a fridge",
+                                               source_numbers=[1]),
+                beats=[
+                    story_map_mod.Beat(id="follow_heat", purpose="question", summary="Follow the heat",
+                                       source_numbers=[1], opens=["heat_path"],
+                                       visual_event="Heat arrows leave the food"),
+                    story_map_mod.Beat(id="warm_coils", purpose="answer", summary="The coils release heat",
+                                       source_numbers=[2], resolves=["heat_path"],
+                                       visual_event="A hand feels warm coils"),
+                ],
+                ending=story_map_mod.Ending(payoff="The fridge moves heat into the room",
+                                             callback="The food cools as the coils warm", source_numbers=[1, 2]),
+            )
         if output_format is script_mod.Draft:
             return script_mod.Draft(title="Your Fridge Has Never Made Cold", sections=[
                 script_mod.Section(heading="Cold open", text="Your fridge has never made cold.", short=True),
@@ -70,7 +89,7 @@ def run_job(job_id: int) -> None:
         job = db.get(Job, job_id)
         stages, script_id = list(job.stages), job.params["script_id"]
     for stage in stages:
-        run = hold.run if stage == "hold" else getattr(script_mod, stage)
+        run = hold.run if stage == "hold" else story_map_mod.run if stage == "story_map" else getattr(script_mod, stage)
         run(script_id, ConsoleReporter())
 
 
@@ -94,7 +113,7 @@ def test_idea_to_checked_script(client, idea, fake_claude):
     body = started.json()
     assert body["target_minutes"] == 6 and body["job"]["kind"] == "script"
     assert body["job"]["script_id"] == body["id"]
-    assert body["job"]["stages"] == ["research", "write", "factcheck", "hold"]
+    assert body["job"]["stages"] == ["research", "story_map", "write", "factcheck", "hold"]
     assert client.get("/api/v1/ideas").json()[0]["status"] == "approved"
     assert client.get("/api/v1/ideas").json()[0]["script_id"] == body["id"]
 
@@ -106,7 +125,7 @@ def test_idea_to_checked_script(client, idea, fake_claude):
         db.get(Job, body["job"]["id"]).state = "succeeded"
 
     script = client.get(f"/api/v1/scripts/{body['id']}").json()
-    assert script["title"] == "Your Fridge Has Never Made Cold"
+    assert script["title"] == "Your fridge doesn't make cold"   # the map's title promise stays stable
     assert [s["n"] for s in script["research"]["sources"]] == [1, 2, 3]   # the web check added source 3
     assert script["words"] == 19 and script["checked_current"]
     verdicts = {c["claim"]: c["verdict"] for c in script["claims"]}
@@ -117,8 +136,9 @@ def test_idea_to_checked_script(client, idea, fake_claude):
     assert script["hold"]["current"] and script["hold"]["topic"] == "fridge"
     assert [x["role"] for x in script["hold"]["sentences"]] == ["hook", "twist", "fact", "payoff"]
     assert any("1 labels dropped" in x["label"] for x in script["hold"]["lines"])
-    # The writer was given only the research notes, and the web check only the uncovered claim.
-    assert any(name == "Draft" and NOTES in content for name, content in fake_claude)
+    # The writer received the current map with the research, and the web check only the uncovered claim.
+    assert any(name == "Draft" and NOTES in content and "<story_map>" in content
+               and "heat_path" in content for name, content in fake_claude)
     assert [p for kind, p in fake_claude if kind == "search"][1].count("\n") == 2
 
     approved = client.patch(f"/api/v1/scripts/{body['id']}", json={"status": "approved"}).json()
@@ -137,7 +157,7 @@ def test_idea_to_checked_script(client, idea, fake_claude):
                        json={"key": "nope", "instruction": "shorter"}).status_code == 404
 
     text = client.get(f"/api/v1/scripts/{body['id']}/text").text
-    assert text.startswith("YOUR FRIDGE HAS NEVER MADE COLD") and "[Outro]\nSubscribe." in text
+    assert text.startswith("YOUR FRIDGE DOESN'T MAKE COLD") and "[Outro]\nSubscribe." in text
 
     listed = client.get("/api/v1/scripts").json()
     assert listed[0]["id"] == body["id"] and listed[0]["job"] is None
@@ -167,6 +187,7 @@ def test_spoken_rewrite_keeps_keys_and_can_be_undone(client, idea, fake_claude, 
 
     def fake_ask(task, system, content, output_format, effort="high"):
         assert task == "script_write" and "Write for the ear" in system and keys[0] in content
+        assert "<story_map>" in content and "heat_path" in content
         return script_mod.SpokenScript(sections=[
             script_mod.SpokenSection(key=keys[0], text="So. Your fridge? Never made cold."),
             script_mod.SpokenSection(key="made-up", text="Nope.")])

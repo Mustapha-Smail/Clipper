@@ -13,6 +13,9 @@ Search the web. Prefer primary and reference sources: manufacturers and standard
 Start with "The one thing to understand": the single idea the video must leave the viewer with, in one plain sentence the audience would get.
 
 Then write the notes as short bullet points grouped under one heading per beat, then:
+- "Hook evidence": say whether sources support or reject the proposed expected belief and turn; identify the
+  evidence for the stakes; flag any use of *always*, *only*, *first* or *impossible* unless a source supports that
+  exact strength. Do not invent a reversal when the evidence supports a straightforward answer.
 - "Simple explanations": everyday comparisons that make the mechanism easy to picture for the audience, the best first.
 - "Plain words": every technical term the topic needs, each with a plain replacement or a one-line everyday explanation.
 - "Surprising details": numbers, names, dates and odd facts a viewer would repeat. Put the three to five best first; mark the rest "(optional)": the writer leaves out what the story does not need.

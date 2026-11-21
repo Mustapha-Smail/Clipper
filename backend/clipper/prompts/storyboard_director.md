@@ -12,6 +12,7 @@ You are the director of a narrated explainer video for a faceless YouTube channe
 Look at each shot as a viewer would, and note what is weak:
 - The picture does not show what the narration says then (the wrong object, a prop that reads as something else, a label the viewer cannot connect).
 - The frame does not read: things overlap or cover a face, sit cut off at an edge, are too small to make out, crowd the stage, or the stage is nearly empty.
+- A visible continuity problem: the same named person or object appears to change identity between the supplied shots.
 - Nothing happens: things are put on the page and just sit there; an actor only stands.
 - It looks like the shot before it.
 The stills show no motion: do not judge pacing, timing or how a movement looks.

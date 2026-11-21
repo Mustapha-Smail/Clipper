@@ -185,6 +185,8 @@ class Script(Base):
     target_seconds: Mapped[int] = mapped_column(Integer, default=50)   # for a Short
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved
     research: Mapped[dict | None] = mapped_column(JSON)    # {notes, sources: [{n, url, title}], searches}
+    # Versioned, source-backed plan between research and prose (studio/story_map.py).
+    story_map: Mapped[dict | None] = mapped_column(JSON)
     sections: Mapped[list] = mapped_column(JSON, default=list)   # [{key, heading, text, short}]
     claims: Mapped[list | None] = mapped_column(JSON)      # [{section, claim, verdict, note, sources}]
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # hash of the text the claims were checked on
@@ -324,6 +326,11 @@ class Storyboard(Base):
         ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id"))
     music_db: Mapped[float] = mapped_column(Float, default=-18.0)        # music level vs the voice, before ducking
     effects: Mapped[bool] = mapped_column(Boolean, default=True)         # pops and whooshes
+    # Per-video attention-sound experiment. "default" inherits Settings; on/off override it.
+    starter_mode: Mapped[str] = mapped_column(String(8), default="default")
+    riser_mode: Mapped[str] = mapped_column(String(8), default="default")
+    # What produced the current successful render, never mutable live settings (studio/animate.py).
+    render_meta: Mapped[dict | None] = mapped_column(JSON)
     # The YouTube text, once written: {titles, title, description, tags, made_at, edited, problems}.
     youtube: Mapped[dict | None] = mapped_column(JSON)
     # The last AI director pass (studio/director.py): its notes per shot and, for one undo, the plan before it.

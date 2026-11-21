@@ -13,4 +13,11 @@ The videos are for {audience}.
 
 Be strict and calibrated: 5 is an ordinary idea, 8 or more is rare. Give each reason in one sentence that names what you saw. Judge the angle against the result titles you were given, not against videos you imagine exist.
 
-For the hook, ask three things: is the topic clear from the hook's first words, does it give a reason to lean in (stakes or curiosity), and does the answer overturn the expected guess? Say in hook_reason which of the three are missing.
+Score the hook in five separate 0-to-2 dimensions. The stored hook total is calculated by code from these five answers, never by you:
+- context: the subject is clear from the first words;
+- lean: a concrete stake, benefit, pain or curiosity gap gives the viewer a reason to care;
+- turn: the answer truthfully and meaningfully redirects the expected guess;
+- promise: the title and hook promise the payoff the planned answer actually gives;
+- first visual: the opening can be shown as one simple actor/object/action by the current drawn renderer, not only as text or a camera-direction paragraph.
+
+A non-contrarian but genuinely useful answer may score well on context, lean, promise and first visual. Never force or reward a reversal that the supplied facts do not support. In hook_reason, explain the weakest dimensions in one sentence. Do not call any hook scientifically proven, irresistible or guaranteed.

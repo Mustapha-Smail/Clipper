@@ -546,6 +546,60 @@ class ScriptClaim(BaseModel):
     note: str
 
 
+StoryTemplate = Literal["mechanism", "story_loop", "journey", "ranking"]
+StoryPurpose = Literal["question", "evidence", "answer", "twist", "payoff", "callback"]
+
+
+class StoryMapOpening(BaseModel):
+    context: str
+    lean: str
+    turn: str = ""
+    promise: str
+    first_visual: str
+    source_numbers: list[int] = Field(default_factory=list)
+
+
+class StoryMapBeat(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    purpose: StoryPurpose
+    summary: str
+    source_numbers: list[int] = Field(default_factory=list)
+    opens: list[str] = Field(default_factory=list)
+    resolves: list[str] = Field(default_factory=list)
+    visual_event: str
+
+
+class StoryMapEnding(BaseModel):
+    payoff: str
+    callback: str = ""
+    source_numbers: list[int] = Field(default_factory=list)
+
+
+class StoryMapEdit(BaseModel):
+    template: StoryTemplate
+    opening: StoryMapOpening
+    beats: list[StoryMapBeat]
+    ending: StoryMapEnding
+
+
+class StoryMapOut(StoryMapEdit):
+    version: int = 1
+    input_hash: str
+    made_at: UtcDatetime
+    by: Literal["ai", "you"]
+    current: bool
+    stale_reasons: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
+
+
+class StoryMapRebuild(BaseModel):
+    confirm: bool = False
+
+
+class RedraftRequest(BaseModel):
+    rebuild_story_map: bool = False
+
+
 class ScriptSummary(Model):
     id: int
     idea_id: int | None
@@ -570,6 +624,7 @@ class ScriptOut(ScriptSummary):
     theme: str
     notes: str
     research: ScriptResearch | None
+    story_map: StoryMapOut | None = None
     sections: list[ScriptSection]
     claims: list[ScriptClaim] | None
     can_undo_rewrite: bool = False
@@ -693,8 +748,8 @@ class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
     style: Literal["ink", "flat", "film"] = Field(
         "ink", description="ink: beats on one page; film: a documentary on an evidence wall; flat: the first style")
-    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] = Field(
-        "ink", description="How it is drawn. Ink style: ink, paper, blueprint or cartoon; film style: wall or studio")
+    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"] = Field(
+        "ink", description="How it is drawn. Ink looks change drawing only; film style uses wall or studio")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
 
@@ -705,7 +760,7 @@ class StoryboardSummary(Model):
     take_id: int | None
     format: Literal["short", "long"]
     style: Literal["ink", "flat", "film"]
-    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] = "ink"
+    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"] = "ink"
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -720,6 +775,8 @@ class StoryboardSummary(Model):
     music_id: int | None
     music_db: float
     effects: bool
+    starter_mode: Literal["default", "on", "off"] = "default"
+    riser_mode: Literal["default", "on", "off"] = "default"
     # Computed:
     duration: float
     scene_count: int
@@ -778,6 +835,11 @@ class StoryboardOut(StoryboardSummary):
     director: dict | None = Field(None, description="The AI director's last pass: notes per shot, kept or refused")
     director_undoable: bool = False
     thumbnails: dict | None = Field(None, description="Long videos: options A, B and C for YouTube's A/B test")
+    render_meta: dict | None = Field(None, description="The craft settings and measurements of the current render")
+    sound_starter_default: bool = False
+    sound_riser_default: bool = False
+    continuity: list[str] = Field(default_factory=list,
+                                  description="Deterministic continuity advice for the saved plan")
 
 
 class ThumbnailsMake(BaseModel):
@@ -818,12 +880,15 @@ class StoryboardPatch(BaseModel):
     published: bool | None = Field(None, description="Long video was published or scheduled manually")
     published_url: str | None = Field(None, max_length=300,
                                       description="Its YouTube link, for statistics; empty to remove")
-    look: Literal["ink", "paper", "blueprint", "cartoon", "wall", "studio"] | None = Field(
-        None, description="Ink style: render again to see it")
+    look: Literal[
+        "ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"
+    ] | None = Field(None, description="Ink style: render again to see it")
     music_id: int | None = None
     music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")
     music_db: float | None = Field(None, ge=-40, le=-6)
     effects: bool | None = None
+    starter_mode: Literal["default", "on", "off"] | None = None
+    riser_mode: Literal["default", "on", "off"] | None = None
 
 
 class MusicOut(Model):
@@ -1074,6 +1139,7 @@ class ThemeVideo(BaseModel):
     hook: str
     format: str
     style: str
+    look: str
     seconds: int | None
     published_at: str | None
     published_url: str | None
@@ -1090,9 +1156,15 @@ class ThemeVideo(BaseModel):
     longest_gap: int | None = None
     opening: str | None = None
     wpm: int | None = None
-    # YouTube Analytics, once connected: average % viewed and the share still watching at the first twist and
-    # the payoff (studio/analytics.py); None when not measured, with the reason in retention.why
+    story_template: str | None = None
+    hook_shape: str | None = None
+    starter: bool | None = None
+    riser: bool | None = None
+    first_visual_event: float | None = None
+    # YouTube Analytics, once connected: average % viewed and the share still watching at five seconds, the
+    # first twist and the payoff (studio/analytics.py); None when not measured, with the reason in retention.why
     avg_viewed: float | None = None
+    kept_at_5s: int | None = None
     kept_at_twist: int | None = None
     kept_at_payoff: int | None = None
     retention: dict | None = None

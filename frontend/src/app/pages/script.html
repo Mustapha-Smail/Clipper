@@ -105,7 +105,8 @@
             <span class="pill" [class.approved]="(h.score ?? 0) >= 85" [class.failed]="(h.score ?? 0) < 65">{{ h.verdict }}</span>
             @if (h.stats; as st) {
               <span class="small muted">first twist {{ st.first_twist === null ? 'none' : st.first_twist + ' s' }} ·
-                longest gap {{ st.longest_gap === null ? '–' : st.longest_gap + ' s' }} · topic: {{ h.topic }}</span>
+                longest gap {{ st.longest_gap === null ? '–' : st.longest_gap + ' s' }} ·
+                {{ st.timing }} at {{ st.wpm }} wpm · topic: {{ h.topic }}</span>
             }
           </div>
           @if (holdWorst().length) {
@@ -119,6 +120,24 @@
           }
           <details class="hold-more">
             <summary class="small">Every line and the role of each sentence</summary>
+            @if (h.promise; as promise) {
+              <section class="promise-audit" aria-label="Model-labelled promise and loops">
+                <h4>Model-labelled promise and loops</h4>
+                <p><span class="pill" [class.failed]="promise.verdict === 'missing'">{{ promise.verdict }}</span>
+                  {{ promise.reason || 'No reason supplied.' }}
+                  @if (promise.answer_sentence) { <span class="muted"> Answered in sentence {{ promise.answer_sentence }}.</span> }
+                </p>
+                @if (h.loops?.length) {
+                  <ul class="loop-audit">
+                    @for (loop of h.loops; track loop.id) {
+                      <li><strong>{{ loop.main ? 'Main · ' : '' }}{{ loop.question }}</strong>
+                        <span class="muted">sentence {{ loop.opener_sentence }} →
+                          {{ loop.resolver_sentence ? 'sentence ' + loop.resolver_sentence : 'unresolved' }}</span></li>
+                    }
+                  </ul>
+                } @else { <p class="small muted">No concrete loops labelled.</p> }
+              </section>
+            }
             <ul class="deductions">
               @for (l of h.lines; track l.label) {
                 <li><span class="num points" [class.zero]="!l.points">{{ l.points || '0' }}</span><strong>{{ l.label }}</strong><span class="muted">{{ l.detail }}</span></li>
@@ -133,8 +152,9 @@
                 </li>
               }
             </ol>
-            <p class="small muted">The quick AI tier labels what each sentence does; the score is plain arithmetic on
-              those labels at 150 words a minute, every point shown. It advises; you decide.</p>
+            <p class="small muted">The quick AI tier labels sentence roles, promises and loops; deductions are plain
+              arithmetic, every point shown. Timing is {{ h.stats?.timing ?? 'estimated' }}{{ h.stats?.wpm ?
+              ' at ' + h.stats?.wpm + ' words a minute' : '' }}. It advises; you decide.</p>
           </details>
         } @else {
           <div class="hold-head">
@@ -172,6 +192,199 @@
         <button class="quiet" (click)="redraft()" [disabled]="busy()">Redraft from research</button>
         <button class="quiet danger" (click)="deleteScript()" [disabled]="busy()">Delete</button>
       </div>
+    </section>
+
+    <section class="card story-map-card" aria-labelledby="story-map-title">
+      <div class="story-map-head">
+        <div>
+          <h2 id="story-map-title">Story map</h2>
+          <p class="small muted">The source-backed promises and turns the narration follows. It is a plan, not a score.</p>
+        </div>
+        <div class="row story-map-actions">
+          @if (storyMapDraft()) {
+            <button class="quiet" (click)="cancelStoryMapEdit()" [disabled]="storyMapSaving()">Cancel</button>
+            <button class="primary" (click)="saveStoryMap()" [disabled]="storyMapSaving() || busy()">
+              {{ storyMapSaving() ? 'Saving…' : 'Save map' }}</button>
+          } @else if (s.story_map) {
+            <button class="quiet" (click)="editStoryMap()" [disabled]="busy() || !s.story_map.current">Edit</button>
+            <button class="quiet" (click)="rebuildStoryMap()" [disabled]="busy()">Rebuild from research</button>
+          } @else {
+            <button (click)="rebuildStoryMap()" [disabled]="busy() || !s.research">Build from research</button>
+          }
+        </div>
+      </div>
+
+      @if (s.story_map; as map) {
+        <div class="story-map-summary" aria-label="Story map summary">
+          <span><span class="muted small">Template</span>{{ mapTemplateLabel(map.template) }}</span>
+          <span class="story-map-promise"><span class="muted small">Opening promise</span>{{ map.opening.promise }}</span>
+          <span><span class="muted small">Beats</span>{{ map.beats.length }}</span>
+          <span><span class="muted small">Loops</span>{{ loopSummary(map) }}</span>
+        </div>
+
+        @if (!map.current) {
+          <div class="notice warn story-map-notice" role="status">
+            <div>
+              <strong>Out of date.</strong>
+              <ul>@for (reason of map.stale_reasons; track reason) { <li>{{ reason }}</li> }</ul>
+              <p class="small">Rebuild the map before redrafting or rewriting.</p>
+            </div>
+          </div>
+        }
+        @if (map.problems.length) {
+          <div class="notice bad story-map-notice" role="status">
+            <div><strong>Validation problems</strong>
+              <ul>@for (problem of map.problems; track problem) { <li>{{ problem }}</li> }</ul>
+            </div>
+          </div>
+        }
+
+        <details class="story-map-details" [open]="storyMapDraft() !== null">
+          <summary>{{ storyMapDraft() ? 'Editing map' : 'Opening, beats and ending' }}</summary>
+          @if (storyMapDraft(); as editMap) {
+            <div class="story-map-editor">
+              <label>Template
+                <select [(ngModel)]="editMap.template" [disabled]="busy()">
+                  @for (option of storyTemplates; track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </label>
+
+              <fieldset>
+                <legend>Opening</legend>
+                <div class="story-fields two-col">
+                  <label>Context<textarea rows="2" [(ngModel)]="editMap.opening.context"></textarea></label>
+                  <label>Why it matters<textarea rows="2" [(ngModel)]="editMap.opening.lean"></textarea></label>
+                  <label>Turn<textarea rows="2" [(ngModel)]="editMap.opening.turn"></textarea></label>
+                  <label>Promise<textarea rows="2" [(ngModel)]="editMap.opening.promise"></textarea></label>
+                  <label class="wide">First visual<textarea rows="2" [(ngModel)]="editMap.opening.first_visual"></textarea></label>
+                  <label class="wide">Source numbers
+                    <input type="text" [value]="listText(editMap.opening.source_numbers)"
+                           (change)="setStorySources('opening', $any($event.target).value)" placeholder="1, 2" />
+                  </label>
+                </div>
+              </fieldset>
+
+              <div class="story-editor-heading">
+                <h3>Ordered beats</h3>
+                @if (!editMap.beats.length) { <button class="sm quiet" (click)="addStoryBeat(-1)">Add first beat</button> }
+              </div>
+              <div class="story-beats editor-beats">
+                @for (beat of editMap.beats; track $index; let i = $index) {
+                  <article class="story-beat edit-beat">
+                    <div class="story-beat-head">
+                      <strong>Beat {{ i + 1 }}</strong>
+                      <div class="row beat-actions">
+                        <button class="quiet reorder" (click)="moveStoryBeat(i, -1)" [disabled]="i === 0"
+                                [attr.aria-label]="'Move beat ' + (i + 1) + ' up'">↑</button>
+                        <button class="quiet reorder" (click)="moveStoryBeat(i, 1)" [disabled]="i === editMap.beats.length - 1"
+                                [attr.aria-label]="'Move beat ' + (i + 1) + ' down'">↓</button>
+                        <button class="sm quiet" (click)="addStoryBeat(i)">Add below</button>
+                        <button class="sm quiet danger" (click)="removeStoryBeat(i)">Remove</button>
+                      </div>
+                    </div>
+                    <div class="story-fields two-col">
+                      <label>Stable ID<input type="text" [(ngModel)]="beat.id" /></label>
+                      <label>Purpose<select [(ngModel)]="beat.purpose">
+                        @for (purpose of storyPurposes; track purpose) { <option [ngValue]="purpose">{{ purpose }}</option> }
+                      </select></label>
+                      <label class="wide">What happens<textarea rows="2" [(ngModel)]="beat.summary"></textarea></label>
+                      <label class="wide">Visual event<textarea rows="2" [(ngModel)]="beat.visual_event"></textarea></label>
+                      <label>Opens
+                        <input type="text" [value]="listText(beat.opens)"
+                               (change)="setBeatList(i, 'opens', $any($event.target).value)" placeholder="loop_id" />
+                      </label>
+                      <label>Resolves
+                        <input type="text" [value]="listText(beat.resolves)"
+                               (change)="setBeatList(i, 'resolves', $any($event.target).value)" placeholder="loop_id" />
+                      </label>
+                      <label class="wide">Source numbers
+                        <input type="text" [value]="listText(beat.source_numbers)"
+                               (change)="setBeatSources(i, $any($event.target).value)" placeholder="1, 2" />
+                      </label>
+                    </div>
+                  </article>
+                }
+              </div>
+
+              <fieldset>
+                <legend>Ending</legend>
+                <div class="story-fields two-col">
+                  <label>Payoff<textarea rows="3" [(ngModel)]="editMap.ending.payoff"></textarea></label>
+                  <label>Callback<textarea rows="3" [(ngModel)]="editMap.ending.callback"></textarea></label>
+                  <label class="wide">Source numbers
+                    <input type="text" [value]="listText(editMap.ending.source_numbers)"
+                           (change)="setStorySources('ending', $any($event.target).value)" placeholder="1, 2" />
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+          } @else {
+            <div class="story-map-view">
+              <section class="story-opening">
+                <h3>Opening</h3>
+                <dl>
+                  <div><dt>Context</dt><dd>{{ map.opening.context }}</dd></div>
+                  <div><dt>Why it matters</dt><dd>{{ map.opening.lean }}</dd></div>
+                  @if (map.opening.turn) { <div><dt>Turn</dt><dd>{{ map.opening.turn }}</dd></div> }
+                  <div><dt>Promise</dt><dd>{{ map.opening.promise }}</dd></div>
+                  <div><dt>First visual</dt><dd>{{ map.opening.first_visual }}</dd></div>
+                </dl>
+                <div class="source-refs small" aria-label="Opening sources">
+                  @for (n of map.opening.source_numbers; track n) {
+                    @if (sourceUrl().get(n); as src) {
+                      <a [href]="src.url" target="_blank" rel="noopener" [title]="src.title">[{{ n }}] {{ src.title }}</a>
+                    }
+                  }
+                </div>
+              </section>
+
+              <div class="story-beats">
+                @for (beat of map.beats; track beat.id; let i = $index) {
+                  <article class="story-beat">
+                    <div class="story-beat-head"><span class="beat-number num">{{ i + 1 }}</span>
+                      <div><strong>{{ beat.summary }}</strong><span class="purpose">{{ beat.purpose }}</span></div>
+                    </div>
+                    <p class="visual-event"><span class="muted small">Visual</span>{{ beat.visual_event }}</p>
+                    @if (beat.opens.length || beat.resolves.length) {
+                      <div class="loop-chips">
+                        @for (loop of beat.opens; track loop) { <span class="loop-chip opens">Opens · {{ loop }}</span> }
+                        @for (loop of beat.resolves; track loop) { <span class="loop-chip resolves">Resolves · {{ loop }}</span> }
+                      </div>
+                    }
+                    <div class="source-refs small" [attr.aria-label]="'Sources for beat ' + (i + 1)">
+                      @for (n of beat.source_numbers; track n) {
+                        @if (sourceUrl().get(n); as src) {
+                          <a [href]="src.url" target="_blank" rel="noopener" [title]="src.title">[{{ n }}] {{ src.title }}</a>
+                        }
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+
+              <section class="story-ending">
+                <h3>Ending</h3>
+                <dl>
+                  <div><dt>Payoff</dt><dd>{{ map.ending.payoff }}</dd></div>
+                  @if (map.ending.callback) { <div><dt>Callback</dt><dd>{{ map.ending.callback }}</dd></div> }
+                </dl>
+                <div class="source-refs small" aria-label="Ending sources">
+                  @for (n of map.ending.source_numbers; track n) {
+                    @if (sourceUrl().get(n); as src) {
+                      <a [href]="src.url" target="_blank" rel="noopener" [title]="src.title">[{{ n }}] {{ src.title }}</a>
+                    }
+                  }
+                </div>
+              </section>
+              <p class="small muted map-meta">Made by {{ map.by === 'you' ? 'you' : 'AI' }}. Source numbers link to the research below.</p>
+            </div>
+          }
+        </details>
+      } @else {
+        <p class="story-map-empty">No story map yet. Build one from the saved research before the next redraft.</p>
+      }
     </section>
 
     @if (!drafts().length) {

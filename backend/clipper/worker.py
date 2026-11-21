@@ -26,6 +26,7 @@ from .studio import director as director_mod
 from .studio import hold as hold_mod
 from .studio import ideas as ideas_mod
 from .studio import script as script_mod
+from .studio import story_map as story_map_mod
 from .studio import storyboard as storyboard_mod
 from .studio import thumbnail as thumbnail_mod
 from .studio import voice as voice_mod
@@ -92,6 +93,8 @@ def run_job(job_id: int) -> None:
                 done = learning.refresh(rep, force=params.get("force", False))
             elif stage == "research":
                 script_mod.research(params["script_id"], rep)
+            elif stage == "story_map":
+                story_map_mod.run(params["script_id"], rep)
             elif stage == "write":
                 script_mod.write(params["script_id"], rep)
             elif stage == "factcheck":

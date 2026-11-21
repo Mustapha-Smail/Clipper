@@ -842,6 +842,72 @@ details.fold {
   scrollbar-color: var(--line-strong) transparent;
 }
 
+// The Script story-map editor is global to keep the large lazy component below its style budget.
+.story-map-editor {
+  fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+
+  legend {
+    padding: 0 6px;
+    font-weight: 650;
+  }
+
+  > label {
+    max-width: 360px;
+  }
+}
+
+.story-fields {
+  display: grid;
+  gap: 12px;
+
+  &.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  label {
+    display: grid;
+    align-content: start;
+    gap: 5px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .wide {
+    grid-column: 1 / -1;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+}
+
+.edit-beat {
+  padding: 16px;
+}
+
+.reorder {
+  width: 36px;
+  min-width: 36px;
+  padding-inline: 0;
+  font-size: 17px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

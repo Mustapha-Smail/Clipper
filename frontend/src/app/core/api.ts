@@ -6,7 +6,7 @@ import {
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
-  SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeStatus, YoutubeText,
+  StoryMapEdit, SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeStatus, YoutubeText,
 } from './models';
 
 const BASE = '/api/v1';
@@ -239,8 +239,14 @@ export class Api {
   undoRewrite(id: number): Observable<Script> {
     return this.http.post<Script>(`${BASE}/scripts/${id}/undo-rewrite`, {});
   }
-  redraft(id: number): Observable<Job> {
-    return this.http.post<Job>(`${BASE}/scripts/${id}/redraft`, {});
+  rebuildStoryMap(id: number, confirm = false): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/scripts/${id}/story-map`, { confirm });
+  }
+  saveStoryMap(id: number, storyMap: StoryMapEdit): Observable<Script> {
+    return this.http.put<Script>(`${BASE}/scripts/${id}/story-map`, storyMap);
+  }
+  redraft(id: number, rebuildStoryMap = false): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/scripts/${id}/redraft`, { rebuild_story_map: rebuildStoryMap });
   }
   deleteScript(id: number): Observable<void> {
     return this.http.delete<void>(`${BASE}/scripts/${id}`);
@@ -341,7 +347,8 @@ export class Api {
     return `${BASE}/storyboards/${id}/authorship.txt`;
   }
   soundSettings(id: number, patch: { music_id?: number | null; music_db?: number; effects?: boolean;
-                                     music_suggested?: boolean }): Observable<Storyboard> {
+                                     music_suggested?: boolean; starter_mode?: 'default' | 'on' | 'off';
+                                     riser_mode?: 'default' | 'on' | 'off' }): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, patch);
   }
   chapters(id: number): Observable<Chapters> {
