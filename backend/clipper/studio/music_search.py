@@ -17,23 +17,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API = "https://api.openverse.org/v1/audio/"
+from . import openverse
+
+API = openverse.API + "audio/"
 SAFE_LICENSES = "cc0,pdm,by"
 MAX_BYTES = 60 * 1024 * 1024
 HEADERS = {"User-Agent": "clipper-studio/1.0 (self-hosted video tool)"}
 
 
 def _get_json(url: str) -> dict:
-    request = urllib.request.Request(url, headers=HEADERS)
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as err:
-        if err.code == 429:
-            raise RuntimeError("Openverse is limiting requests from this machine. Wait a few minutes.") from err
-        raise RuntimeError(f"Openverse error ({err.code})") from err
-    except (urllib.error.URLError, TimeoutError) as err:
-        raise RuntimeError("Could not reach Openverse. Check your connection.") from err
+    """Compatibility seam kept for existing tests and prompt/API callers."""
+    return openverse.get_json(url)
 
 
 def _result(item: dict) -> dict:
