@@ -23,6 +23,7 @@ LONG_FORM_S = 60            # shorter videos are Shorts; demand is measured on l
 SMALL_CHANNEL = 100_000     # subscribers
 BIG_CHANNEL = 1_000_000
 OLD_YEARS = 3
+StoryShape = Literal["parallel", "explain", "scorecard", "investigation"]
 
 
 # --- what Claude returns --------------------------------------------------------
@@ -43,6 +44,8 @@ class Draft(BaseModel):
     angle: str = Field(description="What makes this take different from the usual explainer on the topic")
     format: Literal["single", "list"] = Field(
         description="single: one object, about 5 to 10 minutes. list: several objects, one chapter each")
+    story_shape: StoryShape = Field(
+        "explain", description="Editorial structure: parallel, explain, scorecard or investigation")
     search_query: str = Field(description="What a viewer would type into YouTube to find videos on this topic, "
                                           "3 to 6 plain words")
 

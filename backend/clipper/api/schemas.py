@@ -578,6 +578,8 @@ class StoryMapBeat(BaseModel):
     opens: list[str] = Field(default_factory=list)
     resolves: list[str] = Field(default_factory=list)
     visual_event: str
+    lane: str | None = None
+    checkpoint: str | None = None
 
 
 class StoryMapEnding(BaseModel):
@@ -586,8 +588,24 @@ class StoryMapEnding(BaseModel):
     source_numbers: list[int] = Field(default_factory=list)
 
 
+class StoryMapLane(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    label: str
+    rule: str
+    promised_consequence: str
+
+
+class StoryMapParallel(BaseModel):
+    shared_start: str
+    shared_clock: str
+    lanes: list[StoryMapLane]
+
+
 class StoryMapEdit(BaseModel):
     template: StoryTemplate
+    # Optional solely for v1 map compatibility. v2 generated maps always set it.
+    story_shape: StoryShape | None = None
+    parallel: StoryMapParallel | None = None
     opening: StoryMapOpening
     beats: list[StoryMapBeat]
     ending: StoryMapEnding
@@ -653,6 +671,7 @@ class ScriptCreate(BaseModel):
     video: Literal["long", "short"] | None = Field(None, description="Defaults to the idea's choice")
     form: IdeaForm | None = Field(
         None, description="Defaults to the idea's form; micro_short remains a compatibility Short")
+    story_shape: StoryShape | None = Field(None, description="Defaults to the idea's editorial story shape")
     target_seconds: int | None = Field(None, ge=15, le=90, description="For a Short; defaults to 50")
 
 
@@ -661,6 +680,7 @@ class ScriptPatch(BaseModel):
     status: Literal["draft", "approved"] | None = None
     target_minutes: int | None = Field(None, ge=1, le=30)
     notes: str | None = None
+    story_shape: StoryShape | None = None
 
 
 class ScriptSections(BaseModel):

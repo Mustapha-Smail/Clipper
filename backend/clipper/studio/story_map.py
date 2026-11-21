@@ -20,6 +20,7 @@ from ..jobs import Reporter
 from . import compliance, plain
 
 Template = Literal["mechanism", "story_loop", "journey", "ranking"]
+StoryShape = Literal["parallel", "explain", "scorecard", "investigation"]
 Purpose = Literal["question", "evidence", "answer", "twist", "payoff", "callback"]
 ID_PATTERN = r"^[a-z][a-z0-9_]{0,31}$"
 
@@ -41,6 +42,10 @@ class Beat(BaseModel):
     opens: list[str] = Field(default_factory=list)
     resolves: list[str] = Field(default_factory=list)
     visual_event: str
+    # v2 parallel maps scope beats to a lane and a matched checkpoint. They are
+    # optional so maps written before story shapes remain readable unchanged.
+    lane: str | None = None
+    checkpoint: str | None = None
 
 
 class Ending(BaseModel):
@@ -49,8 +54,27 @@ class Ending(BaseModel):
     source_numbers: list[int] = Field(default_factory=list)
 
 
+class ParallelLane(BaseModel):
+    # Keep parsing permissive so clean() can report the exact unsafe ID in its
+    # structural-problems list instead of raising a generic Pydantic error.
+    id: str
+    label: str
+    rule: str
+    promised_consequence: str
+
+
+class Parallel(BaseModel):
+    shared_start: str
+    shared_clock: str
+    lanes: list[ParallelLane]
+
+
 class Draft(BaseModel):
     template: Template
+    # None is the compatibility value for a legacy story map. New maps built by
+    # this module always carry one of the four canonical shapes.
+    story_shape: StoryShape | None = None
+    parallel: Parallel | None = None
     opening: Opening
     beats: list[Beat]
     ending: Ending
@@ -80,6 +104,8 @@ def input_material(script: Script) -> dict:
     return {
         "title": script.title,
         "format": script.format,
+        "form": script.form,
+        "story_shape": script.story_shape,
         "target": {"video": script.video, "minutes": script.target_minutes, "seconds": script.target_seconds},
         "audience": plain.audience(),
         "idea": None if idea is None else {
@@ -104,6 +130,8 @@ def input_fingerprint(script: Script) -> tuple[str, dict[str, str]]:
 STALE_LABELS = {
     "title": "The script title changed.",
     "format": "The script format changed.",
+    "form": "The script form (long, Short or micro-Short) changed.",
+    "story_shape": "The script story shape changed.",
     "target": "The Short/long target or target length changed.",
     "audience": "The audience setting changed.",
     "idea": "The idea hook, expected guess, answer, angle or beats changed.",
@@ -130,10 +158,12 @@ def _safe_loop(value: str) -> bool:
     return bool(re.fullmatch(ID_PATTERN, value or ""))
 
 
-def clean(raw: dict, source_numbers: set[int]) -> Cleaned:
+def clean(raw: dict, source_numbers: set[int], expected_shape: str | None = None) -> Cleaned:
     """Parse a proposed/editable map, drop unknown citations, and list structural problems."""
     draft = Draft.model_validate(raw)
-    value = draft.model_dump()
+    # Excluding None is important for legacy maps: optional v2 fields must not
+    # be materialised as nulls when a user merely opens and saves a v1 map.
+    value = draft.model_dump(exclude_none=True)
     warnings: list[str] = []
 
     def sources_at(where: str, numbers: list[int]) -> list[int]:
@@ -151,6 +181,60 @@ def clean(raw: dict, source_numbers: set[int]) -> Cleaned:
     value["ending"]["source_numbers"] = sources_at("Ending", value["ending"]["source_numbers"])
 
     problems: list[str] = []
+    shape = value.get("story_shape")
+    if expected_shape and shape != expected_shape:
+        problems.append(f"Story shape is '{shape or 'legacy'}', but the script requires '{expected_shape}'.")
+    # Lane/checkpoint fields are meaningful only for a parallel map. This is a
+    # hard contract: silently ignoring them would make a requested comparison
+    # disappear from the eventual narration.
+    has_parallel_metadata = value.get("parallel") is not None or any(
+        beat.get("lane") is not None or beat.get("checkpoint") is not None for beat in value["beats"])
+    if shape != "parallel":
+        if has_parallel_metadata:
+            problems.append("Lane and checkpoint metadata is only allowed for the parallel story shape.")
+    else:
+        parallel = value.get("parallel")
+        if parallel is None:
+            problems.append("Parallel story shape requires shared_start, shared_clock and two lanes.")
+        else:
+            if not parallel["shared_start"].strip():
+                problems.append("Parallel shared_start is empty.")
+            if not parallel["shared_clock"].strip():
+                problems.append("Parallel shared_clock is empty.")
+            lanes = parallel["lanes"]
+            if len(lanes) != 2:
+                problems.append(f"Parallel stories require exactly two lanes; got {len(lanes)}.")
+            lane_ids = [lane["id"] for lane in lanes]
+            if len(set(lane_ids)) != len(lane_ids):
+                problems.append("Parallel lanes must have distinct safe IDs.")
+            for lane in lanes:
+                if not _safe_loop(lane["id"]):
+                    problems.append(f"Parallel lane has unsafe id '{lane['id']}'.")
+                if not lane["label"].strip() or not lane["rule"].strip() or not lane["promised_consequence"].strip():
+                    problems.append(f"Parallel lane '{lane['id']}' needs a label, rule and promised consequence.")
+            known_lanes = set(lane_ids)
+            checkpoints: dict[str, set[str]] = {lane_id: set() for lane_id in known_lanes}
+            for index, beat in enumerate(value["beats"], 1):
+                lane_id, checkpoint = beat.get("lane"), beat.get("checkpoint")
+                if not lane_id:
+                    problems.append(f"Beat {index} is missing a lane for the parallel story shape.")
+                elif not _safe_loop(lane_id):
+                    problems.append(f"Beat {index} has unsafe lane id '{lane_id}'.")
+                elif lane_id not in known_lanes:
+                    problems.append(f"Beat {index} names unknown lane '{lane_id}'.")
+                if not checkpoint:
+                    problems.append(f"Beat {index} is missing a checkpoint for the parallel story shape.")
+                elif not _safe_loop(checkpoint):
+                    problems.append(f"Beat {index} has unsafe checkpoint id '{checkpoint}'.")
+                elif lane_id in checkpoints:
+                    checkpoints[lane_id].add(checkpoint)
+            if len(checkpoints) == 2:
+                shared = set.intersection(*checkpoints.values()) if checkpoints else set()
+                if len(shared) < 2:
+                    missing = sorted(set.union(*checkpoints.values()) - shared) if checkpoints else []
+                    detail = f"; unmatched checkpoints: {', '.join(missing)}" if missing else ""
+                    problems.append("Parallel stories need at least two checkpoints represented in both lanes"
+                                    + detail + ".")
     beat_ids: set[str] = set()
     opened: set[str] = set()
     active: set[str] = set()
@@ -228,7 +312,13 @@ def prompt_value(script: Script, *, required: bool = False) -> str:
     invalid = problems(script)
     if invalid:
         raise RuntimeError("The story map has validation problems: " + " ".join(invalid))
-    value = {key: script.story_map[key] for key in ("template", "opening", "beats", "ending")}
+    keys = ("template", "opening", "beats", "ending")
+    value = {key: script.story_map[key] for key in keys if key in script.story_map}
+    # v2 fields are deliberately passed through as structured JSON. Legacy
+    # maps have neither key and therefore render exactly as they did before.
+    for key in ("story_shape", "parallel"):
+        if key in script.story_map:
+            value[key] = script.story_map[key]
     return json.dumps(value, ensure_ascii=False, indent=2)
 
 
@@ -238,18 +328,28 @@ def _prompt(script: Script) -> str:
     research = script.research or {}
     sources = "\n".join(f"[{s['n']}] {s.get('title') or s['url']} — {s['url']}" for s in research.get("sources", []))
     return (f"<video>\n{script_mod._brief(script)}\n</video>\n\n"
+            f"<story_shape>{script.story_shape or 'choose one canonical shape'}</story_shape>\n"
             f"<research_notes>\n{research.get('notes', '')}\n</research_notes>\n\n"
             f"<sources>\n{sources or '(none)'}\n</sources>")
+
+
+def _shape_prompt(script: Script) -> str:
+    """Load the editable, shape-specific rules for a new map."""
+    shape = script.story_shape or "explain"
+    if shape not in {"parallel", "explain", "scorecard", "investigation"}:
+        shape = "explain"
+    return prompts.render(f"story_shape_{shape}")
 
 
 def build(script: Script, rep: Reporter) -> dict:
     """Ask for and validate one map. Does not write the database."""
     try:
-        draft = llm.ask("story_map", PROMPT.format(plain=plain.rules()), _prompt(script), Draft, effort="high")
+        system = PROMPT.format(plain=plain.rules()) + "\n\n" + _shape_prompt(script)
+        draft = llm.ask("story_map", system, _prompt(script), Draft, effort="high")
     except llm.AiUnavailable as err:
         rep.warn(f"Story map unavailable: {err}")
         raise RuntimeError(f"Could not build the story map: {err}") from err
-    cleaned = clean(draft.model_dump(), source_numbers(script))
+    cleaned = clean(draft.model_dump(), source_numbers(script), expected_shape=script.story_shape)
     for warning in cleaned.warnings:
         rep.warn(warning)
     for problem in cleaned.problems:
@@ -257,7 +357,17 @@ def build(script: Script, rep: Reporter) -> dict:
     if cleaned.problems:
         raise RuntimeError("The proposed story map was not structurally valid: " + " ".join(cleaned.problems))
     input_hash, input_parts = input_fingerprint(script)
-    return {"version": 1, "input_hash": input_hash, "input_parts": input_parts,
+    # An older prompt override may not know about story_shape. Its output is
+    # accepted for non-parallel scripts and receives the explicit v2 default;
+    # parallel scripts still fail above because their required metadata cannot
+    # be inferred safely.
+    has_shape = "story_shape" in draft.model_fields_set
+    if has_shape or script.story_shape:
+        cleaned.value.setdefault("story_shape", script.story_shape or "explain")
+    # A pre-v2 prompt override which omits story_shape remains a readable v1
+    # map. New model responses and any script with an explicit shape are v2.
+    version = 2 if has_shape or script.story_shape else 1
+    return {"version": version, "input_hash": input_hash, "input_parts": input_parts,
             "made_at": utcnow().isoformat(), "by": "ai", **cleaned.value}
 
 
@@ -281,10 +391,15 @@ def user_edit(script: Script, raw: dict) -> tuple[dict, list[str]]:
     """Validate a user edit while keeping the map's original input fingerprint."""
     if not script.story_map:
         raise ValueError("Build the story map before editing it")
-    cleaned = clean(raw, source_numbers(script))
+    # A v2 map's shape is part of its editable contract. Keep it when an old
+    # client sends the legacy body without the new optional field.
+    if raw.get("story_shape") is None and script.story_map.get("story_shape") is not None:
+        raw = {**raw, "story_shape": script.story_map["story_shape"]}
+    cleaned = clean(raw, source_numbers(script), expected_shape=script.story_shape if script.story_shape else None)
     if cleaned.warnings or cleaned.problems:
         raise ValueError(" ".join([*cleaned.warnings, *cleaned.problems]))
-    value = {"version": 1, "input_hash": script.story_map.get("input_hash", ""),
+    value = {"version": max(2, int(script.story_map.get("version", 1))),
+             "input_hash": script.story_map.get("input_hash", ""),
              "input_parts": script.story_map.get("input_parts", {}), "made_at": utcnow().isoformat(), "by": "you",
              **cleaned.value}
     return value, cleaned.warnings

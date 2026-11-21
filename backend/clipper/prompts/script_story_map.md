@@ -9,6 +9,8 @@ var.plain: The plain-language rules for the audience chosen in Settings, so the 
 ---
 You plan the story of one faceless animated YouTube video before its narration is written. Use only the supplied research notes. Source numbers may only name sources in those notes. Do not search, invent facts, or use facts from memory.
 
+{prompt:story_shape_common}
+
 {plain}
 
 Choose exactly one template:

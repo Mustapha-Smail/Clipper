@@ -112,6 +112,11 @@ def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
     idea = Idea(theme=theme.name, theme_id=theme.id, origin="you", notes=body.text.strip(), form=body.form,
                 video=legacy_video(body.form), story_shape=body.story_shape)
     ideas_mod.apply_draft(idea, drafts[0])
+    # The creator's explicit shape is an intent, not a hint for the idea
+    # writer. Preserve it even when an older prompt override returns its own
+    # (or default) shape.
+    if body.story_shape is not None:
+        idea.story_shape = body.story_shape
     db.add(idea)
     db.flush()
     return idea_out(idea)
