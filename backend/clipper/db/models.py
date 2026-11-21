@@ -298,6 +298,44 @@ class StudioMusic(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class StudioSound(Base):
+    """One locally cached sound-effect candidate with auditable provenance.
+
+    Search results are not renderable assets. A later approval/import flow sets
+    `path`, `checksum`, `acquired_at` and `approved_at`; until then this row is
+    metadata a creator can inspect or reject.
+    """
+
+    __tablename__ = "studio_sounds"
+    __table_args__ = (UniqueConstraint("provider", "provider_id", name="ux_studio_sounds_provider_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)           # pop|whoosh|impact|scribble|step|riser...
+    name: Mapped[str] = mapped_column(String(200))
+    path: Mapped[str] = mapped_column(Text, default="")                # normalized 48 kHz mono file after approval
+    duration: Mapped[float] = mapped_column(Float, default=0.0)
+    gain: Mapped[float] = mapped_column(Float, default=1.0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    provider: Mapped[str] = mapped_column(String(24))                  # openverse|wikimedia|upload
+    provider_id: Mapped[str] = mapped_column(String(100))
+    upstream_id: Mapped[str] = mapped_column(String(160), default="")
+    creator: Mapped[str] = mapped_column(Text, default="")
+    creator_url: Mapped[str] = mapped_column(Text, default="")
+    landing_url: Mapped[str] = mapped_column(Text, default="")
+    license: Mapped[str] = mapped_column(String(16))                   # cc0|by (strict whitelist for providers)
+    license_version: Mapped[str] = mapped_column(String(16), default="")
+    license_url: Mapped[str] = mapped_column(Text, default="")
+    attribution: Mapped[str] = mapped_column(Text, default="")
+    media_url: Mapped[str] = mapped_column(Text, default="")           # evidence; final renders never hotlink it
+    checksum: Mapped[str] = mapped_column(String(64), default="")
+    acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Storyboard(Base):
     """Scenes for one stretch of a voice take, and the video rendered from them.
 

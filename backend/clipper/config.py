@@ -24,6 +24,9 @@ the database). This module only knows what is decided when a process starts.
   CODEX_CLI              path of the Codex CLI (a ChatGPT plan through `codex exec`, codex_cli.py), likewise
   WIKIMEDIA_CONTACT      a URL or email sent to Wikimedia in the User-Agent of archive photo searches;
                          with it Wikimedia allows 200 searches a minute, without it 10
+  OPENVERSE_CLIENT_ID, OPENVERSE_CLIENT_SECRET
+                         optional server-side OAuth client for the Openverse media API; anonymous access remains
+                         available at its smaller effective rate limit
   BUFFER_CLIPPING_API_KEY  Buffer key for clips; BUFFER_STUDIO_API_KEY is the separate Studio account
   BUFFER_API_KEY         legacy fallback used for either feature when its specific key is not set
   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL
@@ -149,6 +152,16 @@ def openai_base_url() -> str:
 def wikimedia_contact() -> str:
     """Sent to Wikimedia and nowhere else; empty unless the owner chose one. Kept to plain header characters."""
     return re.sub(r"[^\x21-\x7e]", "", os.environ.get("WIKIMEDIA_CONTACT") or "")[:200]
+
+
+def openverse_client() -> tuple[str, str]:
+    """The optional Openverse server client, or two empty strings.
+
+    The secret is read only when a token is requested. It is never stored in
+    settings or returned through an API.
+    """
+    return ((os.environ.get("OPENVERSE_CLIENT_ID") or "").strip(),
+            (os.environ.get("OPENVERSE_CLIENT_SECRET") or "").strip())
 
 
 def studio_dir() -> Path:
