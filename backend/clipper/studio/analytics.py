@@ -232,6 +232,89 @@ def watching_at(curve: list[list], x: float) -> tuple[float, str]:
 COLUMNS = ("avg_viewed", "kept_at_5s", "kept_at_twist", "kept_at_payoff")
 
 
+def _checkpoint(kind: str, label: str, at: float | None, curve: list[list], duration: float | None,
+                *, lane: str | None = None, evidence: str | None = None, reason: str | None = None,
+                sentence: int | None = None, word_number: int | None = None) -> dict:
+    """One immutable render landmark measured against the current YouTube curve."""
+    item = {"kind": kind, "label": label, "lane": lane, "time_s": at, "retention_pct": None,
+            "position": None, "reason": reason, "evidence": evidence, "sentence": sentence,
+            "word_number": word_number, "how": None}
+    if reason:
+        return item
+    if not curve:
+        item["reason"] = "YouTube gives no retention curve for it yet"
+    elif not duration:
+        item["reason"] = "the video's length is unknown"
+    elif at is None:
+        item["reason"] = "the render snapshot has no time for this checkpoint"
+    elif at < 0 or at > duration:
+        item["reason"] = "the checkpoint falls outside the video's duration on YouTube"
+    else:
+        ratio, how = watching_at(curve, at / duration)
+        item.update(retention_pct=round(100 * ratio), position=round(at / duration, 4), how=how)
+    return item
+
+
+def _frozen_checkpoints(board: Storyboard, curve: list[list], duration: float | None,
+                        note: str | None) -> list[dict]:
+    """Retention landmarks from a successful render snapshot, never from mutable script text.
+
+    Fixed elapsed-time marks are safe to calculate directly. Named editorial marks are accepted only from
+    render_meta, where their exact render-time seconds and evidence were frozen.
+    """
+    meta = board.render_meta if isinstance(board.render_meta, dict) else {}
+    form = meta.get("form") or board.form
+    is_micro = form == "micro_short"
+    fixed_at = 1.0 if is_micro else 5.0
+    fixed_kind = "one_second" if is_micro else "five_seconds"
+    fixed_label = "1 second" if is_micro else "5 seconds"
+    fixed_reason = None
+    if duration is not None and duration < fixed_at:
+        fixed_reason = f"the video ends before {'one second' if is_micro else 'five seconds'}"
+    elif not curve:
+        fixed_reason = note or "YouTube gives no retention curve for it yet"
+    points = [_checkpoint(fixed_kind, fixed_label, fixed_at, curve, duration, reason=fixed_reason)]
+
+    key = "micro_checkpoints" if is_micro else "hold_checkpoints"
+    frozen = meta.get(key)
+    if not isinstance(frozen, list) or not frozen:
+        reason = f"the video has no immutable {key.replace('_', ' ')} from a successful render"
+        expected = (("first_event", "First meaningful card or event"),
+                    ("reveal", "Reveal or consequence"), ("payoff", "Loop or payoff")) if is_micro else (
+                    ("promise", "Promise"), ("consequence", "Consequence"), ("twist", "Twist"),
+                    ("rehook", "Rehook"), ("payoff", "Payoff"))
+        points.extend(_checkpoint(kind, label, None, curve, duration, reason=reason) for kind, label in expected)
+        return points
+
+    labels = {
+        "promise": "Promise", "consequence": "Consequence", "twist": "Twist", "rehook": "Rehook",
+        "payoff": "Payoff", "loop": "Loop", "first_card": "First meaningful card",
+        "first_event": "First meaningful event", "first_meaningful_card": "First meaningful card",
+        "first_meaningful_event": "First meaningful event", "reveal": "Reveal",
+    }
+    valid: list[dict] = []
+    for raw in frozen:
+        if not isinstance(raw, dict) or not isinstance(raw.get("kind"), str):
+            continue
+        kind = raw["kind"].strip().lower()
+        at = raw.get("time_s", raw.get("at"))
+        if not isinstance(at, int | float):
+            at = None
+        lane = raw.get("lane") if isinstance(raw.get("lane"), str) else None
+        label = labels.get(kind, kind.replace("_", " ").capitalize())
+        if lane:
+            label += f" — lane {lane}"
+        valid.append(_checkpoint(
+            kind, label, None if at is None else float(at), curve, duration, lane=lane,
+            evidence=raw.get("evidence") if isinstance(raw.get("evidence"), str) else None,
+            sentence=raw.get("sentence") if isinstance(raw.get("sentence"), int) else None,
+            word_number=raw.get("word_number") if isinstance(raw.get("word_number"), int) else None,
+        ))
+    points.extend(sorted(valid, key=lambda item: (item["time_s"] is None, item["time_s"] or 0,
+                                                  item["kind"], item["lane"] or "")))
+    return points
+
+
 def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> dict:
     """The retention columns of one video for Learning, every number with its lines, blanks with their reason.
 
@@ -262,10 +345,12 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
     curve = row.retention or []
     frozen = (board.render_meta or {}).get("hold_checkpoints") if board.render_meta else None
     frozen_times: dict[int, float] = {}
-    if curve and isinstance(frozen, list) and frozen:
+    if curve and isinstance(frozen, list):
         marks = {}
         for point in frozen:
             kind, word, at = point.get("kind"), point.get("word"), point.get("time_s", point.get("at"))
+            if not isinstance(word, int) and isinstance(point.get("word_number"), int):
+                word = point["word_number"] - 1
             if kind in ("twist", "rehook", "payoff") and isinstance(word, int) and isinstance(at, int | float):
                 marks.setdefault(word, kind)
                 frozen_times[word] = float(at)
@@ -298,7 +383,9 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
             why[key] = reason or f"the hold check marks no {name} in this video"
             continue
         words = board.words or []
-        at = frozen_times.get(word, float(words[word]["s"])) if word < len(words) else None
+        at = frozen_times.get(word)
+        if at is None and word < len(words):
+            at = float(words[word]["s"])
         if at is None or at > duration:
             why[key] = f"the {name} falls after the end of the video on YouTube"
             continue
@@ -314,6 +401,7 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
         "minutes_watched": row.minutes_watched, "average_view_s": row.average_view_s,
         "average_view_pct": row.average_view_pct, "duration_s": duration,
         "curve": [[p[0], p[1]] for p in curve],
+        "checkpoints": _frozen_checkpoints(board, curve, duration, row.note),
         "twist_at": None if out["kept_at_twist"] is None else _x(board, marks, ("twist", "rehook"), duration,
                                                                      frozen_times),
         "payoff_at": None if out["kept_at_payoff"] is None else _x(board, marks, ("payoff",), duration,
@@ -327,7 +415,9 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
 def _x(board: Storyboard, marks: dict[int, str], roles: tuple[str, ...], duration: float,
        frozen_times: dict[int, float] | None = None) -> float:
     word = min(i for i, r in marks.items() if r in roles)
-    at = (frozen_times or {}).get(word, float(board.words[word]["s"]))
+    at = (frozen_times or {}).get(word)
+    if at is None:
+        at = float(board.words[word]["s"])
     return round(at / duration, 4)
 
 

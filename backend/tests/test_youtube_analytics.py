@@ -242,6 +242,60 @@ def test_retention_prefers_immutable_render_checkpoint_times_after_script_edit()
     assert any("0.5 s (word 2)" in line for line in result["retention"]["lines"])
 
 
+def test_retention_lists_every_frozen_lane_checkpoint_after_script_edit():
+    frozen = [
+        {"kind": "promise", "sentence": 1, "word_number": 1, "time_s": 0.0, "evidence": "Two paths."},
+        {"kind": "consequence", "sentence": 2, "word_number": 3, "time_s": 1.0,
+         "lane": "founder", "evidence": "The founder waits."},
+        {"kind": "consequence", "sentence": 3, "word_number": 6, "time_s": 2.5,
+         "lane": "rival", "evidence": "The rival ships."},
+        {"kind": "twist", "sentence": 4, "word_number": 9, "time_s": 4.0, "evidence": "Then it flips."},
+        {"kind": "rehook", "sentence": 5, "word_number": 12, "time_s": 5.0, "evidence": "But watch."},
+        {"kind": "payoff", "sentence": 6, "word_number": 14, "time_s": 7.5, "evidence": "Speed wins."},
+    ]
+    board = Storyboard(words=[], format="short", form="short", render_meta={
+        "form": "short", "story_shape": "parallel", "hold_checkpoints": frozen})
+    script = Script(sections=[{"key": "edited", "text": "This mutable replacement must not be read."}], hold=None)
+    row = VideoAnalytics(youtube_id="AAAAAAAAAAA", source="buffer", fetched_at=utcnow(), duration_s=10,
+                         retention=[[0.0, 1.0], [0.5, 0.6], [1.0, 0.2]])
+    result = analytics.for_video(board, script, [row])
+    checkpoints = result["retention"]["checkpoints"]
+    assert result["kept_at_twist"] == 68 and result["kept_at_payoff"] == 40
+    assert checkpoints[0]["kind"] == "five_seconds" and checkpoints[0]["retention_pct"] == 60
+    consequences = [item for item in checkpoints if item["kind"] == "consequence"]
+    assert [(item["lane"], item["time_s"], item["retention_pct"]) for item in consequences] == [
+        ("founder", 1.0, 92), ("rival", 2.5, 80)]
+    assert [item["evidence"] for item in consequences] == ["The founder waits.", "The rival ships."]
+    assert {item["kind"] for item in checkpoints[1:]} == {
+        "promise", "consequence", "twist", "rehook", "payoff"}
+
+
+def test_retention_explains_missing_immutable_checkpoint_snapshot():
+    board = Storyboard(words=[], format="short", form="short", render_meta={"form": "short"})
+    row = VideoAnalytics(youtube_id="AAAAAAAAAAA", source="buffer", fetched_at=utcnow(), duration_s=10,
+                         retention=[[0.0, 1.0], [1.0, 0.5]])
+    checkpoints = analytics.for_video(board, Script(sections=[]), [row])["retention"]["checkpoints"]
+    assert checkpoints[0]["kind"] == "five_seconds" and checkpoints[0]["retention_pct"] == 75
+    assert {item["kind"] for item in checkpoints[1:]} == {
+        "promise", "consequence", "twist", "rehook", "payoff"}
+    assert all("immutable hold checkpoints" in item["reason"] for item in checkpoints[1:])
+
+
+def test_micro_retention_uses_frozen_visual_timeline_not_voice_words():
+    board = Storyboard(words=[], format="short", form="micro_short", render_meta={
+        "form": "micro_short", "micro_checkpoints": [
+            {"kind": "first_card", "time_s": 0.4, "evidence": "$1 vs $100"},
+            {"kind": "reveal", "time_s": 6.0, "evidence": "The cheap one survives"},
+            {"kind": "loop", "time_s": 11.0, "evidence": "Back to the opening frame"},
+        ]})
+    row = VideoAnalytics(youtube_id="AAAAAAAAAAA", source="buffer", fetched_at=utcnow(), duration_s=12,
+                         retention=[[0.0, 1.0], [0.5, 0.7], [1.0, 0.4]])
+    checkpoints = analytics.for_video(board, Script(sections=[]), [row])["retention"]["checkpoints"]
+    assert [item["kind"] for item in checkpoints] == ["one_second", "first_card", "reveal", "loop"]
+    assert checkpoints[0]["retention_pct"] == 95
+    assert checkpoints[2]["retention_pct"] == 70
+
+
 class FakeYouTube:
     """The two Google endpoints analytics.py calls, answering from tables, recording each call."""
 

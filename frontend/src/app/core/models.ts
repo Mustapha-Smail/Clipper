@@ -1232,6 +1232,8 @@ export interface VideoRetention {
   duration_s: number | null;
   /** [fraction of the video, audience watch ratio] from YouTube */
   curve: [number, number][];
+  /** Editorial landmarks frozen by the successful render, then measured against YouTube's curve. */
+  checkpoints: RetentionCheckpoint[];
   twist_at: number | null;
   payoff_at: number | null;
   lines: string[];
@@ -1239,6 +1241,20 @@ export interface VideoRetention {
   why: Record<string, string>;
   note: string | null;
   fetched_at: string | null;
+}
+
+export interface RetentionCheckpoint {
+  kind: string;
+  label: string;
+  lane: string | null;
+  time_s: number | null;
+  retention_pct: number | null;
+  position: number | null;
+  reason: string | null;
+  evidence: string | null;
+  sentence: number | null;
+  word_number: number | null;
+  how: string | null;
 }
 
 export interface YoutubeStatus {
