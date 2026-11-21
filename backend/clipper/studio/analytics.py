@@ -260,8 +260,19 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
                      f"= {duration:.0f} s (YouTube gave none)")
     why = {}
     curve = row.retention or []
-    marks, reason = ({}, "") if not curve else storyboard_mod.turn_marks(board.words or [], script.sections or [],
-                                                                        script.hold)
+    frozen = (board.render_meta or {}).get("hold_checkpoints") if board.render_meta else None
+    frozen_times: dict[int, float] = {}
+    if curve and isinstance(frozen, list) and frozen:
+        marks = {}
+        for point in frozen:
+            kind, word, at = point.get("kind"), point.get("word"), point.get("time_s", point.get("at"))
+            if kind in ("twist", "rehook", "payoff") and isinstance(word, int) and isinstance(at, int | float):
+                marks.setdefault(word, kind)
+                frozen_times[word] = float(at)
+        reason = "" if marks else "the render snapshot has no timed turn checkpoints"
+    else:
+        marks, reason = ({}, "") if not curve else storyboard_mod.turn_marks(board.words or [], script.sections or [],
+                                                                            script.hold)
     if not curve:
         why["kept_at_5s"] = row.note or "YouTube gives no retention curve for it yet"
     elif not duration:
@@ -287,7 +298,7 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
             why[key] = reason or f"the hold check marks no {name} in this video"
             continue
         words = board.words or []
-        at = float(words[word]["s"]) if word < len(words) else None
+        at = frozen_times.get(word, float(words[word]["s"])) if word < len(words) else None
         if at is None or at > duration:
             why[key] = f"the {name} falls after the end of the video on YouTube"
             continue
@@ -303,17 +314,21 @@ def for_video(board: Storyboard, script: Script, rows: list[VideoAnalytics]) -> 
         "minutes_watched": row.minutes_watched, "average_view_s": row.average_view_s,
         "average_view_pct": row.average_view_pct, "duration_s": duration,
         "curve": [[p[0], p[1]] for p in curve],
-        "twist_at": None if out["kept_at_twist"] is None else _x(board, marks, ("twist", "rehook"), duration),
-        "payoff_at": None if out["kept_at_payoff"] is None else _x(board, marks, ("payoff",), duration),
+        "twist_at": None if out["kept_at_twist"] is None else _x(board, marks, ("twist", "rehook"), duration,
+                                                                     frozen_times),
+        "payoff_at": None if out["kept_at_payoff"] is None else _x(board, marks, ("payoff",), duration,
+                                                                      frozen_times),
         "lines": lines, "why": why, "note": row.note,
         "fetched_at": as_utc(row.fetched_at).isoformat() if row.fetched_at else None,
     }
     return out
 
 
-def _x(board: Storyboard, marks: dict[int, str], roles: tuple[str, ...], duration: float) -> float:
+def _x(board: Storyboard, marks: dict[int, str], roles: tuple[str, ...], duration: float,
+       frozen_times: dict[int, float] | None = None) -> float:
     word = min(i for i, r in marks.items() if r in roles)
-    return round(float(board.words[word]["s"]) / duration, 4)
+    at = (frozen_times or {}).get(word, float(board.words[word]["s"]))
+    return round(at / duration, 4)
 
 
 def last_fetch(db: Session) -> tuple[str | None, int]:

@@ -6,7 +6,7 @@ import pytest
 
 from clipper import llm
 from clipper.db import session_scope
-from clipper.db.models import Job, Script, VoiceTake
+from clipper.db.models import Job, Script, Storyboard, VoiceTake
 from clipper.jobs import ConsoleReporter
 from clipper.settings import Settings
 from clipper.studio import animate, art, voice
@@ -205,6 +205,31 @@ def test_attention_modes_round_trip_and_are_logged(client, script_with_take, fak
         events = list(db.scalars(select(StudioEvent).where(StudioEvent.storyboard_id == board["id"],
                                                            StudioEvent.kind == "sound")))
     assert len(events) == 2 and {event.by for event in events} == {"you"}
+
+
+def test_successful_render_snapshot_freezes_hold_checkpoint_evidence(app_env, script_with_take):
+    from clipper.studio import script as script_mod
+
+    stored = {"hash": script_mod.text_hash(SECTIONS), "topic": "fridge", "checked_at": "now",
+              "roles": [{"n": 1, "role": "hook", "title_question": False},
+                        {"n": 2, "role": "payoff", "title_question": False}],
+              "promise": {"promise_sentence": 1, "payoff_sentence": 2, "verdict": "paid"}}
+    with session_scope() as db:
+        script = db.get(Script, script_with_take)
+        script.hold = stored
+        script.takes[0].script_hash = stored["hash"]
+        board = Storyboard(script_id=script.id, take_id=script.takes[0].id, format="long", form="long",
+                           title="Fridge", words=[
+                               {"section": "a" if i < 6 else "b", "w": w, "s": i * 0.4, "e": i * 0.4 + 0.2}
+                               for i, w in enumerate("Your fridge has never made cold. It moves heat out.".split())])
+        db.add(board)
+        db.flush()
+        snapshot = animate.render_snapshot(board, Settings(), None)
+        board.render_meta = snapshot
+        before = list(snapshot["hold_checkpoints"])
+        script.sections = [{**SECTIONS[0], "text": "The edited fridge claim."}, SECTIONS[1]]
+        assert board.render_meta["hold_checkpoints"] == before
+        assert {point["kind"] for point in before} == {"promise", "payoff"}
 
 
 # --- long videos, sound, subtitles ---------------------------------------------------------------
