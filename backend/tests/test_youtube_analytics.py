@@ -229,6 +229,19 @@ def test_five_second_retention_explains_when_it_cannot_be_measured():
         "the video's length is unknown"
 
 
+def test_retention_prefers_immutable_render_checkpoint_times_after_script_edit():
+    words = [{"w": str(i), "s": i * 0.5, "e": i * 0.6} for i in range(6)]
+    board = Storyboard(words=words, format="short", render_meta={
+        "hold_checkpoints": [{"kind": "twist", "word": 1, "time_s": 0.5},
+                              {"kind": "payoff", "word": 4, "time_s": 2.0}]})
+    script = Script(sections=[{"key": "a", "text": "one. two. three."}], hold=None)
+    row = VideoAnalytics(youtube_id="AAAAAAAAAAA", source="buffer", fetched_at=utcnow(), duration_s=10,
+                         retention=[[0.0, 1.0], [0.1, 0.8], [0.2, 0.6]])
+    result = analytics.for_video(board, script, [row])
+    assert result["kept_at_twist"] == 90 and result["kept_at_payoff"] == 60
+    assert any("0.5 s (word 2)" in line for line in result["retention"]["lines"])
+
+
 class FakeYouTube:
     """The two Google endpoints analytics.py calls, answering from tables, recording each call."""
 

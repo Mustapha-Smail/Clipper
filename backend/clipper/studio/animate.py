@@ -657,6 +657,8 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
     state = attention_state({"effects": board.effects, "starter_mode": board.starter_mode,
                              "riser_mode": board.riser_mode}, settings)
     stats = hold_result.get("stats", {}) if hold_result else {}
+    hold_checkpoints = (hold.checkpoints(script.sections or [], script.hold, board.words)
+                        if hold_result else [])
     return {
         "version": 1,
         "at": utcnow().isoformat(),
@@ -672,6 +674,10 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
         "wpm": round(wpm) if wpm else None,
         "hold_hash": script.hold.get("hash") if hold_result else None,
         "hold_score": hold_result.get("score") if hold_result else None,
+        "hold_verdict": hold_result.get("verdict") if hold_result else None,
+        # These are copied into the successful render's JSON snapshot. They are
+        # intentionally not references into the mutable script or storyboard.
+        "hold_checkpoints": hold_checkpoints,
         "first_twist_s": stats.get("first_twist"),
         "longest_gap_s": stats.get("longest_gap"),
         "first_visual_event_s": (visual_qa or {}).get("first_visual_event_s"),

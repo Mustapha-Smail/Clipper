@@ -170,3 +170,45 @@ def test_measured_timing_uses_only_a_chosen_matching_take(app_env):
         fallback = hold.score_script(script)
         assert fallback["stats"]["timing"] == "estimated" and fallback["stats"]["wpm"] == 150
         assert fallback["stats"]["first_twist"] == 10
+
+
+def test_explicit_promise_checkpoints_drop_bad_refs_and_preserve_order():
+    sections = [{"key": "a", "heading": "Short", "text": " ".join(say(4, str(i)) for i in range(1, 6))}]
+    promise, dropped, warnings = hold._promise_data(
+        {"verdict": "paid", "promise_sentence": 2,
+         "consequence_sentences": [{"sentence": 3}, {"sentence": 99}, {"sentence": 2}],
+         "payoff_sentence": 5}, len(hold.sentences(sections)))
+    assert dropped == 2 and promise["consequence_sentences"] == [{"sentence": 3, "lane": None}]
+    assert promise["payoff_sentence"] == 5 and "does not refer" in warnings[0] and "out of order" in warnings[1]
+
+
+def test_parallel_promise_cannot_claim_both_lane_consequences_when_one_is_missing():
+    sections = [{"key": "a", "heading": "Short", "text": " ".join(say(4, str(i)) for i in range(1, 6))}]
+    stored = stored_for(sections, ["hook", "consequence", "consequence", "twist", "payoff"])
+    stored.update(story_shape="parallel", lane_ids=["a", "b"], promise={
+        "verdict": "paid", "promise_sentence": 1,
+        "consequence_sentences": [{"sentence": 2, "lane": "a"}], "payoff_sentence": 5,
+    })
+    result = hold.score(sections, stored, "short")
+    assert result["promise"]["consequence_verdict"] == "partial"
+    assert result["promise"]["verdict"] == "paid"  # title promise is independent from lane consequences
+    assert any("Only some lane consequences" in line["label"] for line in result["lines"])
+
+
+def test_non_parallel_checkpoint_drops_lane_metadata():
+    promise, dropped, warnings = hold._promise_data(
+        {"consequence_sentences": [{"sentence": 2, "lane": "a"}]}, 3, story_shape="explain")
+    assert promise["consequence_sentences"] == [] and dropped == 1
+    assert "non-parallel" in warnings[0]
+
+
+def test_render_checkpoints_resolve_sentence_times_and_evidence():
+    sections = [{"key": "a", "heading": "Short", "text": "One starts. Two turns. Three lands."}]
+    stored = stored_for(sections, ["hook", "twist", "payoff"])
+    stored["promise"] = {"promise_sentence": 1, "payoff_sentence": 3, "verdict": "paid"}
+    words = [{"section": "a", "w": token, "s": i * 0.5, "e": i * 0.5 + 0.2}
+             for i, token in enumerate("One starts. Two turns. Three lands.".split())]
+    points = hold.checkpoints(sections, stored, words)
+    assert [(p["kind"], p["sentence"], p["time_s"]) for p in points] == [
+        ("promise", 1, 0.0), ("twist", 2, 1.0), ("payoff", 3, 2.0)]
+    assert points[0]["evidence"] == "One starts."
