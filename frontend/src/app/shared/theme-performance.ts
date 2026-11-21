@@ -57,6 +57,67 @@ import { Toasts } from '../core/toast';
         }
       </section>
 
+      <section class="card evidence" aria-labelledby="evidence-heading">
+        <div class="row spread evidence-head">
+          <div>
+            <span class="eyebrow">Comparable evidence</span>
+            <h2 id="evidence-heading">What can be compared</h2>
+          </div>
+          <p class="small muted">{{ d.experiments.note }}</p>
+        </div>
+
+        @if (hasCohorts(d)) {
+          <div class="cohorts">
+            @for (group of cohortGroups(d); track group.key) {
+              <div class="cohort">
+                <h3>{{ group.label }}</h3>
+                @for (item of group.items; track item.value) {
+                  <div class="cohort-row">
+                    <strong>{{ readable(item.value) }}</strong>
+                    <span>{{ item.videos }} {{ item.videos === 1 ? 'video' : 'videos' }}</span>
+                    <span>{{ item.with_views }} with views</span>
+                    @if (item.median_views !== null) {
+                      <span>median {{ short(item.median_views) }} views</span>
+                    }
+                    @if (item.median_views_per_day !== null) {
+                      <span class="pace">{{ item.with_mature_velocity }} mature · {{ number(item.median_views_per_day) }} views/day median</span>
+                    } @else {
+                      <span class="muted">no mature 7-day window</span>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="small muted">Rendered form, story shape, and a creator-recorded thumbnail result appear here after published videos have those saved facts.</p>
+        }
+
+        <div class="comparisons">
+          <h3>Careful comparisons</h3>
+          @for (line of d.experiments.comparisons; track line) { <p class="small">{{ line }}</p> }
+        </div>
+
+        @if (d.experiments.lineages.length) {
+          <details class="fold lineages">
+            <summary>Premise journeys ({{ d.experiments.lineages.length }})</summary>
+            <p class="small muted">Related concept tests and promoted videos are shown together, not pooled or treated as cause and effect.</p>
+            @for (lineage of d.experiments.lineages; track lineage.root_idea_id) {
+              <div class="lineage">
+                @for (video of lineage.videos; track video.storyboard_id; let last = $last) {
+                  <a [routerLink]="['/storyboards', video.storyboard_id]" class="lineage-video">
+                    <span class="dot" aria-hidden="true"></span>
+                    <span><strong>{{ video.title }}</strong><small>{{ readable(video.lineage_kind ?? 'root') }} · {{ readable(video.form ?? 'unknown') }}</small></span>
+                    <span class="num">{{ velocityLabel(video.seven_day_velocity) }}</span>
+                  </a>
+                  @if (!last) { <span class="lineage-line" aria-hidden="true"></span> }
+                }
+              </div>
+            }
+          </details>
+        }
+      </section>
+
       <h2>Videos, best first</h2>
       @if (d.videos.length) {
         <div class="videos stagger">
@@ -87,6 +148,34 @@ import { Toasts } from '../core/toast';
                   <p class="small muted">{{ v.format === 'short' ? 'Short' : 'Long video' }} · {{ v.style }}
                     @if (v.seconds) { · {{ v.seconds }} s } @if (v.published_at) { · out {{ v.published_at | ago }} }
                     · <a [routerLink]="['/storyboards', v.storyboard_id]">open</a></p>
+                  @if (v.form || v.story_shape || v.thumbnail_angle) {
+                    <p class="small muted">Rendered facts:
+                      @if (v.form) { {{ readable(v.form) }} }
+                      @if (v.story_shape) { · {{ readable(v.story_shape) }} shape }
+                      @if (v.thumbnail_angle) { · {{ readable(v.thumbnail_angle) }} thumbnail ({{ readable(v.thumbnail_evidence ?? 'recorded') }}) }
+                    </p>
+                  }
+                  <section class="velocity" aria-label="Seven-day pace">
+                    <div class="row spread">
+                      <div><strong>Seven-day pace</strong><p class="small muted">{{ v.seven_day_velocity.coverage }} source windows usable</p></div>
+                      <strong class="num">{{ velocityLabel(v.seven_day_velocity) }}</strong>
+                    </div>
+                    @if (v.seven_day_velocity.cross_platform; as pace) {
+                      <p class="small">{{ short(pace.views_gained) }} views gained across {{ pace.source_count }} source{{ pace.source_count === 1 ? '' : 's' }}. {{ pace.label }}.</p>
+                    } @else {
+                      <p class="small muted">{{ v.seven_day_velocity.reason ?? 'A mature day-seven window is not available yet.' }}</p>
+                    }
+                    <ul class="velocity-sources small">
+                      @for (source of v.seven_day_velocity.sources; track source.source_key) {
+                        <li><strong>{{ source.name }}</strong> —
+                          @if (source.status === 'available') {
+                            {{ short(source.views_gained ?? 0) }} gained in {{ source.elapsed_days }} days
+                            @if (source.corrected) { <span class="muted">(source count was corrected)</span> }
+                          } @else { <span class="muted">{{ source.reason }}</span> }
+                        </li>
+                      }
+                    </ul>
+                  </section>
                   @if (v.hold_score !== null || v.wpm) {
                     <p class="small muted">
                       @if (v.hold_score !== null) { Holds {{ v.hold_score }}/100 · first twist {{ v.first_twist === null ? 'none' : v.first_twist + ' s' }}
@@ -130,6 +219,18 @@ import { Toasts } from '../core/toast';
                           <span>{{ r.duration_s === null ? '' : round(r.duration_s) + ' s' }}</span></p>
                       }
                       <ul class="lines small">@for (line of r.lines; track line) { <li>{{ line }}</li> }</ul>
+                      @if (r.checkpoints.length) {
+                        <div class="checkpoints" aria-label="Retention checkpoints">
+                          <strong class="small">Measured checkpoints</strong>
+                          @for (point of r.checkpoints; track point.kind + (point.lane ?? '') + (point.time_s ?? '')) {
+                            <div class="checkpoint">
+                              <span>{{ point.label }}@if (point.lane) { · {{ point.lane }} }</span>
+                              <span class="num">{{ point.retention_pct === null ? '—' : pct(point.retention_pct) }}</span>
+                              <small class="muted">{{ point.retention_pct === null ? (point.reason ?? 'not available') : (point.how ?? 'estimated from the YouTube retention curve') }}</small>
+                            </div>
+                          }
+                        </div>
+                      }
                       @for (w of whys(r.why); track w) { <p class="small muted why">{{ w }}</p> }
                       <p class="small muted">YouTube Analytics, organic views · read {{ r.fetched_at | ago }}</p>
                     </div>
@@ -166,8 +267,13 @@ import { Toasts } from '../core/toast';
           </ol>
         </details>
       }
-    } @else {
+    } @else if (loading()) {
       <div class="tiles"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+    } @else {
+      <section class="empty error-state" role="status">
+        <strong>Performance could not load</strong><span>{{ loadError() ?? 'Try again in a moment.' }}</span>
+        <button (click)="load(themeId())">Try again</button>
+      </section>
     }
   `,
   styles: `
@@ -181,6 +287,22 @@ import { Toasts } from '../core/toast';
       svg { width: 16px; height: 16px; }
     }
     .lessons { display: grid; gap: 12px; }
+    .evidence { display: grid; gap: 14px; margin-top: 16px;
+      h2 { margin: 2px 0 0; font-size: 19px; }
+      h3 { margin: 0; font-size: 13px; }
+    }
+    .evidence-head > .small { max-width: 410px; margin: 0; }
+    .cohorts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .cohort { padding: 12px; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 7px; background: var(--sunken); }
+    .cohort-row { display: grid; gap: 2px; font-size: 12px; padding-top: 7px; border-top: 1px solid var(--line);
+      strong { font-size: 13px; } .pace { color: var(--accent); } }
+    .comparisons { display: grid; gap: 5px; padding-top: 2px; .small { margin: 0; } }
+    .lineages { display: grid; gap: 7px; summary { font-weight: 650; } p { margin: 0; } }
+    .lineage { display: grid; gap: 0; margin: 6px 0 0 7px; }
+    .lineage-video { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: center; color: inherit; text-decoration: none; padding: 5px 0;
+      &:hover strong { text-decoration: underline; } span:nth-child(2) { min-width: 0; display: grid; gap: 1px; } small { color: var(--muted); } }
+    .dot { width: 8px; height: 8px; margin-left: 3px; border-radius: 50%; background: var(--accent); }
+    .lineage-line { height: 10px; border-left: 1px solid var(--line); margin-left: 7px; }
     .summary { font-size: 15.5px; }
     .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
     h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -208,6 +330,11 @@ import { Toasts } from '../core/toast';
     .net { display: inline-flex; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--sunken); }
     .link input { flex: 1 1 260px; }
     .watch { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--sunken); }
+    .velocity { display: grid; gap: 5px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 7%, var(--sunken));
+      p { margin: 0; } }
+    .velocity-sources { margin: 0; padding-left: 16px; display: grid; gap: 2px; }
+    .checkpoints { display: grid; gap: 4px; padding-top: 3px; }
+    .checkpoint { display: grid; grid-template-columns: minmax(90px, 1fr) auto minmax(130px, 1.6fr); gap: 8px; align-items: baseline; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
     .figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
       div { display: grid; gap: 1px; min-width: 0; }
       strong { font-size: 20px; font-weight: 720; letter-spacing: -0.02em; }
@@ -225,9 +352,10 @@ import { Toasts } from '../core/toast';
     .proven { margin-top: 24px; ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 4px; } }
     @media (max-width: 860px) {
       .cols { grid-template-columns: 1fr; }
+      .cohorts { grid-template-columns: 1fr; }
       .more { padding-left: 16px; }
     }
-    @media (max-width: 480px) { .figs strong { font-size: 17px; } }
+    @media (max-width: 480px) { .figs strong { font-size: 17px; } .checkpoint { grid-template-columns: minmax(80px, 1fr) auto; } .checkpoint small { grid-column: 1 / -1; } }
   `,
 })
 export class ThemePerformance {
@@ -239,6 +367,8 @@ export class ThemePerformance {
   readonly buildOn = output<void>();
 
   protected readonly data = signal<ThemeLearning | null>(null);
+  protected readonly loading = signal(true);
+  protected readonly loadError = signal<string | null>(null);
   protected readonly learning = signal(false);
   protected readonly refreshing = signal(false);
   protected readonly openId = signal<number | null>(null);
@@ -261,13 +391,49 @@ export class ThemePerformance {
   }
 
   private load(id: number): void {
-    this.api.themeLearning(id).subscribe({ next: (d) => this.data.set(d), error: (err) => this.toasts.error(err) });
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.api.themeLearning(id).subscribe({
+      next: (d) => { this.data.set(d); this.loading.set(false); },
+      error: (err) => {
+        this.data.set(null);
+        this.loading.set(false);
+        this.loadError.set('The stored analytics could not be read.');
+        this.toasts.error(err);
+      },
+    });
   }
 
   protected short(n: number): string {
     if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
     if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K`;
     return String(n);
+  }
+
+  protected number(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  }
+
+  protected readable(value: string): string {
+    return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  protected hasCohorts(d: ThemeLearning): boolean {
+    return Object.values(d.experiments.cohorts).some((items) => items.length > 0);
+  }
+
+  protected cohortGroups(d: ThemeLearning): { key: string; label: string; items: ThemeLearning['experiments']['cohorts'][string] }[] {
+    const labels: Record<string, string> = {
+      form: 'Rendered form', story_shape: 'Story shape', thumbnail_angle: 'Recorded thumbnail result',
+    };
+    return Object.entries(d.experiments.cohorts)
+      .filter(([, items]) => items.length)
+      .map(([key, items]) => ({ key, label: labels[key] ?? this.readable(key), items }));
+  }
+
+  protected velocityLabel(velocity: ThemeVideo['seven_day_velocity']): string {
+    const pace = velocity.cross_platform;
+    return velocity.status === 'available' && pace ? `${this.number(pace.views_per_day)}/day` : 'Not mature';
   }
 
   protected width(v: ThemeVideo): number {
