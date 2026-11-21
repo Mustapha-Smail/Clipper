@@ -93,12 +93,13 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
     # An old `video` request remains a form request unless the caller supplied
     # the richer field. The script keeps its own immutable intent afterwards.
     form = requested_form or ((body.video if body else None) or idea.form or idea.video or "long")
+    requested_shape = body.story_shape if body else None
     video = legacy_video(form)
     minutes = (body.target_minutes if body else None) or DEFAULT_MINUTES.get(idea.format, 6)
     seconds = (body.target_seconds if body else None) or 50
     script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, theme_id=idea.theme_id, format=idea.format,
                     target_minutes=1 if video == "short" else minutes, video=video, form=form,
-                    story_shape=idea.story_shape, target_seconds=seconds,
+                    story_shape=requested_shape or idea.story_shape, target_seconds=seconds,
                     sections=[])
     db.add(script)
     db.flush()

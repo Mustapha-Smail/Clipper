@@ -322,3 +322,67 @@ def test_story_map_prompt_and_task_are_registered():
     for name in ("script_research", "script_write", "script_rewrite", "script_make_spoken",
                  "script_make_simpler"):
         assert not prompts.problems(name, prompts.default(name))
+
+
+def test_form_and_story_shape_are_fingerprinted_with_specific_stale_reasons(app_env):
+    script_id = add_script()
+    with session_scope() as db:
+        script = db.get(Script, script_id)
+        first_hash, first_parts = story_map.input_fingerprint(script)
+        saved = {"input_hash": first_hash, "input_parts": first_parts, **raw_map()}
+        script.form = "short"
+        current, reasons = story_map.status(script, saved)
+        assert not current and any("form" in reason.lower() for reason in reasons)
+        script.form = first_parts["form"]
+        script.story_shape = "parallel"
+        current, reasons = story_map.status(script, saved)
+        assert not current and any("shape" in reason.lower() for reason in reasons)
+
+
+def _parallel_map() -> dict:
+    value = raw_map()
+    value.update({
+        "story_shape": "parallel",
+        "parallel": {
+            "shared_start": "Two identical fridges start warm.",
+            "shared_clock": "The same ten-minute clock runs in both lanes.",
+            "lanes": [
+                {"id": "a", "label": "No airflow", "rule": "No fan", "promised_consequence": "It warms."},
+                {"id": "b", "label": "Airflow", "rule": "Fan on", "promised_consequence": "It cools."},
+            ],
+        },
+    })
+    value["beats"] = [
+        {"id": "a_start", "purpose": "question", "summary": "A starts.", "visual_event": "A starts.",
+         "source_numbers": [1], "lane": "a", "checkpoint": "start"},
+        {"id": "b_start", "purpose": "question", "summary": "B starts.", "visual_event": "B starts.",
+         "source_numbers": [1], "lane": "b", "checkpoint": "start"},
+        {"id": "a_end", "purpose": "answer", "summary": "A ends.", "visual_event": "A ends.",
+         "source_numbers": [2], "lane": "a", "checkpoint": "end"},
+        {"id": "b_end", "purpose": "answer", "summary": "B ends.", "visual_event": "B ends.",
+         "source_numbers": [2], "lane": "b", "checkpoint": "end"},
+    ]
+    return value
+
+
+def test_parallel_shape_requires_two_safe_lanes_and_two_shared_checkpoints():
+    cleaned = story_map.clean(_parallel_map(), {1, 2})
+    assert not cleaned.problems
+    broken = _parallel_map()
+    broken["beats"][3]["lane"] = "c"
+    assert any("unknown lane 'c'" in problem for problem in story_map.clean(broken, {1, 2}).problems)
+    broken = _parallel_map()
+    broken["beats"][3]["checkpoint"] = "other"
+    assert any("at least two checkpoints" in problem for problem in story_map.clean(broken, {1, 2}).problems)
+
+
+def test_non_parallel_rejects_lane_metadata_and_shape_prompts_are_original():
+    broken = raw_map()
+    broken["story_shape"] = "explain"
+    broken["beats"][0]["lane"] = "a"
+    assert any("only allowed for the parallel" in problem
+               for problem in story_map.clean(broken, {1, 2}).problems)
+    for shape in ("parallel", "explain", "scorecard", "investigation"):
+        prompt = prompts.render(f"story_shape_{shape}").lower()
+        assert "do not imitate" in prompt or "not a copy" in prompt
+        assert "unsupported" in prompt or "evidence" in prompt
