@@ -186,6 +186,7 @@ def theme_learning(theme: Theme = Depends(get_theme), db: Session = Depends(get_
     _, unmatched = analytics.targets(db, ids) if ids else ([], [])
     return s.ThemeLearning(**table, insights=theme.insights, can_learn=table["with_views"] >= learning.MIN_FOR_LESSONS,
                            proven=learning.proven(db, theme),
+                           experiments=learning.experiments(table["videos"]),
                            stats_sources={"buffer": buffer_mod.configured("storyboard"),
                                           "youtube": bool(config.youtube_api_key()),
                                           "analytics": youtube_auth.status()["connected"]},

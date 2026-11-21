@@ -22,7 +22,18 @@ from sqlalchemy.orm import Session
 
 from .. import config, llm, prompts
 from ..db import session_scope
-from ..db.models import Idea, Post, Script, Storyboard, Theme, VideoAnalytics, as_utc, record_metric_snapshot, utcnow
+from ..db.models import (
+    Idea,
+    Post,
+    Script,
+    Storyboard,
+    Theme,
+    VideoAnalytics,
+    VideoMetricSnapshot,
+    as_utc,
+    record_metric_snapshot,
+    utcnow,
+)
 from ..jobs import Reporter
 from . import analytics, youtube
 from . import ideas as ideas_mod
@@ -33,6 +44,8 @@ COUNTED = ("views", "likes", "comments", "shares", "saves")
 STATS_EVERY = timedelta(hours=20)       # a long video's YouTube statistics are read at most this often
 MIN_FOR_LESSONS = 3                     # videos with views before the lessons can say anything
 NETWORKS = {"instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube"}
+DAY_SEVEN = timedelta(days=7)
+DAY_SEVEN_TOLERANCE = timedelta(days=2)
 
 
 # --- statistics ----------------------------------------------------------------------------
@@ -116,6 +129,107 @@ def _numbers(board: Storyboard, posts: list[Post]) -> dict:
     return out
 
 
+def _observation_value(row, name: str):
+    return row.get(name) if isinstance(row, dict) else getattr(row, name)
+
+
+def seven_day_velocity(snapshots: list, starts: dict[str, datetime]) -> dict:
+    """Seven-day view gain and daily velocity from real observations.
+
+    Each source keeps its own publication clock and baseline. The endpoint is
+    the closest observation *not after* day seven, within a two-day tolerance.
+    Nothing is extrapolated from today's lifetime total.
+    """
+    grouped: dict[str, list] = {}
+    for row in snapshots:
+        grouped.setdefault(str(_observation_value(row, "source_key")), []).append(row)
+    source_keys = sorted(set(grouped) | set(starts))
+    if not source_keys:
+        return {"status": "unavailable", "reason": "no daily observations", "coverage": "0/0",
+                "sources": [], "cross_platform": None}
+
+    sources = []
+    for source_key in source_keys:
+        rows = sorted(grouped.get(source_key, []), key=lambda row: as_utc(_observation_value(row, "observed_at")))
+        service = str(_observation_value(rows[0], "service")) if rows else source_key.split(":", 1)[0]
+        start = as_utc(starts.get(source_key))
+        base = {"source_key": source_key, "service": service, "name": NETWORKS.get(service, service.title())}
+        if start is None:
+            sources.append({**base, "status": "unavailable", "reason": "publication time is unknown"})
+            continue
+        target = start + DAY_SEVEN
+        valid = [row for row in rows if _observation_value(row, "views") is not None
+                 and as_utc(_observation_value(row, "observed_at")) >= start]
+        if not valid:
+            sources.append({**base, "status": "unavailable", "reason": "no view observation after publication"})
+            continue
+        latest = max(as_utc(_observation_value(row, "observed_at")) for row in valid)
+        if latest < target:
+            elapsed = (latest - start).total_seconds() / 86400
+            sources.append({**base, "status": "unavailable",
+                            "reason": f"not matured: latest observation is {elapsed:.1f} days after publication"})
+            continue
+        baseline = min(valid, key=lambda row: as_utc(_observation_value(row, "observed_at")))
+        endpoint_candidates = [row for row in valid
+                               if target - DAY_SEVEN_TOLERANCE <= as_utc(_observation_value(row, "observed_at"))
+                               <= target]
+        if not endpoint_candidates:
+            sources.append({**base, "status": "unavailable",
+                            "reason": "no observation from day 5 through day 7"})
+            continue
+        endpoint = max(endpoint_candidates, key=lambda row: as_utc(_observation_value(row, "observed_at")))
+        baseline_at = as_utc(_observation_value(baseline, "observed_at"))
+        endpoint_at = as_utc(_observation_value(endpoint, "observed_at"))
+        elapsed_hours = (endpoint_at - baseline_at).total_seconds() / 3600
+        if elapsed_hours <= 0:
+            sources.append({**base, "status": "unavailable",
+                            "reason": "baseline and day-seven point are the same observation"})
+            continue
+        baseline_views = int(_observation_value(baseline, "views"))
+        endpoint_views = int(_observation_value(endpoint, "views"))
+        gained = endpoint_views - baseline_views
+        sources.append({
+            **base,
+            "status": "available",
+            "baseline_at": baseline_at.isoformat(),
+            "baseline_views": baseline_views,
+            "endpoint_at": endpoint_at.isoformat(),
+            "endpoint_views": endpoint_views,
+            "elapsed_hours": round(elapsed_hours, 1),
+            "elapsed_days": round(elapsed_hours / 24, 2),
+            "views_gained": gained,
+            "views_per_day": round(gained / (elapsed_hours / 24), 1),
+            "corrected": gained < 0,
+        })
+    available = [source for source in sources if source["status"] == "available"]
+    cross = None if not available else {
+        "label": "Cross-platform sum of source-level seven-day windows",
+        "source_count": len(available),
+        "views_gained": sum(source["views_gained"] for source in available),
+        "views_per_day": round(sum(source["views_per_day"] for source in available), 1),
+    }
+    return {
+        "status": "available" if available else "unavailable",
+        "reason": None if available else "no source has both a baseline and a day-five-to-seven observation",
+        "coverage": f"{len(available)}/{len(sources)}",
+        "sources": sources,
+        "cross_platform": cross,
+    }
+
+
+def _thumbnail_evidence(board: Storyboard) -> tuple[str | None, str | None]:
+    """The creator-selected/manual winner angle; never infer one from views."""
+    stored = board.thumbnails or {}
+    key = stored.get("winner_key") or stored.get("selected_key")
+    if not key:
+        return None, None
+    option = next((item for item in stored.get("options", []) if item.get("key") == key), None)
+    if not option:
+        return None, None
+    angle = "contrast" if option.get("angle") == "stakes" else option.get("angle")
+    return angle, "manual_winner" if stored.get("winner_key") == key else "creator_selected"
+
+
 CRAFT = ("hold_score", "first_twist", "longest_gap", "opening", "wpm", "story_template", "hook_shape",
          "starter", "riser", "first_visual_event")
 
@@ -164,27 +278,54 @@ def published(db: Session, theme_id: int) -> list[dict]:
     posts: dict[int, list[Post]] = {}
     for post in db.scalars(select(Post).where(Post.storyboard_id.in_(ids), Post.status == "sent")):
         posts.setdefault(post.storyboard_id, []).append(post)
-    ideas = {i.id: i for i in db.scalars(select(Idea).where(Idea.id.in_([s.idea_id for _, s in boards
-                                                                          if s.idea_id])))}
+    ideas = {i.id: i for i in db.scalars(select(Idea).where(Idea.theme_id == theme_id))}
     watched: dict[int, list[VideoAnalytics]] = {}
     for row in db.scalars(select(VideoAnalytics).where(VideoAnalytics.storyboard_id.in_(ids))):
         watched.setdefault(row.storyboard_id, []).append(row)
+    snapshots: dict[int, list[VideoMetricSnapshot]] = {}
+    for row in db.scalars(select(VideoMetricSnapshot).where(VideoMetricSnapshot.storyboard_id.in_(ids))):
+        snapshots.setdefault(row.storyboard_id, []).append(row)
     rows = []
     for board, script in boards:
         mine = posts.get(board.id, [])
         if not mine and not board.published_at:
             continue
         idea = ideas.get(script.idea_id) if script.idea_id else None
+        root_idea_id = idea.id if idea else None
+        seen_lineage: set[int] = set()
+        while root_idea_id and root_idea_id not in seen_lineage:
+            seen_lineage.add(root_idea_id)
+            parent = ideas.get(root_idea_id)
+            if parent is None or parent.parent_idea_id is None:
+                break
+            root_idea_id = parent.parent_idea_id
         sent = [as_utc(p.sent_at) for p in mine if p.sent_at]
         when = min(sent) if sent else as_utc(board.published_at)
+        starts = {f"buffer:{post.buffer_id}": as_utc(post.sent_at) for post in mine if post.buffer_id and post.sent_at}
+        for snapshot in snapshots.get(board.id, []):
+            if snapshot.service == "youtube" and board.published_at:
+                starts.setdefault(snapshot.source_key, as_utc(board.published_at))
+        meta = board.render_meta or {}
+        rendered = meta.get("version") == 1
+        thumbnail_angle, thumbnail_evidence = _thumbnail_evidence(board)
         rows.append({
             "storyboard_id": board.id, "script_id": script.id, "idea_id": idea.id if idea else None,
+            "parent_idea_id": idea.parent_idea_id if idea else None,
+            "root_idea_id": root_idea_id,
+            "lineage_kind": idea.lineage_kind if idea else None,
             "title": board.title or script.title, "script_title": script.title,
             "hook": idea.hook if idea else "", "angle": idea.angle if idea else "",
             "format": board.format, "style": board.style, "look": board.look,
+            # Experimental dimensions are intentionally render-time facts.
+            # Missing old snapshots stay unknown instead of reading mutable live fields.
+            "form": meta.get("form") if rendered else None,
+            "story_shape": meta.get("story_shape") if rendered else None,
+            "thumbnail_angle": thumbnail_angle,
+            "thumbnail_evidence": thumbnail_evidence,
             "seconds": round(board.end - board.start) if board.end else None,
             "published_at": when.isoformat() if when else None,
             "published_url": board.published_url,
+            "seven_day_velocity": seven_day_velocity(snapshots.get(board.id, []), starts),
             **_numbers(board, mine),
             **craft(board, script),
             **analytics.for_video(board, script, watched.get(board.id, [])),
@@ -193,22 +334,33 @@ def published(db: Session, theme_id: int) -> list[dict]:
 
 
 def ranked(rows: list[dict]) -> dict:
-    """Best first by views, each compared with the theme's median; the lines say how it was worked out."""
+    """Best first by views, compared with its own rendered-form median."""
     with_views = [r for r in rows if r["views"] is not None]
     median = statistics.median([r["views"] for r in with_views]) if with_views else None
+    cohort_values: dict[str, list[int]] = {}
+    for row in with_views:
+        cohort_values.setdefault(row.get("form") or "unknown", []).append(row["views"])
+    cohort_medians = {form: statistics.median(values) for form, values in cohort_values.items()}
     for row in rows:
-        if row["views"] is None or not median:
+        cohort = row.get("form") or "unknown"
+        own_median = cohort_medians.get(cohort)
+        row["cohort_median_views"] = int(own_median) if own_median else None
+        if row["views"] is None or not own_median:
             row["vs_median"] = None
             row["lines"] = ["No statistics yet"]
             continue
-        row["vs_median"] = round(row["views"] / median, 2) if median else None
+        row["vs_median"] = round(row["views"] / own_median, 2)
+        median_label = "theme's" if cohort == "unknown" else cohort.replace("_", " ")
         lines = [f"{row['views']:,} views across {len([n for n in row['networks'] if n['views'] is not None])} "
-                 "network(s)", f"{row['vs_median']}x the theme's median of {int(median):,}"]
+                 "network(s)", f"{row['vs_median']}x the {median_label} median of {int(own_median):,}"]
         if row["engagement"] is not None:
             lines.append(f"{row['engagement']}% engagement (likes, comments, shares and saves per view)")
         row["lines"] = lines
     order = sorted(rows, key=lambda r: (r["views"] is None, -(r["views"] or 0)))
     return {"videos": order, "median_views": int(median) if median else None,
+            "cohort_medians": [{"form": form, "median_views": int(value),
+                                "with_views": len(cohort_values[form])}
+                               for form, value in sorted(cohort_medians.items())],
             "with_views": len(with_views), "total_views": sum(r["views"] for r in with_views)}
 
 
@@ -379,22 +531,26 @@ def _comparison_group(row: dict, field: str) -> str | None:
 def craft_comparisons(videos: list[dict]) -> list[str]:
     """Code-counted craft comparisons safe to show the model.
 
-    Each comparison stays within one format and, only when durations differ materially,
-    one duration band. It needs at least two groups of three and reports median plus range.
+    Each comparison stays within one rendered form, story shape and, only when
+    durations differ materially, one duration band. It needs at least two
+    groups of three and reports median plus range.
     """
     material: dict[str, bool] = {}
-    for fmt in {v.get("format") for v in videos}:
-        lengths = [v["seconds"] for v in videos if v.get("format") == fmt and v.get("seconds")]
-        material[fmt] = bool(len(lengths) > 1 and max(lengths) - min(lengths) >= (15 if fmt == "short" else 120)
-                             and max(lengths) >= min(lengths) * 1.35)
-    strata: dict[tuple[str, str], list[dict]] = {}
+    for form in {v.get("form") or v.get("format") for v in videos}:
+        lengths = [v["seconds"] for v in videos if (v.get("form") or v.get("format")) == form and v.get("seconds")]
+        short_form = form in {"short", "micro_short"}
+        material[form] = bool(len(lengths) > 1 and max(lengths) - min(lengths) >= (15 if short_form else 120)
+                              and max(lengths) >= min(lengths) * 1.35)
+    strata: dict[tuple[str, str, str], list[dict]] = {}
     for video in videos:
-        fmt = video.get("format")
-        band = _duration_band(video.get("seconds"), fmt) if material.get(fmt, False) else "similar duration"
-        strata.setdefault((fmt, band), []).append(video)
+        form = video.get("form") or video.get("format")
+        shape = video.get("story_shape") or "shape unknown"
+        fmt = "short" if form in {"short", "micro_short"} else "long"
+        band = _duration_band(video.get("seconds"), fmt) if material.get(form, False) else "similar duration"
+        strata.setdefault((form, shape, band), []).append(video)
 
     lines: list[str] = []
-    for (fmt, band), rows in sorted(strata.items()):
+    for (form, shape, band), rows in sorted(strata.items()):
         for field in COMPARISON_FIELDS:
             for outcome, outcome_label in COMPARISON_OUTCOMES:
                 groups: dict[str, list[float]] = {}
@@ -409,11 +565,100 @@ def craft_comparisons(videos: list[dict]) -> list[str]:
                 for name, values in sorted(eligible.items()):
                     median = statistics.median(values)
                     parts.append(f"{name}: n={len(values)}, median {median:g}%, range {min(values):g}–{max(values):g}%")
-                scope = f"{fmt}, {band}" if band != "similar duration" else f"{fmt}, similar durations"
+                scope = f"{form}, {band}" if band != "similar duration" else f"{form}, similar durations"
+                if shape != "shape unknown":
+                    scope += f", {shape} shape"
                 lines.append(f"{scope} — {field} and {outcome_label}: " + "; ".join(parts))
                 break
     return lines or ["not enough comparable videos (need at least 6 in the same format and duration group, "
-                     "with at least 3 videos in each craft group)"]
+                     "story shape and duration group, with at least 3 videos in each craft group)"]
+
+
+def _velocity_value(video: dict) -> float | None:
+    velocity = video.get("seven_day_velocity") or {}
+    cross = velocity.get("cross_platform") or {}
+    return cross.get("views_per_day") if velocity.get("status") == "available" else None
+
+
+def cohort_breakdown(videos: list[dict]) -> dict[str, list[dict]]:
+    """Descriptive form/shape/thumbnail groups, never causal claims."""
+    dimensions = {
+        "form": lambda video: video.get("form") or "unknown",
+        "story_shape": lambda video: video.get("story_shape"),
+        "thumbnail_angle": lambda video: video.get("thumbnail_angle"),
+    }
+    output: dict[str, list[dict]] = {}
+    for dimension, getter in dimensions.items():
+        groups: dict[str, list[dict]] = {}
+        for video in videos:
+            value = getter(video)
+            if value:
+                groups.setdefault(str(value), []).append(video)
+        summaries = []
+        for value, rows in sorted(groups.items()):
+            views = [row["views"] for row in rows if row.get("views") is not None]
+            velocities = [number for row in rows if (number := _velocity_value(row)) is not None]
+            summaries.append({
+                "value": value,
+                "videos": len(rows),
+                "with_views": len(views),
+                "median_views": int(statistics.median(views)) if views else None,
+                "views_range": [min(views), max(views)] if views else None,
+                "with_mature_velocity": len(velocities),
+                "median_views_per_day": round(statistics.median(velocities), 1) if velocities else None,
+                "velocity_range": [round(min(velocities), 1), round(max(velocities), 1)] if velocities else None,
+            })
+        output[dimension] = summaries
+    return output
+
+
+def experiment_comparisons(videos: list[dict]) -> list[str]:
+    """Underpowered shape/thumbnail comparisons stay unavailable.
+
+    Form is a stratum, never a treatment: longs, Shorts and micro-Shorts cannot
+    enter the same comparison. Thumbnail outcomes are creator-entered evidence;
+    no CTR or swipe-away value is invented.
+    """
+    lines: list[str] = []
+    for form in sorted({video.get("form") for video in videos if video.get("form")}):
+        same_form = [video for video in videos if video.get("form") == form]
+        for dimension, label in (("story_shape", "story shape"), ("thumbnail_angle", "manual thumbnail angle")):
+            groups: dict[str, list[float]] = {}
+            for video in same_form:
+                value, outcome = video.get(dimension), _velocity_value(video)
+                if value and outcome is not None:
+                    groups.setdefault(str(value), []).append(float(outcome))
+            eligible = {name: values for name, values in groups.items() if len(values) >= 3}
+            if len(eligible) < 2 or sum(len(values) for values in eligible.values()) < 6:
+                continue
+            parts = [f"{name}: n={len(values)}, median {statistics.median(values):g} views/day, "
+                     f"range {min(values):g}–{max(values):g}"
+                     for name, values in sorted(eligible.items())]
+            lines.append(f"{form}, comparable mature seven-day windows — {label} was associated with: "
+                         + "; ".join(parts))
+    return lines or ["not enough comparable videos (need at least 6 mature videos in one form, with at least "
+                     "3 in each story-shape or creator-recorded thumbnail group)"]
+
+
+def lineage_breakdown(videos: list[dict]) -> list[dict]:
+    groups: dict[int, list[dict]] = {}
+    for video in videos:
+        if video.get("root_idea_id") is not None:
+            groups.setdefault(video["root_idea_id"], []).append(video)
+    return [{
+        "root_idea_id": root,
+        "videos": [{"storyboard_id": video["storyboard_id"], "idea_id": video.get("idea_id"),
+                    "parent_idea_id": video.get("parent_idea_id"), "lineage_kind": video.get("lineage_kind"),
+                    "form": video.get("form"), "title": video["title"], "views": video.get("views"),
+                    "seven_day_velocity": video.get("seven_day_velocity")}
+                   for video in sorted(rows, key=lambda item: (item.get("published_at") or "", item["storyboard_id"]))],
+    } for root, rows in sorted(groups.items()) if len(rows) > 1]
+
+
+def experiments(videos: list[dict]) -> dict:
+    return {"cohorts": cohort_breakdown(videos), "comparisons": experiment_comparisons(videos),
+            "lineages": lineage_breakdown(videos),
+            "note": "Descriptive associations only; unavailable CTR and swipe-away metrics are never inferred."}
 
 
 def _video_table(videos: list[dict]) -> str:
@@ -421,7 +666,9 @@ def _video_table(videos: list[dict]) -> str:
     for n, v in enumerate(videos, 1):
         views = "no statistics" if v["views"] is None else f"{v['views']:,} views, {v['vs_median']}x median"
         extra = ", ".join(f"{k} {v[k]:,}" for k in ("likes", "comments", "shares", "saves") if v[k] is not None)
-        lines.append(f"[{n}] \"{v['title']}\" | {v['format']}, {v['style']}"
+        form = v.get("form") or "render form unknown"
+        shape = v.get("story_shape") or "story shape unknown"
+        lines.append(f"[{n}] \"{v['title']}\" | {form}, {shape}, {v['style']}"
                      + (f", {v['seconds']} s" if v["seconds"] else "")
                      + f" | {views}" + (f" | {extra}" if extra else "")
                      + (f" | engagement {v['engagement']}%" if v["engagement"] is not None else "")

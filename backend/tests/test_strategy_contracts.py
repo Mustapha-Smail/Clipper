@@ -9,7 +9,7 @@ from clipper import db as db_mod
 from clipper import posting
 from clipper.db import session_scope
 from clipper.db.models import Idea, Post, Script, Storyboard, VideoMetricSnapshot, record_metric_snapshot
-from clipper.studio import voice
+from clipper.studio import learning, voice
 
 
 def test_strategy_migration_backfills_legacy_values_and_keeps_shape_unknown(app_env):
@@ -154,3 +154,57 @@ def test_buffer_metric_refresh_writes_one_snapshot_per_source_and_day(app_env, m
     assert len(rows) == 1
     assert (rows[0].source_key, rows[0].service, rows[0].views, rows[0].likes) == \
         ("buffer:buffer-1", "tiktok", 12, None)
+
+
+def observation(source: str, service: str, at: datetime, views: int) -> dict:
+    return {"source_key": source, "service": service, "observed_at": at, "views": views}
+
+
+def test_seven_day_velocity_uses_baseline_and_never_looks_after_day_seven():
+    start = datetime(2026, 11, 1, tzinfo=UTC)
+    rows = [
+        observation("buffer:a", "tiktok", start + timedelta(hours=2), 100),
+        observation("buffer:a", "tiktok", start + timedelta(days=6), 700),
+        observation("buffer:a", "tiktok", start + timedelta(days=8), 2000),
+    ]
+    result = learning.seven_day_velocity(rows, {"buffer:a": start})
+    source = result["sources"][0]
+    assert result["status"] == "available" and result["coverage"] == "1/1"
+    assert source["endpoint_views"] == 700  # day eight is evidence of maturity, never the endpoint
+    assert source["views_gained"] == 600
+    assert source["elapsed_hours"] == 142.0
+    assert source["views_per_day"] == 101.4
+
+
+def test_seven_day_velocity_reports_delays_missing_days_services_and_corrections():
+    start = datetime(2026, 11, 1, tzinfo=UTC)
+    rows = [
+        observation("buffer:late", "instagram", start + timedelta(days=2), 200),
+        observation("buffer:late", "instagram", start + timedelta(days=6, hours=12), 700),
+        observation("buffer:late", "instagram", start + timedelta(days=8), 900),
+        observation("youtube:fixed", "youtube", start, 100),
+        observation("youtube:fixed", "youtube", start + timedelta(days=7), 90),
+        observation("buffer:young", "tiktok", start, 0),
+        observation("buffer:young", "tiktok", start + timedelta(days=6), 60),
+    ]
+    result = learning.seven_day_velocity(rows, {
+        "buffer:late": start, "youtube:fixed": start, "buffer:young": start,
+    })
+    by_key = {source["source_key"]: source for source in result["sources"]}
+    assert by_key["buffer:late"]["views_gained"] == 500
+    assert by_key["buffer:late"]["elapsed_days"] == 4.5
+    assert by_key["youtube:fixed"]["views_gained"] == -10
+    assert by_key["youtube:fixed"]["corrected"] is True
+    assert by_key["buffer:young"]["status"] == "unavailable"
+    assert by_key["buffer:young"]["reason"].startswith("not matured")
+    assert result["coverage"] == "2/3"
+    assert result["cross_platform"]["views_gained"] == 490
+
+
+def test_seven_day_velocity_refuses_today_total_without_a_day_five_to_seven_point():
+    start = datetime(2026, 11, 1, tzinfo=UTC)
+    rows = [observation("youtube:x", "youtube", start, 0),
+            observation("youtube:x", "youtube", start + timedelta(days=9), 900)]
+    result = learning.seven_day_velocity(rows, {"youtube:x": start})
+    assert result["status"] == "unavailable"
+    assert result["sources"][0]["reason"] == "no observation from day 5 through day 7"

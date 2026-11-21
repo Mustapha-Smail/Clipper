@@ -1249,6 +1249,13 @@ class ThemeVideo(BaseModel):
     title: str
     hook: str
     format: str
+    form: str | None = None
+    story_shape: str | None = None
+    thumbnail_angle: str | None = None
+    thumbnail_evidence: str | None = None
+    parent_idea_id: int | None = None
+    root_idea_id: int | None = None
+    lineage_kind: str | None = None
     style: str
     look: str
     seconds: int | None
@@ -1261,6 +1268,8 @@ class ThemeVideo(BaseModel):
     saves: int | None
     engagement: float | None
     vs_median: float | None
+    cohort_median_views: int | None = None
+    seven_day_velocity: dict
     # How it was built: the hold check of its script and the take's pace; None when not measured
     hold_score: int | None = None
     first_twist: int | None = None
@@ -1286,12 +1295,14 @@ class ThemeVideo(BaseModel):
 class ThemeLearning(BaseModel):
     videos: list[ThemeVideo]
     median_views: int | None
+    cohort_medians: list[dict] = []
     with_views: int
     total_views: int
     insights: dict | None
     can_learn: bool
     proven: list[dict]
     stats_sources: dict
+    experiments: dict
     unmatched: list[dict] = []          # videos on YouTube that cannot be matched to their analytics, with why
 
 
