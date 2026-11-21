@@ -205,6 +205,9 @@ class CampaignRef(Model):
 # --- studio ideas ------------------------------------------------------------------
 
 IdeaStatus = Literal["inbox", "new", "approved", "parked", "skipped"]
+IdeaForm = Literal["long", "short", "micro_short"]
+StoryShape = Literal["parallel", "explain", "scorecard", "investigation"]
+CaptionMode = Literal["default", "on", "off"]
 
 
 class IdeaBeat(BaseModel):
@@ -234,6 +237,10 @@ class IdeaOut(Model):
     angle: str
     format: str
     video: Literal["long", "short"] = "long"
+    form: IdeaForm = "long"
+    story_shape: StoryShape | None = None
+    parent_idea_id: int | None = None
+    lineage_kind: Literal["root", "concept_test", "promotion"] = "root"
     search_query: str
     origin: str
     status: IdeaStatus
@@ -276,6 +283,8 @@ class ThemeSuggestion(BaseModel):
 class IdeaCreate(BaseModel):
     text: str = Field(min_length=3, max_length=2000, description="Your idea, in a few words or sentences")
     theme_id: int | None = None
+    form: IdeaForm = "long"
+    story_shape: StoryShape | None = None
 
 
 class IdeaPatch(BaseModel):
@@ -288,6 +297,8 @@ class IdeaPatch(BaseModel):
     angle: str | None = None
     search_query: str | None = Field(None, min_length=2)
     video: Literal["long", "short"] | None = None
+    form: IdeaForm | None = None
+    story_shape: StoryShape | None = None
     theme_id: int | None = None
 
 
@@ -608,6 +619,8 @@ class ScriptSummary(Model):
     format: str
     target_minutes: int
     video: Literal["long", "short"] = "long"
+    form: IdeaForm = "long"
+    story_shape: StoryShape | None = None
     target_seconds: int = 50
     status: Literal["draft", "approved"]
     created_at: UtcDatetime
@@ -638,6 +651,8 @@ class ScriptOut(ScriptSummary):
 class ScriptCreate(BaseModel):
     target_minutes: int | None = Field(None, ge=1, le=30, description="Defaults to 6 for one topic, 10 for a list")
     video: Literal["long", "short"] | None = Field(None, description="Defaults to the idea's choice")
+    form: IdeaForm | None = Field(
+        None, description="Defaults to the idea's form; micro_short remains a compatibility Short")
     target_seconds: int | None = Field(None, ge=15, le=90, description="For a Short; defaults to 50")
 
 
@@ -752,6 +767,8 @@ class StoryboardCreate(BaseModel):
         "ink", description="How it is drawn. Ink looks change drawing only; film style uses wall or studio")
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
+    caption_mode: CaptionMode = Field(
+        "default", description="default keeps Shorts captioned and long videos uncaptioned")
 
 
 class StoryboardSummary(Model):
@@ -759,6 +776,9 @@ class StoryboardSummary(Model):
     script_id: int
     take_id: int | None
     format: Literal["short", "long"]
+    form: IdeaForm = "short"
+    story_shape: StoryShape | None = None
+    caption_mode: CaptionMode = "default"
     style: Literal["ink", "flat", "film"]
     look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"] = "ink"
     section_key: str | None
@@ -889,6 +909,7 @@ class StoryboardPatch(BaseModel):
     effects: bool | None = None
     starter_mode: Literal["default", "on", "off"] | None = None
     riser_mode: Literal["default", "on", "off"] | None = None
+    caption_mode: CaptionMode | None = None
 
 
 class MusicOut(Model):

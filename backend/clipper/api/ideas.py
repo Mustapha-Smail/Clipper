@@ -22,6 +22,11 @@ RESEARCH_FIELDS = {"search_query"}
 JUDGED_FIELDS = {"title", "hook", "expected", "answer", "angle", "search_query"}
 
 
+def legacy_video(form: str) -> str:
+    """The release-line adapter for clients that still use long|short video."""
+    return "short" if form in ("short", "micro_short") else "long"
+
+
 def get_idea(idea_id: int, db: Session = Depends(get_db)) -> Idea:
     idea = db.get(Idea, idea_id)
     if idea is None:
@@ -104,7 +109,8 @@ def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
         raise HTTPException(502, str(err)) from err
     if not drafts:
         raise HTTPException(502, "The AI returned no idea. Try rephrasing it.")
-    idea = Idea(theme=theme.name, theme_id=theme.id, origin="you", notes=body.text.strip())
+    idea = Idea(theme=theme.name, theme_id=theme.id, origin="you", notes=body.text.strip(), form=body.form,
+                video=legacy_video(body.form), story_shape=body.story_shape)
     ideas_mod.apply_draft(idea, drafts[0])
     db.add(idea)
     db.flush()
@@ -126,11 +132,18 @@ def validate_idea(idea: Idea = Depends(get_idea), db: Session = Depends(get_db))
 @router.patch("/{idea_id}", response_model=s.IdeaOut)
 def update_idea(body: s.IdeaPatch, idea: Idea = Depends(get_idea), db: Session = Depends(get_db)):
     changed = {f for f in body.model_fields_set
-               if getattr(body, f) is not None and getattr(body, f) != getattr(idea, f)}
+               if (f == "story_shape" or getattr(body, f) is not None) and getattr(body, f) != getattr(idea, f)}
     if "theme_id" in changed:
         theme = _theme(db, body.theme_id)
         idea.theme_id, idea.theme = theme.id, theme.name
         changed.discard("theme_id")
+    # `form` owns the compatibility value when both are sent. An old video-only
+    # caller still gets the exact behavior it had before this release.
+    if "form" in changed:
+        idea.video = legacy_video(body.form)
+        changed.discard("video")
+    elif "video" in changed:
+        idea.form = body.video
     for field in changed:
         setattr(idea, field, getattr(body, field))
     if changed & JUDGED_FIELDS:

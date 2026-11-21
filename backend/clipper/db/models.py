@@ -6,9 +6,9 @@ videos, the moments chosen in them, the clips rendered, jobs and their logs,
 settings and worker heartbeats.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -25,6 +25,9 @@ def as_utc(value: datetime | None) -> datetime | None:
 
 class Base(DeclarativeBase):
     pass
+
+
+_UNSET = object()
 
 
 class Video(Base):
@@ -149,6 +152,13 @@ class Idea(Base):
     angle: Mapped[str] = mapped_column(Text, default="")              # how it differs from what exists
     format: Mapped[str] = mapped_column(String(16), default="single")  # single|list
     video: Mapped[str] = mapped_column(String(8), default="long")      # long (with Shorts from it) | short (only)
+    # Distribution/runtime intent. `video` remains the long|short compatibility field.
+    form: Mapped[str] = mapped_column(String(12), default="long")      # long|short|micro_short
+    # Editorial structure. NULL deliberately means a legacy/unspecified shape, never a guessed one.
+    story_shape: Mapped[str | None] = mapped_column(String(16))         # parallel|explain|scorecard|investigation
+    parent_idea_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ideas.id", ondelete="SET NULL", name="fk_ideas_parent_idea_id"), index=True)
+    lineage_kind: Mapped[str] = mapped_column(String(16), default="root")  # root|concept_test|promotion
     search_query: Mapped[str] = mapped_column(Text, default="")       # what a viewer would search
     origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # inbox|new|approved|parked|skipped
@@ -182,6 +192,8 @@ class Script(Base):
     format: Mapped[str] = mapped_column(String(16), default="single")      # single|list
     target_minutes: Mapped[int] = mapped_column(Integer, default=6)
     video: Mapped[str] = mapped_column(String(8), default="long")      # long | short (a Short only)
+    form: Mapped[str] = mapped_column(String(12), default="long")      # copied from its idea when created
+    story_shape: Mapped[str | None] = mapped_column(String(16))         # copied from its idea when created
     target_seconds: Mapped[int] = mapped_column(Integer, default=50)   # for a Short
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved
     research: Mapped[dict | None] = mapped_column(JSON)    # {notes, sources: [{n, url, title}], searches}
@@ -302,6 +314,10 @@ class Storyboard(Base):
     take_id: Mapped[int | None] = mapped_column(
         ForeignKey("voice_takes.id", ondelete="SET NULL", name="fk_storyboards_take_id"))
     format: Mapped[str] = mapped_column(String(8), default="short")      # short|long
+    form: Mapped[str] = mapped_column(String(12), default="short")       # copied from its script when created
+    story_shape: Mapped[str | None] = mapped_column(String(16))           # copied from its script when created
+    # default preserves current behavior: captions on Shorts and off long videos.
+    caption_mode: Mapped[str] = mapped_column(String(8), default="default")  # default|on|off
     style: Mapped[str] = mapped_column(String(8), default="ink")         # ink (beats on one page) | flat (slides)
     look: Mapped[str] = mapped_column(String(12), default="ink")         # ink style only: ink | paper | blueprint
     section_key: Mapped[str | None] = mapped_column(String(16))          # NULL = the whole script
@@ -373,6 +389,60 @@ class VideoAnalytics(Base):
     note: Mapped[str | None] = mapped_column(Text)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class VideoMetricSnapshot(Base):
+    """One source's metric observation for one UTC day.
+
+    These immutable-in-spirit daily points coexist with the latest-value fields
+    on posts, storyboards and VideoAnalytics. A retry updates that day's one
+    observation instead of inventing a second day of history.
+    """
+
+    __tablename__ = "video_metric_snapshots"
+    __table_args__ = (UniqueConstraint("source_key", "observed_day", name="ux_video_metric_snapshots_source_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    storyboard_id: Mapped[int] = mapped_column(
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_metric_snapshots_storyboard_id"), index=True)
+    source_key: Mapped[str] = mapped_column(String(80))                 # buffer:<post id> | youtube:<video id>
+    service: Mapped[str] = mapped_column(String(16))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    observed_day: Mapped[date] = mapped_column(Date)
+    views: Mapped[int | None] = mapped_column(Integer)
+    likes: Mapped[int | None] = mapped_column(Integer)
+    comments: Mapped[int | None] = mapped_column(Integer)
+    minutes_watched: Mapped[float | None] = mapped_column(Float)
+    average_view_s: Mapped[float | None] = mapped_column(Float)
+    average_view_pct: Mapped[float | None] = mapped_column(Float)
+
+
+def record_metric_snapshot(session, *, storyboard_id: int, source_key: str, service: str,
+                           observed_at: datetime | None = None, views: int | float | None | object = _UNSET,
+                           likes: int | float | None | object = _UNSET,
+                           comments: int | float | None | object = _UNSET,
+                           minutes_watched: float | None | object = _UNSET,
+                           average_view_s: float | None | object = _UNSET,
+                           average_view_pct: float | None | object = _UNSET) -> VideoMetricSnapshot:
+    """Create or update one source/day observation in a caller's transaction."""
+    at = as_utc(observed_at) or utcnow()
+    day = at.date()
+    row = session.query(VideoMetricSnapshot).filter_by(source_key=source_key, observed_day=day).one_or_none()
+    values = {"storyboard_id": storyboard_id, "service": service, "observed_at": at}
+    for field, value, coerce in (
+        ("views", views, int), ("likes", likes, int), ("comments", comments, int),
+        ("minutes_watched", minutes_watched, float), ("average_view_s", average_view_s, float),
+        ("average_view_pct", average_view_pct, float),
+    ):
+        if value is not _UNSET:
+            values[field] = coerce(value) if value is not None else None
+    if row is None:
+        row = VideoMetricSnapshot(source_key=source_key, observed_day=day, **values)
+        session.add(row)
+    else:
+        for field, value in values.items():
+            setattr(row, field, value)
+    return row
 
 
 class StudioPhoto(Base):

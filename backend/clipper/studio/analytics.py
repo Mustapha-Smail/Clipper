@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import session_scope
-from ..db.models import Post, Script, Storyboard, VideoAnalytics, as_utc, utcnow
+from ..db.models import Post, Script, Storyboard, VideoAnalytics, as_utc, record_metric_snapshot, utcnow
 from ..jobs import Reporter
 from . import youtube, youtube_auth
 
@@ -194,6 +194,11 @@ def _read(wanted: list[dict], say: Reporter) -> int:
                 is not None else None
             row.average_view_pct = float(data["averageViewPercentage"]) if data.get("averageViewPercentage") \
                 is not None else None
+            record_metric_snapshot(
+                db, storyboard_id=w["storyboard_id"], source_key=f"youtube:{vid}", service="youtube",
+                observed_at=now, views=row.views, minutes_watched=row.minutes_watched,
+                average_view_s=row.average_view_s, average_view_pct=row.average_view_pct,
+            )
             if vid in curves:
                 row.retention = curves[vid] or None
             row.note = None if data and curves.get(vid) else (

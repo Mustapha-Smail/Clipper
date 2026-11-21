@@ -662,6 +662,8 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
         "at": utcnow().isoformat(),
         "look": board.look,
         "style": board.style,
+        "form": board.form,
+        "story_shape": board.story_shape,
         "story_template": (current_map or {}).get("template"),
         "hook_shape": shape,
         "starter": state["starter"],
