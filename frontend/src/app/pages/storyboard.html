@@ -4,7 +4,8 @@
     <div class="page-head">
       <div>
         <h1>{{ b.title }}</h1>
-        <p class="muted small">{{ b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
+        <p class="muted small">{{ b.form === 'micro_short' ? 'Micro concept test' : b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
+          {{ b.story_shape || 'default story shape' }} · captions {{ b.caption_mode }} ·
           {{ beats() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
           {{ scenes().length }} {{ beats() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
         <app-cost-report [of]="{ storyboard: b.id }" label="AI cost of this video, idea to render" />
@@ -64,6 +65,12 @@
                   @for (l of looks(); track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
                 </select>
                 <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
+              </label>
+              <label class="field"><span>Captions</span>
+                <select [ngModel]="b.caption_mode" (ngModelChange)="setCaptionMode($event)" [disabled]="busy()">
+                  <option value="default">Default for this form</option><option value="on">Always on</option><option value="off">Always off</option>
+                </select>
+                <small>Render again to apply this setting.</small>
               </label>
             </div>
           }

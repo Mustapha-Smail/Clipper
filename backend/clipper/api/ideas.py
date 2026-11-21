@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .. import jobs, llm
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import Idea, Job, Script, Theme
+from ..db.models import Idea, Job, Post, Script, Storyboard, Theme, VideoMetricSnapshot
 from ..studio import ideas as ideas_mod
 from ..studio import themes as themes_mod
 from . import schemas as s
@@ -120,6 +120,123 @@ def add_idea(body: s.IdeaCreate, db: Session = Depends(get_db)):
     db.add(idea)
     db.flush()
     return idea_out(idea)
+
+
+def _child_idea(source: Idea, *, form: str, lineage_kind: str) -> Idea:
+    """Copy the creative premise only; research and judgement belong to the child run."""
+    return Idea(theme=source.theme, theme_id=source.theme_id, inspired_by=source.inspired_by,
+                title=source.title, hook=source.hook, expected=source.expected, answer=source.answer,
+                beats=list(source.beats or []), angle=source.angle, format=source.format,
+                video=legacy_video(form), form=form, story_shape=source.story_shape,
+                parent_idea_id=source.id, lineage_kind=lineage_kind, search_query=source.search_query,
+                origin="you", status="new", notes=source.notes, research=None, judgement=None,
+                validated_at=None)
+
+
+@router.post("/{idea_id}/concept-test", response_model=s.IdeaOut)
+def create_concept_test(idea: Idea = Depends(get_idea), db: Session = Depends(get_db)):
+    """Create a fresh, creator-triggered micro-Short child without copying research."""
+    child = _child_idea(idea, form="micro_short", lineage_kind="concept_test")
+    db.add(child)
+    db.flush()
+    return idea_out(child)
+
+
+@router.post("/{idea_id}/promote", response_model=s.IdeaOut)
+def promote_concept_test(idea: Idea = Depends(get_idea), db: Session = Depends(get_db)):
+    """Create a fresh long-form child from a micro test; never reuse its research or script."""
+    if idea.form != "micro_short":
+        raise HTTPException(409, "Only a micro-Short concept test can be promoted to a long video")
+    child = _child_idea(idea, form="long", lineage_kind="promotion")
+    db.add(child)
+    db.flush()
+    return idea_out(child)
+
+
+def _lineage_node(idea: Idea, scripts: dict[int, Script], boards: dict[int, list[Storyboard]],
+                  posts: dict[int, list[Post]], snapshots: dict[int, list[VideoMetricSnapshot]]) -> s.LineageIdea:
+    script = scripts.get(idea.id)
+    storyboards = boards.get(script.id, []) if script else []
+    storyboard_ids = [board.id for board in storyboards]
+    evidence: list[dict] = []
+    published = False
+    approved = False
+    for board in storyboards:
+        if board.published_at or board.published_url:
+            published = True
+        if board.review == "approved":
+            approved = True
+        if board.stats:
+            evidence.append({"source": "youtube", "storyboard_id": board.id, **board.stats})
+        for snapshot in snapshots.get(board.id, []):
+            evidence.append({"source": snapshot.service, "source_key": snapshot.source_key,
+                             "storyboard_id": board.id, "observed_at": snapshot.observed_at,
+                             "observed_day": snapshot.observed_day, **{
+                                 field: getattr(snapshot, field) for field in (
+                                     "views", "likes", "comments", "minutes_watched", "average_view_s",
+                                     "average_view_pct") if getattr(snapshot, field) is not None}})
+        for post in posts.get(board.id, []):
+            values = (post.metrics or {}).get("values") or {}
+            if values:
+                evidence.append({"source": post.service, "storyboard_id": board.id, "post_id": post.id, **values})
+            if post.status == "sent":
+                published = True
+    state = "published" if published else "approved" if approved else "in_progress" if script else "idea"
+    return s.LineageIdea(id=idea.id, title=idea.title, form=idea.form, story_shape=idea.story_shape,
+                         parent_idea_id=idea.parent_idea_id, lineage_kind=idea.lineage_kind, status=idea.status,
+                         publication_state=state, script_id=script.id if script else None,
+                         storyboard_ids=storyboard_ids, metric_evidence=evidence)
+
+
+@router.get("/{idea_id}/lineage", response_model=s.IdeaLineage)
+def idea_lineage(idea: Idea = Depends(get_idea), db: Session = Depends(get_db)):
+    """Return the explicit premise chain and evidence without inferring causality."""
+    all_ideas = list(db.scalars(select(Idea).order_by(Idea.id)).all())
+    by_id = {item.id: item for item in all_ideas}
+    scripts = {script.idea_id: script for script in db.scalars(
+        select(Script).where(Script.idea_id.is_not(None)).order_by(Script.id)
+    )}
+    script_ids = [script.id for script in scripts.values()]
+    storyboard_rows = list(db.scalars(select(Storyboard).where(Storyboard.script_id.in_(script_ids))).all()) \
+        if script_ids else []
+    boards: dict[int, list[Storyboard]] = {}
+    for board in storyboard_rows:
+        boards.setdefault(board.script_id, []).append(board)
+    board_ids = [board.id for board in storyboard_rows]
+    post_rows = list(db.scalars(select(Post).where(Post.storyboard_id.in_(board_ids))).all()) if board_ids else []
+    posts: dict[int, list[Post]] = {}
+    for post in post_rows:
+        posts.setdefault(post.storyboard_id, []).append(post)
+    snapshot_rows = list(db.scalars(
+        select(VideoMetricSnapshot).where(VideoMetricSnapshot.storyboard_id.in_(board_ids))
+            .order_by(VideoMetricSnapshot.observed_at)
+    ).all()) if board_ids else []
+    snapshots: dict[int, list[VideoMetricSnapshot]] = {}
+    for snapshot in snapshot_rows:
+        snapshots.setdefault(snapshot.storyboard_id, []).append(snapshot)
+
+    chain: list[Idea] = []
+    current = idea
+    seen: set[int] = set()
+    while current.parent_idea_id and current.parent_idea_id in by_id and current.id not in seen:
+        seen.add(current.id)
+        current = by_id[current.parent_idea_id]
+        chain.append(current)
+    root = current
+    children: dict[int, list[Idea]] = {}
+    for item in all_ideas:
+        if item.parent_idea_id in by_id:
+            children.setdefault(item.parent_idea_id, []).append(item)
+    descendants: list[Idea] = []
+    queue = list(children.get(idea.id, []))
+    while queue:
+        item = queue.pop(0)
+        descendants.append(item)
+        queue.extend(children.get(item.id, []))
+    def nodes(item: Idea) -> s.LineageIdea:
+        return _lineage_node(item, scripts, boards, posts, snapshots)
+    return s.IdeaLineage(idea=nodes(idea), root=nodes(root), ancestors=[nodes(item) for item in reversed(chain)],
+                         descendants=[nodes(item) for item in descendants])
 
 
 @router.post("/{idea_id}/validate", response_model=s.IdeaOut)

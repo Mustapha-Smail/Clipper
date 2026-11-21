@@ -16,7 +16,8 @@
                   (keydown.enter)="$event.preventDefault(); $any($event.target).blur()"
                   aria-label="Video title" [disabled]="busy()"></textarea>
         <p class="muted small">
-          {{ s.video === 'short' ? 'Short only, about ' + s.target_seconds + ' s' : s.format === 'list' ? 'List video' : 'Single topic' }}
+          {{ s.form === 'micro_short' ? 'Micro concept test, about ' + s.target_seconds + ' s' : s.video === 'short' ? 'Short only, about ' + s.target_seconds + ' s' : s.format === 'list' ? 'List video' : 'Single topic' }}
+          · {{ s.story_shape || 'default story shape' }}
           · {{ s.theme }} · updated {{ s.updated_at | ago }}
           @if (s.idea_id && s.theme_id) { · <a [routerLink]="['/themes', s.theme_id]" [queryParams]="{ stage: 'ideas' }">from an idea</a> }
         </p>
@@ -46,6 +47,14 @@
 
     <section class="card overview">
       <dl class="metrics">
+        <div><dt>Strategy</dt><dd>
+          <label class="small">Story shape
+            <select [ngModel]="s.story_shape || ''" (ngModelChange)="setStoryShape($event)" [disabled]="busy()">
+              <option value="">Default</option>
+              @for (shape of storyShapes; track shape.value) { <option [value]="shape.value">{{ shape.label }}</option> }
+            </select>
+          </label>
+        </dd></div>
         <div><dt>Length</dt><dd class="num">{{ minutes().toFixed(1) }}<small> min · {{ words() }} words</small></dd></div>
         <div><dt>Target</dt><dd class="num">
           <input type="number" min="1" max="30" [value]="s.target_minutes" (change)="setTarget($any($event.target).value)"

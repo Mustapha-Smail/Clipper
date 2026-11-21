@@ -63,7 +63,7 @@ def test_form_shape_and_caption_mode_copy_at_each_creation_boundary(client, app_
     assert changed.json()["video"] == "short"
     assert changed.json()["story_shape"] == "parallel"
 
-    started = client.post(f"/api/v1/ideas/{idea_id}/script", json={"target_seconds": 20})
+    started = client.post(f"/api/v1/ideas/{idea_id}/script", json={"target_seconds": 15})
     assert started.status_code == 202
     payload = started.json()
     assert payload["form"] == "micro_short" and payload["video"] == "short"
@@ -94,6 +94,47 @@ def test_form_shape_and_caption_mode_copy_at_each_creation_boundary(client, app_
         assert (db.get(Script, script_id).form, db.get(Script, script_id).story_shape) == ("micro_short", "parallel")
         assert (db.get(Storyboard, board["id"]).form, db.get(Storyboard, board["id"]).story_shape) == \
             ("micro_short", "parallel")
+
+
+def test_concept_test_and_promotion_create_fresh_lineage_children(client, app_env):
+    with session_scope() as db:
+        source = Idea(title="Same start", theme="A", theme_id=None, hook="What changes?", expected="same",
+                      answer="The rule", beats=[{"text": "Compare", "short": True}], angle="original",
+                      format="single", form="long", video="long", story_shape="parallel", notes="creator note",
+                      research={"old": True}, judgement={"old": True}, status="approved")
+        db.add(source)
+        db.flush()
+        source_id = source.id
+
+    test = client.post(f"/api/v1/ideas/{source_id}/concept-test")
+    assert test.status_code == 200
+    test_body = test.json()
+    assert (test_body["form"], test_body["video"], test_body["story_shape"], test_body["parent_idea_id"],
+            test_body["lineage_kind"]) == ("micro_short", "short", "parallel", source_id, "concept_test")
+    assert test_body["research"] is None and test_body["judgement"] is None
+
+    blocked = client.post(f"/api/v1/ideas/{source_id}/promote")
+    assert blocked.status_code == 409 and "micro-Short" in blocked.json()["detail"]
+
+    promoted = client.post(f"/api/v1/ideas/{test_body['id']}/promote")
+    assert promoted.status_code == 200
+    promoted_body = promoted.json()
+    assert (promoted_body["form"], promoted_body["video"], promoted_body["story_shape"],
+            promoted_body["parent_idea_id"], promoted_body["lineage_kind"]) == \
+        ("long", "long", "parallel", test_body["id"], "promotion")
+    with session_scope() as db:
+        assert db.scalar(select(Script).where(Script.idea_id == promoted_body["id"])) is None
+
+    lineage = client.get(f"/api/v1/ideas/{source_id}/lineage")
+    assert lineage.status_code == 200
+    body = lineage.json()
+    assert body["root"]["id"] == source_id and body["idea"]["id"] == source_id
+    assert [item["id"] for item in body["descendants"]] == [test_body["id"], promoted_body["id"]]
+    assert body["descendants"][0]["publication_state"] == "idea"
+
+    invalid = client.post(f"/api/v1/ideas/{test_body['id']}/script", json={
+        "form": "micro_short", "target_seconds": 19})
+    assert invalid.status_code == 422 and "12 to 18" in invalid.json()["detail"]
 
 
 def voice_take(script: Script):

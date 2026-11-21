@@ -96,7 +96,11 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
     requested_shape = body.story_shape if body else None
     video = legacy_video(form)
     minutes = (body.target_minutes if body else None) or DEFAULT_MINUTES.get(idea.format, 6)
-    seconds = (body.target_seconds if body else None) or 50
+    seconds = (body.target_seconds if body else None) or (15 if form == "micro_short" else 50)
+    if form == "micro_short" and not 12 <= seconds <= 18:
+        raise HTTPException(422, "A micro-Short concept test must be 12 to 18 seconds")
+    if form == "short" and not 15 <= seconds <= 90:
+        raise HTTPException(422, "A narrated Short must be 15 to 90 seconds")
     script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, theme_id=idea.theme_id, format=idea.format,
                     target_minutes=1 if video == "short" else minutes, video=video, form=form,
                     story_shape=requested_shape or idea.story_shape, target_seconds=seconds,
@@ -130,7 +134,9 @@ def script_text(script: Script = Depends(get_script)):
 def update_script(body: s.ScriptPatch, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     for field in body.model_fields_set:
         value = getattr(body, field)
-        if value is not None:
+        # A deliberate empty story shape restores the default; other nullable
+        # fields retain the legacy "ignore null" patch behavior.
+        if field == "story_shape" or value is not None:
             setattr(script, field, value)
     db.flush()
     return script_out(script, active_jobs(db).get(script.id))

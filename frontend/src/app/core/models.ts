@@ -371,6 +371,9 @@ export interface NewVideo {
 }
 
 export type IdeaStatus = 'inbox' | 'new' | 'approved' | 'parked' | 'skipped';
+export type IdeaForm = 'long' | 'short' | 'micro_short';
+export type StoryShape = 'parallel' | 'explain' | 'scorecard' | 'investigation';
+export type CaptionMode = 'default' | 'on' | 'off';
 
 export interface IdeaVideo {
   id: string;
@@ -397,6 +400,10 @@ export interface Idea {
   angle: string;
   format: 'single' | 'list';
   video: 'long' | 'short';
+  form: IdeaForm;
+  story_shape: StoryShape | null;
+  parent_idea_id: number | null;
+  lineage_kind: 'root' | 'concept_test' | 'promotion';
   search_query: string;
   origin: 'claude' | 'you';
   status: IdeaStatus;
@@ -430,8 +437,29 @@ export interface Idea {
   script_id: number | null;
 }
 
+export interface LineageIdea {
+  id: number;
+  title: string;
+  form: IdeaForm;
+  story_shape: StoryShape | null;
+  parent_idea_id: number | null;
+  lineage_kind: 'root' | 'concept_test' | 'promotion';
+  status: IdeaStatus;
+  publication_state: 'idea' | 'in_progress' | 'approved' | 'published';
+  script_id: number | null;
+  storyboard_ids: number[];
+  metric_evidence: Record<string, unknown>[];
+}
+
+export interface IdeaLineage {
+  idea: LineageIdea;
+  root: LineageIdea;
+  ancestors: LineageIdea[];
+  descendants: LineageIdea[];
+}
+
 export type IdeaPatch = Partial<Pick<Idea, 'status' | 'notes' | 'title' | 'hook' | 'expected' | 'answer' | 'angle' | 'search_query'
-  | 'video'>>;
+  | 'video' | 'form' | 'story_shape'>>;
 
 export type ClaimVerdict = 'supported' | 'contradicted' | 'unclear' | 'joke';
 
@@ -504,6 +532,8 @@ export interface ScriptSummary {
   format: 'single' | 'list';
   target_minutes: number;
   video: 'long' | 'short';
+  form: IdeaForm;
+  story_shape: StoryShape | null;
   target_seconds: number;
   status: 'draft' | 'approved';
   created_at: string;
@@ -529,7 +559,7 @@ export interface Script extends ScriptSummary {
   hold: HoldCheck | null;
 }
 
-export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minutes' | 'notes'>>;
+export type ScriptPatch = Partial<Pick<Script, 'title' | 'status' | 'target_minutes' | 'notes' | 'story_shape'>>;
 
 export interface VoiceChoice {
   id: string;
@@ -671,6 +701,9 @@ export interface StoryboardSummary {
   script_id: number;
   take_id: number | null;
   format: 'short' | 'long';
+  form: IdeaForm;
+  story_shape: StoryShape | null;
+  caption_mode: CaptionMode;
   style: StoryStyle;
   look: Look;
   section_key: string | null;
