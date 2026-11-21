@@ -624,6 +624,27 @@ def edit_thumbnail(key: str, body: s.ThumbnailEdit, board: Storyboard = Depends(
     return board_out(board, _board_jobs(db).get(board_id), db)
 
 
+@router.patch("/storyboards/{storyboard_id}/thumbnails/result", response_model=s.StoryboardOut)
+@router.post("/storyboards/{storyboard_id}/thumbnails/result", response_model=s.StoryboardOut)
+def thumbnail_result(body: s.ThumbnailResult, board: Storyboard = Depends(get_board),
+                     db: Session = Depends(get_db)):
+    """Save the creator's selected thumbnail and/or manually observed test winner."""
+    if not board.thumbnails:
+        raise HTTPException(409, "Make the three thumbnails first")
+    _idle(db, board)
+    board_id, script_id = board.id, board.script_id
+    db.commit()
+    try:
+        thumbnail_mod.record_result(board_id, **body.model_dump(exclude_unset=True))
+    except KeyError as err:
+        raise HTTPException(400, f"Unknown thumbnail: {err.args[0]}") from err
+    compliance.record(db, script_id, "thumbnail_result", "you", "Recorded thumbnail selection/test result",
+                      storyboard_id=board_id)
+    db.flush()
+    db.expire_all()
+    return board_out(db.get(Storyboard, board_id), _board_jobs(db).get(board_id), db)
+
+
 @router.get("/storyboards/{storyboard_id}/thumbnails/{key}.jpg")
 def thumbnail_image(key: str, board: Storyboard = Depends(get_board)):
     path = thumbnail_mod.path_of(board, key)

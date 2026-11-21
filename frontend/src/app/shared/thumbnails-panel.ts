@@ -17,9 +17,10 @@ interface Draft {
 
 type Key = 'A' | 'B' | 'C';
 
-const ANGLE_LABELS = { reaction: 'Reaction', stakes: 'Stakes', mystery: 'Mystery' };
+const ANGLE_LABELS = { reaction: 'Reaction', contrast: 'Contrast', stakes: 'Stakes (old)', mystery: 'Mystery' };
 const ANGLE_HINTS = {
   reaction: 'A face with a strong expression next to the key thing',
+  contrast: 'The before/after contrast or number the video turns on',
   stakes: 'The contrast or the number the video turns on',
   mystery: 'The key thing pointed at or circled, few words or none',
 };
@@ -53,6 +54,15 @@ const ANGLE_HINTS = {
         @if (board().thumbnails!.by === 'rules') {
           <div class="notice small"><span>AI unavailable: three frames picked by rules, without headlines.</span></div>
         }
+        <p class="small muted">Creator choice and observed test winner are recorded separately; neither is inferred from click-through.</p>
+        <div class="row result-fields">
+          <label class="field"><span>Creator selection</span><select [ngModel]="board().thumbnails!.selected_key ?? ''" (ngModelChange)="record('selected_key', $event)">
+            <option value="">None</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+          </select></label>
+          <label class="field"><span>Manual A/B winner</span><select [ngModel]="board().thumbnails!.winner_key ?? ''" (ngModelChange)="record('winner_key', $event)">
+            <option value="">Not recorded</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+          </select></label>
+        </div>
 
         <div class="tiles" role="tablist" aria-label="Thumbnail options">
           @for (o of options(); track o.key) {
@@ -323,6 +333,14 @@ export class ThumbnailsPanel {
 
   protected titleOf(o: ThumbnailOption): string {
     return o.title_text || this.titles()[o.title - 1] || this.board().title;
+  }
+
+  protected record(field: 'selected_key' | 'winner_key', value: string): void {
+    const result: { selected_key?: 'A' | 'B' | 'C' | null; winner_key?: 'A' | 'B' | 'C' | null } = {};
+    result[field] = (value || null) as 'A' | 'B' | 'C' | null;
+    this.api.recordThumbnailResult(this.board().id, result).subscribe({
+      next: (board) => this.changed.emit(board), error: (err) => this.toasts.error(err),
+    });
   }
 
   protected reset(o: ThumbnailOption): void {

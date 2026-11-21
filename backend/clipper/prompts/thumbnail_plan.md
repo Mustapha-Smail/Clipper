@@ -4,18 +4,20 @@ step: Publishing
 task: thumbnail
 used_in: clipper/studio/thumbnail.py
 about: Headlines and pictures for the A/B thumbnails.
-variables: audience, count, mystery, picture, reaction, stakes
+variables: audience, count, contrast, mystery, picture, reaction, stakes
 var.audience: Who the videos are for, as chosen in Settings (Audience), in a few words.
 var.count: Whether to plan three thumbnails (one per angle) or one for a single angle.
 var.mystery: What the "mystery" angle of a thumbnail is about.
 var.picture: How to describe the picture: in beat lines for ink videos (the "Thumbnail picture (ink)" prompt) or as a shot number for other styles ("Thumbnail picture (frame)").
 var.reaction: What the "reaction" angle of a thumbnail is about.
-var.stakes: What the "stakes" angle of a thumbnail is about.
+var.contrast: What the canonical "contrast" angle of a thumbnail is about.
+var.stakes: What the legacy "stakes" angle of a thumbnail is about.
 ---
 You plan YouTube thumbnails for an educational animated video, for YouTube's A/B test, which shows each thumbnail to a share of viewers and keeps the one watched most. {count}
 
 The angles:
 - reaction: {reaction}.
+- contrast: {contrast}.
 - stakes: {stakes}.
 - mystery: {mystery}.
 
