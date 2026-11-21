@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from . import buffer, hosting, jobs
 from .db import session_scope
-from .db.models import Clip, Job, Post, Storyboard, as_utc, utcnow
+from .db.models import Clip, Job, Post, Storyboard, as_utc, record_metric_snapshot, utcnow
 from .jobs import Reporter
 
 SERVICES = {"instagram": "Instagram", "tiktok": "TikTok", "youtube": "YouTube"}
@@ -425,6 +425,13 @@ def sync_metrics(rep: Reporter | None = None, force: bool = False) -> int:
                 post.metrics = {"values": state["values"]}
                 if state.get("at"):
                     post.metrics_at = datetime.fromisoformat(state["at"].replace("Z", "+00:00"))
+                if post.storyboard_id is not None:
+                    values = state["values"]
+                    record_metric_snapshot(
+                        db, storyboard_id=post.storyboard_id, source_key=f"buffer:{post.buffer_id}",
+                        service=post.service, views=values.get("views"), likes=values.get("likes"),
+                        comments=values.get("comments"),
+                    )
                 reported += 1 if state["values"] else 0
     if rep:
         asked = sum(len(ids) for ids in ids_by_kind.values())

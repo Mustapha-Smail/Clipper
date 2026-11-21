@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from .. import config, llm, prompts
 from ..db import session_scope
-from ..db.models import Idea, Post, Script, Storyboard, Theme, VideoAnalytics, as_utc, utcnow
+from ..db.models import Idea, Post, Script, Storyboard, Theme, VideoAnalytics, as_utc, record_metric_snapshot, utcnow
 from ..jobs import Reporter
 from . import analytics, youtube
 from . import ideas as ideas_mod
@@ -61,7 +61,12 @@ def refresh_youtube(rep: Reporter | None = None, force: bool = False) -> int:
     with session_scope() as db:
         for board_id, vid in wanted.items():
             if vid in found:
-                db.get(Storyboard, board_id).stats = {**found[vid], "at": utcnow().isoformat(), "source": "youtube"}
+                now = utcnow()
+                db.get(Storyboard, board_id).stats = {**found[vid], "at": now.isoformat(), "source": "youtube"}
+                values = found[vid]
+                record_metric_snapshot(db, storyboard_id=board_id, source_key=f"youtube:{vid}", service="youtube",
+                                       observed_at=now, views=values.get("views"), likes=values.get("likes"),
+                                       comments=values.get("comments"))
     if rep:
         rep.info(f"Read YouTube statistics of {len(found)} video{'s' if len(found) != 1 else ''} published by hand")
     return len(found)

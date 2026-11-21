@@ -166,7 +166,8 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
                                  "script, or make a new take, so the video matches the words.")
     title = f"{script.title} · {section['heading']}" if section else script.title
     look = _look_for(body.style, body.look)
-    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, style=body.style, look=look,
+    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, form=script.form,
+                       story_shape=script.story_shape, caption_mode=body.caption_mode, style=body.style, look=look,
                        section_key=body.section_key, title=title, start=start, end=end, words=words, scenes=[])
     db.add(board)
     db.flush()
@@ -375,6 +376,8 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                 summary += f" (currently {'on' if inherited else 'off'} in Settings)"
             compliance.record(db, board.script_id, "sound", "you", summary, storyboard_id=board.id)
             setattr(board, field, value)
+    if body.caption_mode is not None:
+        board.caption_mode = body.caption_mode
     db.flush()
     return board_out(board, _board_jobs(db).get(board.id), db)
 

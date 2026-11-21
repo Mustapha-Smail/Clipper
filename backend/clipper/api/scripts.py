@@ -24,6 +24,10 @@ log = logging.getLogger("clipper.studio")
 DEFAULT_MINUTES = {"single": 6, "list": 10}
 
 
+def legacy_video(form: str) -> str:
+    return "short" if form in ("short", "micro_short") else "long"
+
+
 def get_script(script_id: int, db: Session = Depends(get_db)) -> Script:
     script = db.get(Script, script_id)
     if script is None:
@@ -85,11 +89,16 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
     if idea is None:
         raise HTTPException(404, "Idea not found")
     idea.status = "approved"
-    video = (body.video if body else None) or idea.video or "long"
+    requested_form = body.form if body else None
+    # An old `video` request remains a form request unless the caller supplied
+    # the richer field. The script keeps its own immutable intent afterwards.
+    form = requested_form or ((body.video if body else None) or idea.form or idea.video or "long")
+    video = legacy_video(form)
     minutes = (body.target_minutes if body else None) or DEFAULT_MINUTES.get(idea.format, 6)
     seconds = (body.target_seconds if body else None) or 50
     script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, theme_id=idea.theme_id, format=idea.format,
-                    target_minutes=1 if video == "short" else minutes, video=video, target_seconds=seconds,
+                    target_minutes=1 if video == "short" else minutes, video=video, form=form,
+                    story_shape=idea.story_shape, target_seconds=seconds,
                     sections=[])
     db.add(script)
     db.flush()
