@@ -24,6 +24,7 @@ export const EXPRESSIONS = ['neutral', 'happy', 'surprised', 'worried', 'smug', 
 export const BACKGROUNDS = ['paper', 'grid', 'floor', 'sky', 'yellow', 'blue'];
 export const CAMERAS = ['still', 'zoom_in', 'zoom_out', 'pan_left', 'pan_right'];
 export const MOTIONS = ['none', 'bounce', 'shake', 'pulse', 'float', 'spin', 'grow'];
+export const DIVIDERS = ['none', 'line', 'vs'];
 
 const INK_CHEAT_SHEET = `N shot "what the viewer sees"   (use Split to start a shot)
 N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
@@ -108,7 +109,7 @@ export class StoryboardPage {
     this.router.navigate([], { queryParams: { tab: tab === 'video' ? null : tab }, replaceUrl: true });
   }
 
-  protected readonly options = { SLOTS, CAST, POSES, EXPRESSIONS, BACKGROUNDS, CAMERAS, MOTIONS };
+  protected readonly options = { SLOTS, CAST, POSES, EXPRESSIONS, BACKGROUNDS, CAMERAS, MOTIONS, DIVIDERS };
   protected readonly Math = Math;
   protected readonly inkCameras = [
     { value: 'wide', label: 'Wide, follows the action' }, { value: 'push', label: 'Push: slowly moves in' },
@@ -416,6 +417,11 @@ export class StoryboardPage {
     this.scenes.update((list) => list.map((s, i) => (i !== scene ? s : {
       ...s, elements: s.elements.map((e, k) => (k === element ? { ...e, ...patch } : e)),
     })));
+  }
+
+  protected changeCompositionDivider(scene: number, divider: 'none' | 'line' | 'vs'): void {
+    const current = this.scenes()[scene].composition;
+    this.change(scene, { composition: { kind: 'split', lanes: ['a', 'b'], divider: current?.kind === 'split' ? divider : 'line' } });
   }
 
   protected addElement(scene: number, kind: StoryElement['kind']): void {

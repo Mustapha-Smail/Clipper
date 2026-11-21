@@ -18,11 +18,11 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from .. import captions as captions_mod
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, art, beats, cartoon, geo, ink, looks, photos
+from . import animate, art, beats, cartoon, composition, geo, ink, looks, photos
 
 FPS = 24
 ART_FPS = 12
@@ -150,6 +150,9 @@ class InkComposer:
             highlight = hex_to_rgb(settings.highlight_color)
             self.captions = captions_mod.CaptionRenderer(captions_mod.group_words(self.words, 0.0, self.duration),
                                                          self.font_path, highlight)
+        self.compositions = [composition.geometry(self.format, shot.get("composition"),
+                                                   captions=self.captions is not None)
+                             for shot in self.shots]
         self.chapters: list[tuple[float, int, str]] = []
         if self.format == "long":
             seen = None
@@ -235,10 +238,14 @@ class InkComposer:
             out.append((col * self.W * 1.12, row * self.H * 1.35 + jitter))
         return out
 
-    def _slot(self, shot: int, slot: str) -> tuple[float, float]:
+    def _slot(self, shot: int, slot: str, lane: str = "") -> tuple[float, float]:
+        ox, oy = self.origins[shot]
+        geo = self.compositions[shot]
+        if not geo.single:
+            x, y = composition.slot(self.format, slot, geo.viewport(lane or "a"))
+            return ox + x, oy + y
         slots = SLOTS[self.format]
         fx, fy = slots.get(slot or "center", slots["center"])
-        ox, oy = self.origins[shot]
         return ox + fx * self.W, oy + fy * self.H
 
     def _build(self) -> None:
@@ -291,7 +298,7 @@ class InkComposer:
                         name, thing.look = self.personas[line.who]
                     if kind == "actor" and line.who in self.personas and line.who not in named:
                         named.add(line.who)
-                        label = beats.Line(word=line.word, verb="tag", text=name)
+                        label = beats.Line(word=line.word, verb="tag", text=name, lane=line.lane)
                         tag = Thing(f"tag:{order}", "tag", i, t + 0.6, label,
                                     order + 200_000, gone=t + 0.6 + TAG_TIME, spans=[(i, t)], owner=thing)
                         self.things.append(tag)
@@ -359,7 +366,7 @@ class InkComposer:
         items, todo = [], []
         for x in carried + created:
             size = x.line.size or "medium"
-            cx, cy = self._slot(shot, x.line.slot or ("left" if x.kind == "actor" else "center"))
+            cx, cy = self._slot(shot, x.line.slot or ("left" if x.kind == "actor" else "center"), x.line.lane)
             if x in carried:
                 w, h = x.box[2], x.box[3]
             elif x.kind == "actor":
@@ -415,8 +422,26 @@ class InkComposer:
         spans = [alive(x) for x in todo]
         together = {(a, b) for a in range(len(todo)) for b in range(a + 1, len(todo))
                     if spans[a][0] < spans[b][1] and spans[b][0] < spans[a][1]}
-        placed = animate.separate(items, self.W * animate.MARGIN, self.W * (1 - animate.MARGIN),
-                                  self.H * lay.stage_top, self.H * lay.stage_bottom, gap=24, pairs=together)
+        if self.compositions[shot].single:
+            placed = animate.separate(items, self.W * animate.MARGIN, self.W * (1 - animate.MARGIN),
+                                      self.H * lay.stage_top, self.H * lay.stage_bottom, gap=24, pairs=together)
+        else:
+            geo = self.compositions[shot]
+            placed = [(item[0], item[1], item[2]) for item in items]
+            by_lane: dict[str, list[int]] = {}
+            for n, thing in enumerate(todo):
+                by_lane.setdefault(thing.line.lane or "a", []).append(n)
+            for lane, indices in by_lane.items():
+                view = geo.viewport(lane)
+                local = [items[n] for n in indices]
+                local_pairs = {(a, b) for a, ia in enumerate(indices) for b, ib in enumerate(indices)
+                               if (min(ia, ib), max(ia, ib)) in together}
+                margin = min(view.width, view.height) * animate.MARGIN
+                values = animate.separate(local, view.x0 - ox + margin, view.x1 - ox - margin,
+                                          view.y0 - oy + margin, view.y1 - oy - margin,
+                                          gap=24, pairs=local_pairs)
+                for n, value in zip(indices, values, strict=True):
+                    placed[n] = value
         for x, (cx, cy, s), item in zip(todo, placed, items, strict=True):
             w, h = item[3] * s, item[4] * s
             if x in carried:
@@ -467,7 +492,7 @@ class InkComposer:
                     side = 1 if (x0 + x1) / 2 >= here[0] else -1
                     there = ((x0 if side > 0 else x1) - side * actor.box[2] * 0.7, here[1])
                 else:
-                    cx, cy = self._slot(shot, value)
+                    cx, cy = self._slot(shot, value, actor.line.lane)
                     there = (cx, cy + actor.box[3] / 2)
                 self._walk(actor, t, here, there, gait)
                 continue
@@ -540,7 +565,7 @@ class InkComposer:
                 x0, y0, x1, _y1 = self.body_box(target, t)
                 there = ((x0 + x1) / 2, y0 - thing.box[3] * 0.32)
             else:
-                there = self._slot(shot, slot)
+                there = self._slot(shot, slot, thing.line.lane)
             duration = max(0.4, math.hypot(there[0] - here[0], there[1] - here[1]) / (self.W * MOVE_SPEED * 1.6))
             thing.moves.append((max(t, self._busy_until(thing)), duration, here, there))
             here = there
@@ -631,7 +656,7 @@ class InkComposer:
             if thing is not None and thing.kind in BODIES:
                 box = self.body_box(thing, mark.born + 0.5)
                 return box, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
-            return None, self._slot(mark.shot, name)
+            return None, self._slot(mark.shot, name, mark.line.lane)
 
         if mark.kind == "arrow":
             box_a, a = place(mark.line.who)
@@ -762,6 +787,12 @@ class InkComposer:
         keys = []
         for i, sh in enumerate(self.shots):
             begin, duration = self.pan_start(i)
+            if not self.compositions[i].single:
+                ox, oy = self.origins[i]
+                # A comparison is one designed frame: both lanes and the
+                # divider remain visible instead of becoming camera targets.
+                keys.append((begin, duration, (ox + self.W / 2, oy + self.H / 2, 1.0), i))
+                continue
             lo, hi = ZOOM.get(sh["camera"], ZOOM["wide"])
             end = self.shot_end(i)
             looks = sorted((t, name) for t, name, shot in self.looks if shot == i)
@@ -872,6 +903,8 @@ class InkComposer:
             k = 1.0 if duration <= 0 else ink.ease((t - start) / duration)
             cx, cy, zoom = (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k)
         shot = self.shot_at(t)
+        if not self.compositions[shot].single:
+            return cx, cy, zoom
         p = min(1.0, max(0.0, (t - self.starts[shot]) / max(0.5, self.shot_end(shot) - self.starts[shot])))
         if self.shots[shot]["camera"] == "push":
             zoom *= 1 + 0.07 * ink.ease(p)
@@ -1140,6 +1173,8 @@ class InkComposer:
 
         tq = math.floor(t * ART_FPS + 1e-6) / ART_FPS
         cx, cy, zoom = self.camera(t)
+        active_shot = self.shot_at(t)
+        active_geo = self.compositions[active_shot]
         key = (tq, round(cx, 1), round(cy, 1), round(zoom, 4))
         if self._last and self._last[0] == key:
             return self._last[1]
@@ -1178,7 +1213,12 @@ class InkComposer:
             sx = (centre_x + dx - cx) * zoom + self.W / 2 - image.width / 2
             sy = (centre_y + dy - cy) * zoom + self.H / 2 - image.height / 2
             target = pasted if pasted is not None and thing.kind in looks.PASTED else layer
-            animate._composite_clipped(target, image, round(sx), round(sy))
+            lane = thing.line.lane or (thing.owner.line.lane if thing.owner is not None else "")
+            bounds = None
+            if not active_geo.single and lane and self._shot_of(thing, tq) == active_shot:
+                lane_view = active_geo.viewport(lane)
+                bounds = (lane_view.x0, lane_view.y0, lane_view.x1, lane_view.y1)
+            animate._composite_clipped(target, image, round(sx), round(sy), bounds)
         for at, number, heading in self.chapters:
             if at <= t < at + BANNER:
                 self._banner(layer, number, heading, tq - at)
@@ -1205,6 +1245,26 @@ class InkComposer:
                                              interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
                                              borderValue=(0, 0, 0, 0))
             out = np.asarray(Image.alpha_composite(ground, Image.fromarray(warped, "RGBA")))
+        if not active_geo.single and active_geo.divider != "none":
+            divided = Image.fromarray(out, "RGBA")
+            draw = ImageDraw.Draw(divided)
+            width = 8 if active_geo.divider == "line" else 4
+            if self.format == "long":
+                x = round((active_geo.lanes[0].x1 + active_geo.lanes[1].x0) / 2)
+                draw.line((x, 0, x, round(active_geo.caption_top)), fill=ink.INK, width=width)
+                centre = (x, active_geo.caption_top / 2)
+            else:
+                y = round((active_geo.lanes[0].y1 + active_geo.lanes[1].y0) / 2)
+                draw.line((0, y, self.W, y), fill=ink.INK, width=width)
+                centre = (self.W / 2, y)
+            if active_geo.divider == "vs":
+                font = ImageFont.truetype(str(self.font_path), max(28, round(self.H * 0.035)))
+                pad = round(self.H * 0.012)
+                box = draw.textbbox(centre, "VS", font=font, anchor="mm")
+                draw.rounded_rectangle((box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
+                                       radius=pad, fill=self.paper.getpixel((0, 0)))
+                draw.text(centre, "VS", font=font, fill=ink.INK, anchor="mm")
+            out = np.asarray(divided)
         self._last = (key, out)
         return out
 
