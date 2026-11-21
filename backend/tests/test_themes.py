@@ -231,9 +231,12 @@ def test_learning_prefers_the_successful_render_snapshot(app_env):
         theme = _theme(db)
         board = _published(db, theme, "Snapshot", 5000)
         board.render_meta = {"version": 1, "hold_score": 88, "first_twist_s": 6, "longest_gap_s": 21,
+                             "form": "micro_short", "story_shape": "parallel",
                              "story_template": "mystery", "hook_shape": "context > lean > turn", "wpm": 171,
                              "starter": True, "riser": False, "look": "clean_doodle",
                              "first_visual_event_s": 0.7}
+        board.form, board.story_shape = "long", "explain"  # mutable values must not rewrite attribution
+        board.thumbnails = {"selected_key": "B", "options": [{"key": "B", "angle": "stakes"}]}
         row = learning.published(db, theme.id)[0]
     assert {key: row[key] for key in learning.CRAFT} == {
         "hold_score": 88, "first_twist": 6, "longest_gap": 21,
@@ -242,6 +245,8 @@ def test_learning_prefers_the_successful_render_snapshot(app_env):
         "first_visual_event": 0.7,
     }
     assert row["look"] == "clean_doodle"
+    assert (row["form"], row["story_shape"]) == ("micro_short", "parallel")
+    assert (row["thumbnail_angle"], row["thumbnail_evidence"]) == ("contrast", "creator_selected")
 
 
 def test_craft_comparisons_require_three_per_group_and_never_cross_formats():
@@ -261,6 +266,47 @@ def test_craft_comparisons_require_three_per_group_and_never_cross_formats():
     lines = learning.craft_comparisons(comparable)
     assert lines == ["short, similar durations — starter and five-second retention: "
                      "off: n=3, median 60%, range 58–66%; on: n=3, median 74%, range 70–90%"]
+
+
+def test_ranked_medians_never_pool_rendered_forms():
+    def row(form, views):
+        return {"form": form, "views": views, "networks": [{"views": views}], "engagement": None}
+
+    table = learning.ranked([row("long", 100), row("long", 900), row("micro_short", 10),
+                             row("micro_short", 30)])
+    values = {(item["form"], item["views"]): item for item in table["videos"]}
+    assert values[("long", 900)]["cohort_median_views"] == 500
+    assert values[("long", 900)]["vs_median"] == 1.8
+    assert values[("micro_short", 30)]["cohort_median_views"] == 20
+    assert values[("micro_short", 30)]["vs_median"] == 1.5
+    assert {item["form"] for item in table["cohort_medians"]} == {"long", "micro_short"}
+
+
+def experiment_video(form, shape, velocity, angle=None):
+    return {"form": form, "story_shape": shape, "thumbnail_angle": angle, "views": int(velocity * 7),
+            "seven_day_velocity": {"status": "available", "cross_platform": {"views_per_day": velocity}}}
+
+
+def test_experiment_comparisons_require_six_mature_videos_in_one_form():
+    crossed = [experiment_video("short", "parallel", value) for value in (10, 11, 12)] + [
+        experiment_video("long", "explain", value) for value in (20, 21, 22)]
+    assert learning.experiment_comparisons(crossed)[0].startswith("not enough comparable videos")
+
+    comparable = [experiment_video("short", "parallel", value) for value in (10, 11, 12)] + [
+        experiment_video("short", "explain", value) for value in (20, 21, 22)]
+    lines = learning.experiment_comparisons(comparable)
+    assert lines == ["short, comparable mature seven-day windows — story shape was associated with: "
+                     "explain: n=3, median 21 views/day, range 20–22; "
+                     "parallel: n=3, median 11 views/day, range 10–12"]
+
+
+def test_thumbnail_breakdown_uses_only_creator_recorded_angle():
+    videos = [experiment_video("long", "parallel", 10, "contrast"),
+              experiment_video("long", "parallel", 12, None)]
+    groups = learning.cohort_breakdown(videos)["thumbnail_angle"]
+    assert groups == [{"value": "contrast", "videos": 1, "with_views": 1, "median_views": 70,
+                       "views_range": [70, 70], "with_mature_velocity": 1, "median_views_per_day": 10,
+                       "velocity_range": [10, 10]}]
 
 
 def test_theme_prompt_uses_only_non_causal_craft_language():

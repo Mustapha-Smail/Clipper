@@ -1155,6 +1155,13 @@ export interface ThemeVideo {
   title: string;
   hook: string;
   format: 'short' | 'long';
+  form: 'long' | 'short' | 'micro_short' | null;
+  story_shape: 'parallel' | 'explain' | 'scorecard' | 'investigation' | null;
+  thumbnail_angle: 'reaction' | 'contrast' | 'mystery' | null;
+  thumbnail_evidence: 'creator_selected' | 'manual_winner' | null;
+  parent_idea_id: number | null;
+  root_idea_id: number | null;
+  lineage_kind: 'root' | 'concept_test' | 'promotion' | null;
   style: string;
   look: Look;
   seconds: number | null;
@@ -1167,6 +1174,8 @@ export interface ThemeVideo {
   saves: number | null;
   engagement: number | null;
   vs_median: number | null;
+  cohort_median_views: number | null;
+  seven_day_velocity: SevenDayVelocity;
   /** How it was built (hold check of its script, the take's pace); null when not measured. */
   hold_score: number | null;
   first_twist: number | null;
@@ -1186,6 +1195,31 @@ export interface ThemeVideo {
   retention: VideoRetention | null;
   lines: string[];
   networks: { service: string; name: string; link: string | null; views: number | null; status: string }[];
+}
+
+export interface SevenDayVelocitySource {
+  source_key: string;
+  service: string;
+  name: string;
+  status: 'available' | 'unavailable';
+  reason?: string;
+  baseline_at?: string;
+  baseline_views?: number;
+  endpoint_at?: string;
+  endpoint_views?: number;
+  elapsed_hours?: number;
+  elapsed_days?: number;
+  views_gained?: number;
+  views_per_day?: number;
+  corrected?: boolean;
+}
+
+export interface SevenDayVelocity {
+  status: 'available' | 'unavailable';
+  reason: string | null;
+  coverage: string;
+  sources: SevenDayVelocitySource[];
+  cross_platform: { label: string; source_count: number; views_gained: number; views_per_day: number } | null;
 }
 
 export interface VideoRetention {
@@ -1226,12 +1260,23 @@ export interface YoutubeStatus {
 export interface ThemeLearning {
   videos: ThemeVideo[];
   median_views: number | null;
+  cohort_medians: { form: string; median_views: number; with_views: number }[];
   with_views: number;
   total_views: number;
   insights: ThemeInsights | null;
   can_learn: boolean;
   proven: { n: number; kind: string; id: number; title: string; evidence: string }[];
   stats_sources: { buffer: boolean; youtube: boolean; analytics: boolean };
+  experiments: {
+    cohorts: Record<string, { value: string; videos: number; with_views: number; median_views: number | null;
+      views_range: [number, number] | null; with_mature_velocity: number; median_views_per_day: number | null;
+      velocity_range: [number, number] | null }[]>;
+    comparisons: string[];
+    lineages: { root_idea_id: number; videos: { storyboard_id: number; idea_id: number | null;
+      parent_idea_id: number | null; lineage_kind: string | null; form: string | null; title: string;
+      views: number | null; seven_day_velocity: SevenDayVelocity }[] }[];
+    note: string;
+  };
   unmatched: { storyboard_id: number; title: string; why: string }[];
 }
 
