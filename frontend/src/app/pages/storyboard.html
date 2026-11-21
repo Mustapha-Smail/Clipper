@@ -506,6 +506,51 @@
               }
             </div>
           }
+          <section class="sound-cues" aria-labelledby="sound-cues-heading">
+            <div class="row spread sound-cues-head">
+              <div>
+                <h3 id="sound-cues-heading">Storyboard sound cues</h3>
+                <p class="small muted">Place an approved local effect at a moment in this storyboard. Cues are mixed offline and never hotlink the provider.</p>
+              </div>
+              @if (soundCuesLoading()) { <span class="small muted" role="status">Loading cues…</span> }
+            </div>
+            @if (soundCueError(); as error) { <p class="notice bad" role="alert">{{ error }}</p> }
+            @if (!approvedSounds().length) {
+              <div class="notice small"><span>No approved sound effects are available. <a routerLink="/props" [queryParams]="{ tab: 'sounds' }">Open Sound effects in Library</a> to import and approve one.</span></div>
+            } @else {
+              <div class="row cue-form">
+                <label class="field"><span>Sound</span>
+                  <select [ngModel]="soundCueSound()" (ngModelChange)="soundCueSound.set(+$event)">
+                    @for (sound of approvedSounds(); track sound.id) { <option [ngValue]="sound.id">{{ sound.name }} · {{ sound.kind }}</option> }
+                  </select>
+                </label>
+                <label class="field"><span>At (seconds)</span>
+                  <input type="number" min="0" [max]="cueDuration()" step="0.1" [ngModel]="soundCueAt()" (ngModelChange)="setCueAt($event)" />
+                  <small>0–{{ clock(cueDuration()) }}</small>
+                </label>
+                <label class="field"><span>Rule</span>
+                  <input type="text" maxlength="32" placeholder="manual, twist, payoff…" [ngModel]="soundCueRule()" (ngModelChange)="soundCueRule.set($event)" />
+                </label>
+                <label class="field cue-gain"><span>Gain {{ soundCueGain().toFixed(1) }}</span>
+                  <input type="range" min="0" max="2" step="0.1" [ngModel]="soundCueGain()" (ngModelChange)="setCueGain($event)" />
+                </label>
+                <button class="sm primary" (click)="addSoundCue()" [disabled]="assigningSoundCue()">
+                  {{ assigningSoundCue() ? 'Adding…' : 'Add cue' }}</button>
+              </div>
+            }
+            <div class="cue-list" aria-live="polite">
+              @for (cue of soundCues(); track cue.id) {
+                <div class="cue-row">
+                  <span class="num cue-time">{{ clock(cue.at) }}</span>
+                  <span class="grow"><strong>{{ cue.sound.name }}</strong><span class="small muted"> · {{ cue.rule || 'manual' }} · gain {{ cue.gain }}</span></span>
+                  <audio controls preload="none" [src]="soundAudio(cue.sound.id)" [attr.aria-label]="'Preview ' + cue.sound.name"></audio>
+                  <button class="sm quiet danger" (click)="removeSoundCue(cue)" [disabled]="deletingSoundCue() === cue.id">{{ deletingSoundCue() === cue.id ? 'Removing…' : 'Remove' }}</button>
+                </div>
+              } @empty {
+                @if (!soundCuesLoading()) { <p class="small muted">No manual cues yet. The existing effects toggle remains available above.</p> }
+              }
+            </div>
+          </section>
         </section>
       }
       @case ('publish') {

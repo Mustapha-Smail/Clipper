@@ -3,14 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
-import { Asset, MusicFound, MusicTrack } from '../core/models';
+import { Asset, MusicFound, MusicTrack, SoundCandidate, SoundKind, StudioSound } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { byDate, byText, rememberedSort, sortBy, SortOption } from '../core/sorting';
 import { CAST, EXPRESSIONS, POSES } from './storyboard';
 import { PlacesLibrary } from '../shared/places-library';
 
-const LIBRARY_TABS = ['props', 'places', 'music', 'cast'] as const;
+const LIBRARY_TABS = ['props', 'places', 'music', 'sounds', 'cast'] as const;
 type LibraryTab = (typeof LIBRARY_TABS)[number];
 
 /** The library, one kind per tab: props, places, music and the cast. */
@@ -23,8 +23,8 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
         <div>
           <h1>Library</h1>
           <p class="muted">What your animated videos are made of, each drawn or chosen once and reused by every video.</p>
+          </div>
         </div>
-      </div>
 
       <div class="tabs page-tabs" role="tablist">
         @for (t of tabs; track t.value) {
@@ -148,6 +148,93 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
       </div>
 
       }
+      @case ('sounds') {
+      <section class="sounds-library" aria-labelledby="sounds-heading">
+        <div class="row tab-head">
+          <div class="grow">
+            <h2 id="sounds-heading">Sound effects</h2>
+            <p class="muted small">Search Openverse first, or Wikimedia Commons as a fallback. Only CC0 and CC BY sounds
+              can be imported. Every sound is downloaded and normalized locally, then needs your approval before a render can use it.</p>
+          </div>
+          @if (soundLoading()) { <span class="small muted" role="status">Loading library…</span> }
+        </div>
+        <div class="card sound-search">
+          <div class="row">
+            <label class="field grow"><span>Search</span>
+              <input type="search" #soundQuery placeholder="pop, whoosh, pencil, impact…"
+                     (keydown.enter)="searchSounds(soundQuery.value)" aria-describedby="sound-search-help" />
+            </label>
+            <label class="field"><span>Provider</span>
+              <select [ngModel]="soundProvider()" (ngModelChange)="soundProvider.set($event)">
+                <option value="openverse">Openverse</option>
+                <option value="wikimedia">Wikimedia Commons</option>
+              </select>
+            </label>
+            <label class="field"><span>Kind</span>
+              <select [ngModel]="soundKind()" (ngModelChange)="soundKind.set($event)">
+                @for (kind of soundKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
+              </select>
+            </label>
+            <button (click)="searchSounds(soundQuery.value)" [disabled]="soundSearching() || soundQuery.value.trim().length < 2">
+              {{ soundSearching() ? 'Searching…' : 'Search' }}</button>
+          </div>
+          <p id="sound-search-help" class="small muted">Search results are metadata until you choose Add. Check the source page and licence before importing.</p>
+          @if (soundLoadError(); as error) { <p class="notice bad" role="alert">{{ error }}</p> }
+          @if (soundSearchError(); as error) { <p class="notice bad" role="alert">{{ error }}</p> }
+        </div>
+        @if (soundSearching()) { <div class="skeleton" style="height:80px" role="status" aria-label="Searching sound effects"></div> }
+        @if (soundResults(); as results) {
+          <div class="stack sound-results" aria-live="polite">
+            @for (candidate of results; track candidate.provider + ':' + candidate.provider_id) {
+              <article class="card sound-result">
+                <div class="grow">
+                  <strong>{{ candidate.title }}</strong>
+                  <div class="small muted">{{ candidate.creator || 'Creator unknown' }} · {{ soundClock(candidate.duration) }}</div>
+                  <div class="small"><span class="pill tiny">{{ candidate.license === 'by' ? 'CC BY ' + candidate.license_version + ' · credit' : 'CC0' }}</span>
+                    · <a [href]="candidate.landing_url" target="_blank" rel="noopener">inspect source and licence</a></div>
+                </div>
+                <audio controls preload="none" [src]="candidate.media_url" [attr.aria-label]="'Preview ' + candidate.title"></audio>
+                <button class="sm" (click)="importSound(candidate)" [disabled]="soundImporting() === candidate.provider_id">
+                  {{ soundImporting() === candidate.provider_id ? 'Adding…' : 'Add to library' }}</button>
+              </article>
+            } @empty {
+              <p class="small muted">No safe CC0 or CC BY results. Try a broader search.</p>
+            }
+          </div>
+        }
+        <div class="sound-library-list">
+          <h3>Imported sounds <span class="small muted">({{ sounds().length }})</span></h3>
+          @if (!soundLoading() && !sounds().length) { <p class="small muted">No sound effects yet. Search above to add one.</p> }
+          @for (sound of sounds(); track sound.id) {
+            <article class="card sound-item">
+              <div class="grow">
+                <strong>{{ sound.name }}</strong>
+                <div class="small muted">{{ soundKindLabel(sound.kind) }} · {{ sound.creator || 'Creator unknown' }} · {{ soundClock(sound.duration) }}</div>
+                <div class="small"><span class="pill tiny" [class.sound-approved]="sound.approved_at" [class.sound-rejected]="sound.rejected_at">
+                  {{ sound.approved_at ? 'Approved' : sound.rejected_at ? 'Rejected' : 'Pending review' }}</span>
+                  <span class="muted"> · {{ sound.license === 'by' ? 'CC BY ' + sound.license_version + ' · credit required' : 'CC0' }}</span>
+                  @if (!sound.cached) { <span class="muted"> · local file missing</span> }
+                </div>
+                @if (sound.rejection_note) { <div class="small muted">Reason: {{ sound.rejection_note }}</div> }
+                <a class="small" [href]="sound.landing_url" target="_blank" rel="noopener">Source and licence</a>
+              </div>
+              @if (sound.cached) { <audio controls preload="none" [src]="soundAudio(sound.id)" [attr.aria-label]="'Preview ' + sound.name"></audio> }
+              <div class="row sound-actions">
+                @if (!sound.approved_at) {
+                  <button class="sm primary" (click)="approveSound(sound)" [disabled]="!sound.cached || soundAction() === sound.id">
+                    {{ soundAction() === sound.id ? 'Saving…' : 'Approve' }}</button>
+                } @else { <span class="small muted">Ready for storyboard cues</span> }
+                @if (!sound.rejected_at) {
+                  <button class="sm quiet danger" (click)="rejectSound(sound)" [disabled]="soundAction() === sound.id">Reject</button>
+                } @else {
+                  <button class="sm quiet" (click)="approveSound(sound)" [disabled]="!sound.cached || soundAction() === sound.id">Approve again</button>
+                }
+              </div>
+            </article>
+          }
+        </div>
+      </section>
+      }
       @case ('cast') {
       <p class="muted small">Drawn by code: any member, in any pose, with any expression. Mouths move with the voice when a
         character talks.</p>
@@ -190,6 +277,22 @@ type LibraryTab = (typeof LIBRARY_TABS)[number];
       flex-wrap: wrap;
       audio { height: 34px; flex: 1 1 220px; min-width: 0; }
     }
+    .sounds-library { display: grid; gap: 14px; }
+    .sounds-library h2, .sounds-library h3 { margin: 0; }
+    .sound-search { display: grid; gap: 8px; }
+    .sound-search .row { align-items: end; }
+    .sound-search .field { min-width: 130px; }
+    .sound-search .field.grow { min-width: 180px; }
+    .sound-search p { margin: 0; }
+    .sound-results, .sound-library-list { display: grid; gap: 8px; }
+    .sound-library-list h3 { margin-top: 6px; }
+    .sound-result, .sound-item { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 14px; }
+    .sound-result audio, .sound-item audio { height: 34px; flex: 1 1 220px; min-width: 180px; }
+    .sound-result strong, .sound-item strong { overflow-wrap: anywhere; }
+    .sound-result .small, .sound-item .small { overflow-wrap: anywhere; }
+    .sound-actions { flex: 0 0 auto; }
+    .pill.sound-approved { background: var(--good-soft); color: var(--good); }
+    .pill.sound-rejected { background: var(--bad-soft); color: var(--bad); }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
@@ -244,7 +347,7 @@ export class PropsPage {
 
   protected readonly tabs: { value: LibraryTab; label: string }[] = [
     { value: 'props', label: 'Props' }, { value: 'places', label: 'Places' },
-    { value: 'music', label: 'Music' }, { value: 'cast', label: 'Cast' },
+    { value: 'music', label: 'Music' }, { value: 'sounds', label: 'Sound effects' }, { value: 'cast', label: 'Cast' },
   ];
   /** Kept in the address (?tab=music), so a link or a reload opens the same tab. */
   protected readonly tab = signal<LibraryTab>(LIBRARY_TABS.includes(this.route.snapshot.queryParamMap.get('tab') as LibraryTab)
@@ -258,6 +361,7 @@ export class PropsPage {
   protected tabCount(tab: LibraryTab): number | null {
     if (tab === 'props') return this.assets()?.length ?? null;
     if (tab === 'music') return this.tracks().length;
+    if (tab === 'sounds') return this.sounds().length;
     if (tab === 'cast') return this.cast.length;
     return null;
   }
@@ -270,6 +374,22 @@ export class PropsPage {
   protected readonly editing = signal<string | null>(null);
   protected readonly drawing = signal<string | null>(null);
   protected readonly tracks = signal<MusicTrack[]>([]);
+  protected readonly sounds = signal<StudioSound[]>([]);
+  protected readonly soundLoading = signal(true);
+  protected readonly soundLoadError = signal('');
+  protected readonly soundSearching = signal(false);
+  protected readonly soundSearchError = signal('');
+  protected readonly soundResults = signal<SoundCandidate[] | null>(null);
+  protected readonly soundProvider = signal<'openverse' | 'wikimedia'>('openverse');
+  protected readonly soundKind = signal<SoundKind>('pop');
+  protected readonly soundImporting = signal<string | null>(null);
+  protected readonly soundAction = signal<number | null>(null);
+  protected readonly soundKinds: { value: SoundKind; label: string }[] = [
+    { value: 'pop', label: 'Pop' }, { value: 'whoosh', label: 'Whoosh' }, { value: 'impact', label: 'Impact' },
+    { value: 'scribble', label: 'Scribble' }, { value: 'step', label: 'Step' }, { value: 'riser', label: 'Riser' },
+    { value: 'character', label: 'Character' }, { value: 'arrow', label: 'Arrow' }, { value: 'bounce', label: 'Bounce' },
+    { value: 'glide', label: 'Glide' },
+  ];
   protected readonly uploading = signal(false);
   protected readonly found = signal<MusicFound[] | null>(null);
   protected readonly searching = signal(false);
@@ -332,6 +452,8 @@ export class PropsPage {
   constructor() {
     this.load();
     this.api.music().subscribe({ next: (list) => this.tracks.set(list), error: () => undefined });
+    this.api.sounds().subscribe({ next: (list) => { this.sounds.set(list); this.soundLoading.set(false); },
+      error: (err) => { this.soundLoading.set(false); this.soundLoadError.set(this.errorMessage(err, 'Sound library could not be loaded.')); } });
   }
 
   protected musicUrl(id: number): string {
@@ -340,6 +462,64 @@ export class PropsPage {
 
   protected minutes(seconds: number): string {
     return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+  }
+
+  protected soundClock(seconds: number): string {
+    if (!seconds) return 'duration unknown';
+    return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+  }
+
+  protected soundKindLabel(kind: SoundKind): string {
+    return this.soundKinds.find((item) => item.value === kind)?.label ?? kind;
+  }
+
+  protected soundAudio(id: number): string {
+    return this.api.soundAudioUrl(id);
+  }
+
+  protected searchSounds(query: string): void {
+    const value = query.trim();
+    if (value.length < 2) return;
+    this.soundSearching.set(true);
+    this.soundSearchError.set('');
+    this.api.searchSounds(value, this.soundProvider()).subscribe({
+      next: (result) => { this.soundSearching.set(false); this.soundResults.set(result.results as SoundCandidate[]); },
+      error: (err) => { this.soundSearching.set(false); this.soundSearchError.set(this.errorMessage(err, 'Sound search failed.')); },
+    });
+  }
+
+  protected importSound(candidate: SoundCandidate): void {
+    this.soundImporting.set(candidate.provider_id);
+    this.api.importSound(candidate, this.soundKind()).subscribe({
+      next: (sound) => {
+        this.soundImporting.set(null);
+        this.sounds.update((list) => [...list.filter((item) => item.id !== sound.id), sound].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)));
+        this.toasts.ok(`Added “${sound.name}”. Review it before assigning it to a storyboard.`);
+      },
+      error: (err) => { this.soundImporting.set(null); this.toasts.error(err); },
+    });
+  }
+
+  protected approveSound(sound: StudioSound): void {
+    this.soundAction.set(sound.id);
+    this.api.approveSound(sound.id).subscribe({
+      next: (updated) => { this.soundAction.set(null); this.sounds.update((list) => list.map((item) => item.id === updated.id ? updated : item)); this.toasts.ok(`Approved “${sound.name}”`); },
+      error: (err) => { this.soundAction.set(null); this.toasts.error(err); },
+    });
+  }
+
+  protected async rejectSound(sound: StudioSound): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Reject “${sound.name}”?`, message: 'It will stay in the library as rejected and cannot be used in a render.', confirm: 'Reject', danger: true }))) return;
+    this.soundAction.set(sound.id);
+    this.api.rejectSound(sound.id).subscribe({
+      next: (updated) => { this.soundAction.set(null); this.sounds.update((list) => list.map((item) => item.id === updated.id ? updated : item)); this.toasts.ok(`Rejected “${sound.name}”`); },
+      error: (err) => { this.soundAction.set(null); this.toasts.error(err); },
+    });
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    const value = error as { error?: { detail?: string } } | null;
+    return value?.error?.detail || fallback;
   }
 
   protected uploadMusic(picker: HTMLInputElement): void {
