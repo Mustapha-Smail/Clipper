@@ -109,3 +109,19 @@ def test_sound_api_does_not_expose_local_cache_paths(client):
                            provider_id="click", license="cc0"))
     item = client.get("/api/v1/sounds").json()[0]
     assert "path" not in item and item["cached"] is False
+
+
+def test_cached_sound_audio_is_served_without_exposing_its_path(client, tmp_path):
+    path = tmp_path / "approved.wav"
+    _wav(path)
+    with session_scope() as db:
+        row = StudioSound(kind="pop", name="Click", path=str(path), provider="openverse",
+                          provider_id="click", license="cc0", checksum="abc")
+        db.add(row)
+        db.flush()
+        sound_id = row.id
+    response = client.get(f"/api/v1/sounds/{sound_id}/audio")
+    assert response.status_code == 200 and response.headers["content-type"] == "audio/wav"
+    assert str(path) not in response.text and response.content[:4] == b"RIFF"
+    path.unlink()
+    assert client.get(f"/api/v1/sounds/{sound_id}/audio").status_code == 404

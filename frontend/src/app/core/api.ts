@@ -5,7 +5,8 @@ import {
   ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, BufferChannel, Campaign, CampaignPatch, CaptionMode, Chapters, Clip, ClipListItem,
   ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaLineage, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
-  SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
+  SettingsBundle, SoundCandidate, SoundKind, SoundSearch, StoryboardSound, StudioSound, StoryScene, StoryStyle,
+  Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
   StoryMapEdit, SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeStatus, YoutubeText,
 } from './models';
 
@@ -389,6 +390,33 @@ export class Api {
   }
   importMusic(openverseId: string): Observable<MusicTrack> {
     return this.http.post<MusicTrack>(`${BASE}/music/import`, { openverse_id: openverseId });
+  }
+  sounds(): Observable<StudioSound[]> {
+    return this.http.get<StudioSound[]>(`${BASE}/sounds`);
+  }
+  searchSounds(q: string, provider: 'openverse' | 'wikimedia', page = 1): Observable<SoundSearch> {
+    return this.http.get<SoundSearch>(`${BASE}/sounds/search`, { params: { q, provider, page } });
+  }
+  importSound(candidate: Pick<SoundCandidate, 'provider' | 'provider_id'>, kind: SoundKind): Observable<StudioSound> {
+    return this.http.post<StudioSound>(`${BASE}/sounds/import`, { ...candidate, kind });
+  }
+  approveSound(id: number): Observable<StudioSound> {
+    return this.http.post<StudioSound>(`${BASE}/sounds/${id}/approve`, {});
+  }
+  rejectSound(id: number, note = ''): Observable<StudioSound> {
+    return this.http.post<StudioSound>(`${BASE}/sounds/${id}/reject`, { note });
+  }
+  soundAudioUrl(id: number): string {
+    return `${BASE}/sounds/${id}/audio`;
+  }
+  storyboardSounds(id: number): Observable<StoryboardSound[]> {
+    return this.http.get<StoryboardSound[]>(`${BASE}/storyboards/${id}/sounds`);
+  }
+  assignStoryboardSound(id: number, body: { sound_id: number; rule: string; at: number; gain: number }): Observable<StoryboardSound> {
+    return this.http.post<StoryboardSound>(`${BASE}/storyboards/${id}/sounds`, body);
+  }
+  deleteStoryboardSound(id: number, assignmentId: number): Observable<void> {
+    return this.http.delete<void>(`${BASE}/storyboards/${id}/sounds/${assignmentId}`);
   }
   /** A few seconds of `text` in a Kokoro voice, as a playable object URL. */
   voiceSample(voice: string, speed: number, text: string, pauses: string): Observable<Blob> {

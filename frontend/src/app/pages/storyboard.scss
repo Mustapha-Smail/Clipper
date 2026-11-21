@@ -78,6 +78,39 @@
   }
 }
 
+.sound-cues {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+
+  h3, p { margin: 0; }
+  .sound-cues-head { align-items: flex-start; }
+  .cue-form {
+    align-items: end;
+    padding: 12px;
+    background: var(--sunken);
+    border-radius: var(--radius-sm);
+    gap: 10px;
+  }
+  .cue-form .field { min-width: 120px; }
+  .cue-form .cue-gain { min-width: 140px; }
+  .cue-gain input[type='range'] { width: 100%; }
+  .cue-list { display: grid; gap: 5px; }
+  .cue-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    min-width: 0;
+  }
+  .cue-time { min-width: 44px; font-weight: 650; }
+  .cue-row audio { width: 180px; height: 32px; }
+}
+
 .ranking {
   list-style: none;
   margin: 8px 0 0;
@@ -518,6 +551,10 @@ pre.cheat {
   .deductions li {
     grid-template-columns: 1fr;
   }
+  .cue-form { display: grid; grid-template-columns: 1fr 1fr; }
+  .cue-form .field:first-child, .cue-form button { grid-column: 1 / -1; }
+  .cue-row { flex-wrap: wrap; }
+  .cue-row audio { width: 100%; }
 }
 
 .archive {

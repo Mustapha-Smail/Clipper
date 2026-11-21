@@ -949,6 +949,17 @@ def list_sounds(db: Session = Depends(get_db)):
     return [_sound_view(row) for row in db.scalars(select(StudioSound).order_by(StudioSound.kind, StudioSound.id))]
 
 
+@router.get("/sounds/{sound_id}/audio")
+def sound_audio(sound_id: int, db: Session = Depends(get_db)):
+    """Play the locally cached copy without exposing its filesystem path or a remote hotlink."""
+    row = db.get(StudioSound, sound_id)
+    path = Path(row.path) if row is not None and row.path else None
+    if path is None or not path.is_file():
+        raise HTTPException(404, "The cached sound file is missing")
+    return FileResponse(path, media_type="audio/wav", filename=f"sound-{row.id}.wav",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+
 @router.get("/sounds/search", response_model=s.SoundSearch)
 def search_sounds(q: str = Query(min_length=2, max_length=200),
                   provider: Literal["openverse", "wikimedia"] = "openverse",

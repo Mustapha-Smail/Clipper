@@ -1043,6 +1043,71 @@ export interface MusicFound {
   attribution: string;
 }
 
+export type SoundKind = 'pop' | 'whoosh' | 'impact' | 'scribble' | 'step' | 'riser' | 'character' | 'arrow' | 'bounce' | 'glide';
+
+/** A creator-reviewed, locally cached CC0/CC BY production sound. */
+export interface StudioSound {
+  id: number;
+  kind: SoundKind;
+  name: string;
+  cached: boolean;
+  duration: number;
+  gain: number;
+  enabled: boolean;
+  provider: 'openverse' | 'wikimedia';
+  provider_id: string;
+  upstream_id: string;
+  creator: string;
+  creator_url: string;
+  landing_url: string;
+  license: 'cc0' | 'by';
+  license_version: string;
+  license_url: string;
+  attribution: string;
+  checksum: string;
+  acquired_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  rejection_note: string;
+}
+
+export interface SoundCandidate {
+  provider: 'openverse' | 'wikimedia';
+  provider_id: string;
+  upstream_id: string;
+  upstream_source: string;
+  title: string;
+  creator: string;
+  creator_url: string;
+  landing_url: string;
+  media_url: string;
+  license: 'cc0' | 'by';
+  license_version: string;
+  license_url: string;
+  attribution: string;
+  duration: number;
+  filetype: string;
+}
+
+export interface SoundSearch {
+  count: number;
+  page: number;
+  pages: number;
+  results: SoundCandidate[];
+  rate_limit: Record<string, unknown>;
+}
+
+export interface StoryboardSound {
+  id: number;
+  storyboard_id: number;
+  sound_id: number;
+  rule: string;
+  at: number;
+  gain: number;
+  created_at: string;
+  sound: StudioSound;
+}
+
 /** 'claude_cli' is Claude on the owner's subscription (Claude Code CLI); 'codex_cli' OpenAI on their ChatGPT plan (Codex CLI). */
 export type AiProvider = 'anthropic' | 'openai' | 'claude_cli' | 'codex_cli';
 

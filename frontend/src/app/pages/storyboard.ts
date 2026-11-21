@@ -5,8 +5,8 @@ import { Api } from '../core/api';
 import { AgoPipe, MegabytesPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
-  ALL_LOOKS, ArchivePhoto, Asset, CaptionMode, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
-  SuggestedTrack, YoutubeText, Place, ExportInfo,
+  ALL_LOOKS, ArchivePhoto, Asset, CaptionMode, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack,
+  StoryElement, StoryScene, Storyboard, StoryboardSound, StudioSound, SuggestedTrack, YoutubeText, Place, ExportInfo,
 } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -126,6 +126,17 @@ export class StoryboardPage {
   protected readonly version = signal(Date.now());
   protected readonly openScene = signal<number | null>(null);
   protected readonly music = signal<MusicTrack[]>([]);
+  protected readonly sounds = signal<StudioSound[]>([]);
+  protected readonly soundCues = signal<StoryboardSound[]>([]);
+  protected readonly soundCuesLoading = signal(true);
+  protected readonly soundCueError = signal('');
+  protected readonly soundCueSound = signal<number | null>(null);
+  protected readonly soundCueRule = signal('manual');
+  protected readonly soundCueAt = signal(0);
+  protected readonly soundCueGain = signal(1);
+  protected readonly assigningSoundCue = signal(false);
+  protected readonly deletingSoundCue = signal<number | null>(null);
+  protected readonly approvedSounds = computed(() => this.sounds().filter((sound) => !!sound.approved_at && sound.cached && !sound.rejected_at));
   protected readonly chapterList = signal<Chapters | null>(null);
   /** Chapter headings by section key, for the headers between scenes of a long video. */
   private headings = new Map<string, string>();
@@ -147,6 +158,13 @@ export class StoryboardPage {
     this.api.assets().subscribe({ next: (list) => this.library.set(list), error: () => undefined });
     this.api.places().subscribe({ next: (list) => this.placeList.set(list), error: () => undefined });
     this.api.music().subscribe({ next: (list) => this.music.set(list), error: () => undefined });
+    this.api.sounds().subscribe({ next: (list) => {
+      this.sounds.set(list);
+      const first = list.find((sound) => sound.approved_at && sound.cached);
+      if (this.soundCueSound() === null && first) this.soundCueSound.set(first.id);
+    }, error: () => undefined });
+    this.api.storyboardSounds(this.id).subscribe({ next: (list) => { this.soundCues.set(list); this.soundCuesLoading.set(false); },
+      error: (err) => { this.soundCuesLoading.set(false); this.soundCueError.set(this.errorMessage(err, 'Sound cues could not be loaded.')); } });
     effect(() => {
       const done = this.store.finished().filter((j) => j.storyboard_id === this.id);
       if (done.length) untracked(() => this.load());
@@ -329,6 +347,60 @@ export class StoryboardPage {
 
   protected trackName(id: number | null): string {
     return this.music().find((m) => m.id === id)?.name ?? 'a track';
+  }
+
+  protected soundAudio(id: number): string {
+    return this.api.soundAudioUrl(id);
+  }
+
+  protected setCueAt(value: unknown): void {
+    const number = Number(value);
+    this.soundCueAt.set(Number.isFinite(number) ? Math.max(0, number) : 0);
+  }
+
+  protected setCueGain(value: unknown): void {
+    const number = Number(value);
+    this.soundCueGain.set(Number.isFinite(number) ? Math.max(0, Math.min(2, number)) : 1);
+  }
+
+  protected cueDuration(): number {
+    const board = this.board();
+    return board ? Math.max(0, board.duration) : 0;
+  }
+
+  protected addSoundCue(): void {
+    const soundId = this.soundCueSound();
+    if (soundId === null) {
+      this.soundCueError.set('Approve a local sound in Library before adding a cue.');
+      return;
+    }
+    const at = Math.max(0, Math.min(this.soundCueAt(), this.cueDuration() || this.soundCueAt()));
+    this.assigningSoundCue.set(true);
+    this.soundCueError.set('');
+    this.api.assignStoryboardSound(this.id, { sound_id: soundId, rule: this.soundCueRule().trim() || 'manual', at,
+      gain: Math.max(0, Math.min(2, this.soundCueGain())) }).subscribe({
+      next: (cue) => {
+        this.assigningSoundCue.set(false);
+        this.soundCues.update((list) => [...list.filter((item) => item.id !== cue.id), cue].sort((a, b) => a.at - b.at || a.id - b.id));
+        this.soundCueAt.set(Math.min(at + 0.5, this.cueDuration()));
+        this.toasts.ok(`Added “${cue.sound.name}” at ${this.clock(cue.at)}.`);
+      },
+      error: (err) => { this.assigningSoundCue.set(false); this.soundCueError.set(this.errorMessage(err, 'Sound cue could not be added.')); },
+    });
+  }
+
+  protected async removeSoundCue(cue: StoryboardSound): Promise<void> {
+    if (!(await this.confirm.ask({ title: `Remove “${cue.sound.name}” cue?`, message: `This removes the cue at ${this.clock(cue.at)} from this storyboard.`, confirm: 'Remove', danger: true }))) return;
+    this.deletingSoundCue.set(cue.id);
+    this.api.deleteStoryboardSound(this.id, cue.id).subscribe({
+      next: () => { this.deletingSoundCue.set(null); this.soundCues.update((list) => list.filter((item) => item.id !== cue.id)); },
+      error: (err) => { this.deletingSoundCue.set(null); this.soundCueError.set(this.errorMessage(err, 'Sound cue could not be removed.')); },
+    });
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    const value = error as { error?: { detail?: string } } | null;
+    return value?.error?.detail || fallback;
   }
 
   /** The YouTube text was written or saved: keep it, and let the checks see it. */
