@@ -26,7 +26,7 @@ from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
 from ..settings import load as load_settings
-from . import art, beats, film, sound, visual_qa
+from . import art, beats, film, sfx, sound, visual_qa
 from . import script as script_mod
 from . import voice as voice_mod
 
@@ -617,8 +617,11 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
             extra, _ = attention_events(data, composer.word_time, load_settings())
             events = [(at - start, kind) for at, kind in effect_events(composer, duration, extra)
                       if start <= at < start + seconds]
+            assigned = [{**item, "at": float(item["at"]) - start}
+                        for item in sfx.assignments(board.id)
+                        if start <= float(item["at"]) < start + seconds]
             fx = Path(tmp) / "fx.wav"
-            sound.write_effects(events, seconds, fx, seed=board.id)
+            sound.write_effects(events, seconds, fx, seed=board.id, assets=assigned)
             inputs += ["-i", str(fx)]
         if music_path:
             looped = [] if music_path.startswith(("http://", "https://")) else ["-stream_loop", "-1"]
@@ -638,7 +641,8 @@ def video_path(board: dict) -> Path:
     return voice_mod.script_media_dir(board["script_id"]) / f"storyboard-{board['id']}" / f"{board['format']}.mp4"
 
 
-def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | None = None) -> dict:
+def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | None = None,
+                    sound_effects: dict | None = None) -> dict:
     """Immutable craft facts for a successful render. Live settings are resolved here, once."""
     from . import hold, story_map
 
@@ -671,6 +675,7 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
         "starter": state["starter"],
         "riser": state["riser"],
         "effects": bool(board.effects),
+        "sound_effects": sound_effects or {"licensed_ids": [], "missing_ids": []},
         "wpm": round(wpm) if wpm else None,
         "hold_hash": script.hold.get("hash") if hold_result else None,
         "hold_score": hold_result.get("score") if hold_result else None,
@@ -709,13 +714,21 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     audio_inputs = ["-ss", f"{board['start']:.3f}", "-t", f"{voiced:.3f}", "-i", str(wav)]
     effects_wav = out.parent / "effects.wav"
     extra, notes = attention_events(board, composer.word_time, settings)
+    fx_status = {"licensed": 0, "synthesized": 0, "missing": 0, "licensed_ids": [], "missing_ids": []}
     if board["effects"]:
         events = effect_events(composer, duration, extra)
-        sound.write_effects(events, duration, effects_wav, seed=board["id"])
+        assigned = sfx.assignments(board["id"])
+        fx_status = sound.write_effects(events, duration, effects_wav, seed=board["id"], assets=assigned)
         audio_inputs += ["-i", str(effects_wav)]
-        rep.info(f"{len(events)} sound effects" + (f"; {'; '.join(notes)}" if notes else ""))
+        detail = f"; {fx_status['licensed']} licensed local, {fx_status['synthesized']} synthesized"
+        if fx_status["missing"]:
+            rep.warn(f"{fx_status['missing']} selected sound file(s) missing; synthesized fallback used")
+        rep.info(f"{len(events) + len(assigned)} sound effects{detail}"
+                 + (f"; {'; '.join(notes)}" if notes else ""))
     elif notes:
         rep.info("; ".join(notes))
+    elif not board["effects"]:
+        rep.info("Sound effects are off; no SFX mixed")
     if board["music"]:
         audio_inputs += ["-stream_loop", "-1", "-i", board["music"]]
         rep.info(f"Music under the voice at {board['music_db']:g} dB, lowered while the voice speaks")
@@ -747,5 +760,5 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"
         row.review_at = row.expired_at = row.published_at = None   # new render starts review and publication again
-        row.render_meta = render_snapshot(row, settings, qa_result)
+        row.render_meta = render_snapshot(row, settings, qa_result, fx_status)
     rep.info(f"Rendered {out.name}: {out.stat().st_size / 1e6:.1f} MB. It waits for your review.")

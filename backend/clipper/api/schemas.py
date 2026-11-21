@@ -1004,6 +1004,70 @@ class MusicImport(BaseModel):
     openverse_id: str = Field(min_length=8, max_length=64)
 
 
+SoundKind = Literal["pop", "whoosh", "impact", "scribble", "step", "riser", "character", "arrow", "bounce", "glide"]
+
+
+class SoundOut(Model):
+    id: int
+    kind: str
+    name: str
+    cached: bool
+    duration: float
+    gain: float
+    enabled: bool
+    provider: str
+    provider_id: str
+    upstream_id: str
+    creator: str
+    creator_url: str
+    landing_url: str
+    license: str
+    license_version: str
+    license_url: str
+    attribution: str
+    checksum: str
+    acquired_at: UtcDatetime | None
+    approved_at: UtcDatetime | None
+    rejected_at: UtcDatetime | None
+    rejection_note: str
+
+
+class SoundSearch(BaseModel):
+    count: int
+    page: int
+    pages: int
+    results: list[dict]
+    rate_limit: dict
+
+
+class SoundImport(BaseModel):
+    provider: Literal["openverse", "wikimedia"] = "openverse"
+    provider_id: str = Field(min_length=1, max_length=100)
+    kind: SoundKind
+
+
+class SoundApproval(BaseModel):
+    note: str = Field("", max_length=500)
+
+
+class StoryboardSoundAssign(BaseModel):
+    sound_id: int
+    rule: str = Field("", max_length=32)
+    at: float = Field(ge=0)
+    gain: float = Field(1.0, ge=0, le=2)
+
+
+class StoryboardSoundOut(Model):
+    id: int
+    storyboard_id: int
+    sound_id: int
+    rule: str
+    at: float
+    gain: float
+    created_at: UtcDatetime
+    sound: SoundOut
+
+
 class UsageLine(BaseModel):
     key: str
     label: str

@@ -388,9 +388,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   measured from their URL and cached in `data/cache/openverse-features.json`.
   Openverse search words must be plain genres or instruments. Uploaded tracks
   have an unknown licence and are described as such. "No music" is valid.
-- `studio/sound.py`: effects are synthesised (no sound files), music is
-  normalised at upload and ducked with sidechaincompress; subtitles come from
-  the storyboard's words (script spelling), never from Whisper's text.
+- `studio/sound.py`: effects use creator-approved, locally normalised CC0/CC BY
+  files when assigned; missing/provider-failed files use the existing synthesized
+  bank and report that fallback (renders never hotlink). Music is normalised at
+  upload and ducked with sidechaincompress; subtitles come from the storyboard's
+  words (script spelling), never from Whisper's text.
   Shorts are 9:16 with captions; long videos are 16:9 without (.srt instead).
 - nginx re-resolves the API through Docker DNS, so the api container can be
   restarted alone.

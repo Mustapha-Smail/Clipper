@@ -363,13 +363,60 @@ def effects_track(events: list[tuple[float, str]], duration: float, seed: int = 
     return track[:int(RATE * duration)]
 
 
-def write_effects(events: list[tuple[float, str]], duration: float, out: Path, seed: int = 7) -> None:
-    pcm = (np.clip(effects_track(events, duration, seed), -1, 1) * 32767).astype("<i2")
+def write_effects(events: list[tuple[float, str]], duration: float, out: Path, seed: int = 7,
+                  assets: list[dict] | None = None) -> dict:
+    """Write effects, preferring approved local assets and synthesising every gap.
+
+    A provider failure or a deleted local file is deliberately non-fatal: the
+    event is rendered with the deterministic bank and the caller can report the
+    explicit fallback in its job log. Remote media URLs are never accepted here.
+    """
+    status = {"licensed": 0, "synthesized": 0, "missing": 0, "licensed_ids": [], "missing_ids": []}
+    local: list[tuple[dict, np.ndarray]] = []
+    fallback: list[tuple[float, str]] = []
+    for item in assets or []:
+        path = Path(str(item.get("path") or ""))
+        try:
+            if str(path).startswith(("http:", "https:")) or not path.is_file():
+                raise OSError("not a local file")
+            with wave.open(str(path), "rb") as source:
+                raw = source.readframes(source.getnframes())
+                rate, channels, width = source.getframerate(), source.getnchannels(), source.getsampwidth()
+            if rate != RATE or width != 2 or channels != 1:
+                raise ValueError("not a normalized effect")
+            local.append((item, np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32767))
+        except (OSError, ValueError, wave.Error):
+            status["missing"] += 1
+            status["missing_ids"].append(item.get("sound_id"))
+            fallback.append((float(item.get("at") or 0), item.get("kind") or item.get("rule") or "pop"))
+
+    synthesized = [*events, *fallback]
+    base = effects_track(synthesized, duration, seed)
+    for item, clip in local:
+        at = max(0, int(float(item.get("at") or 0) * RATE))
+        end = min(len(base), at + len(clip))
+        if end > at:
+            base[at:end] += clip[:end - at] * float(item.get("gain") or 1.0)
+            status["licensed"] += 1
+            status["licensed_ids"].append(item.get("sound_id"))
+    pcm = (np.clip(base, -1, 1) * 32767).astype("<i2")
     with wave.open(str(out), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(RATE)
         w.writeframes(pcm.tobytes())
+    status["synthesized"] = len(synthesized)
+    return status
+
+
+def normalise_effect(src: Path, out: Path) -> None:
+    """Convert an imported effect to a local 48 kHz mono PCM WAV atomically."""
+    from ..ffutil import require, run
+
+    partial = out.with_suffix(".partial" + out.suffix)
+    run([require("ffmpeg"), "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", str(RATE),
+         "-c:a", "pcm_s16le", str(partial)])
+    partial.replace(out)
 
 
 def mix_graph(duration: float, effects: bool, music: bool, music_db: float, tail: float = 0.0) -> tuple[str, str]:
