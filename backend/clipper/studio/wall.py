@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from .. import captions as captions_mod
 from .. import config
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, film, geo, photos
+from . import animate, composition, film, geo, photos
 
 FPS = 24
 S = 1.25                          # sprite pixels per world unit (the camera rarely zooms past 1.25)
@@ -547,6 +547,7 @@ class Key:
     strength: float       # spotlight
     roll: float
     whip: bool = False
+    split: bool = False
 
 
 class FilmComposer:
@@ -572,6 +573,9 @@ class FilmComposer:
         if self.layout.captions and settings.captions_enabled and self.words:
             self.captions = captions_mod.CaptionRenderer(captions_mod.group_words(self.words, 0.0, self.duration),
                                                          resolve_font(settings), hex_to_rgb(settings.highlight_color))
+        self.compositions = [composition.geometry(self.format, shot.get("composition"),
+                                                   captions=self.captions is not None)
+                             for shot in self.shots]
         self.things: list[Thing] = []
         self.strings: list[dict] = []
         self.shakes: list[tuple[float, float]] = []
@@ -609,7 +613,7 @@ class FilmComposer:
 
     def _build(self) -> None:
         by_id: dict[str, Thing] = {}
-        latest: Thing | None = None
+        latest: dict[str, Thing] = {}
         order = 0
         self.lines: list[tuple[float, int, film.Line]] = []
         for c, shot in enumerate(self.shots):
@@ -623,7 +627,7 @@ class FilmComposer:
                     self._measure(thing, seed)
                     self.things.append(thing)
                     by_id[thing.id] = thing
-                    latest = thing
+                    latest[line.lane] = thing
                     if thing.kind in ("photo", "flag", "map") and line.label:
                         lab = Thing(thing.id + ":label", "label", line, t + 0.45, c, order=order)
                         image, lab.w, lab.h = label_sprite(line.label.upper())
@@ -634,7 +638,7 @@ class FilmComposer:
                         self.events.append((lab.born, "label"))
                     continue
                 if line.verb in ("pin", "route"):
-                    maps = [x for x in by_id.values() if x.kind == "map"]
+                    maps = [x for x in by_id.values() if x.kind == "map" and x.line.lane == line.lane]
                     board = by_id.get(line.target) if line.target else (maps[-1] if maps else None)
                     if board is None or board.kind != "map":
                         continue
@@ -644,7 +648,7 @@ class FilmComposer:
                     else:
                         self._route(line, board, t, c, order)
                     continue
-                target = by_id.get(line.target) if line.target else latest
+                target = by_id.get(line.target) if line.target else latest.get(line.lane)
                 if target is not None and line.verb not in ("string", "look", "wide"):
                     line.target = target.id          # the camera looks at what the line acts on
                 if line.verb == "string":
@@ -684,7 +688,7 @@ class FilmComposer:
                             self.things.append(hl)
                         self.events.append((t - 0.3, "marker"))
                         continue
-                    line = film.Line(line.word, "underline", target=line.target)
+                    line = film.Line(line.word, "underline", target=line.target, lane=line.lane)
                     self._mark(line, target, t, c, order, seed)
                 else:
                     self._mark(line, target, t, c, order, seed)
@@ -814,6 +818,22 @@ class FilmComposer:
         """Clusters of two columns, the clusters snaking over the wall."""
         boxes = []
         for c in range(len(self.shots)):
+            geo = self.compositions[c]
+            if not geo.single:
+                heights = {"a": 0.0, "b": 0.0}
+                for thing in (x for x in self.things if x.cluster == c and x.kind in film.CREATES):
+                    lane = thing.line.lane or "a"
+                    view = geo.viewport(lane)
+                    rng = np.random.default_rng(_seed(thing.id, c))
+                    tall = thing.h + thing.extra.get("below", 0)
+                    thing.x = (view.x0 + view.x1) / 2 - self.W / 2 + rng.uniform(-20, 20)
+                    thing.y = view.y0 - self.H / 2 + heights[lane] + tall / 2 + 35 \
+                        - thing.extra.get("below", 0) / 2
+                    heights[lane] += tall + GAP * 0.65 + rng.uniform(0, 35)
+                    spin = (2.6 if thing.kind in film.PINNED else 1.2) * (0.5 if self.look.light else 1)
+                    thing.rot = float(rng.uniform(-spin, spin))
+                boxes.append(max(heights.values()) or 400.0)
+                continue
             heights = [0.0, 0.0]
             for thing in (x for x in self.things if x.cluster == c and x.kind in film.CREATES):
                 col = 0 if heights[0] <= heights[1] else 1
@@ -891,8 +911,21 @@ class FilmComposer:
 
     def _camera_plan(self) -> list[Key]:
         by_id = {x.id: x for x in self.things}
-        heroes: list[tuple[float, tuple, float, int]] = []      # time, box, spotlight strength, cluster
+        heroes: list[tuple[float, tuple, float, int, bool]] = []  # time, box, spotlight, cluster, split
+        split_seen: set[int] = set()
         for t, c, line in sorted(self.lines, key=lambda x: x[0]):
+            if not self.compositions[c].single:
+                if c in split_seen:
+                    continue
+                members = [x.box() for x in self.things if x.cluster == c and x.kind in film.CREATES]
+                if not members:
+                    continue
+                box = members[0]
+                for member in members[1:]:
+                    box = self._union(box, member)
+                heroes.append((t, box, 0.12, c, True))
+                split_seen.add(c)
+                continue
             v = line.verb
             if v in film.CREATES:
                 box, strength = by_id[line.id].box(), 0.55
@@ -915,25 +948,25 @@ class FilmComposer:
                 if target is None:
                     continue
                 box, strength = target.box(), 0.6
-            heroes.append((t, box, strength, c))
+            heroes.append((t, box, strength, c, False))
         if not heroes:
             return [Key(0, 0, 0, 0, 0.3, 0.2, 0)]
         merged: list[list] = []
-        for t, box, strength, c in heroes:
+        for t, box, strength, c, split in heroes:
             if merged and t - merged[-1][0] < 0.6 and merged[-1][3] == c:
                 union = self._union(merged[-1][1], box)
                 if self._frame_box(union)[2] > 0.55 * self._frame_box(merged[-1][1])[2]:
                     merged[-1][1] = union
                     merged[-1][2] = min(merged[-1][2], strength)
                     continue
-            merged.append([t, box, strength, c])
+            merged.append([t, box, strength, c, split])
         keys: list[Key] = []
-        for i, (t, box, strength, c) in enumerate(merged):
+        for i, (t, box, strength, c, split) in enumerate(merged):
             x, y, z = self._frame_box(box)
-            roll = (0.7 if i % 2 else -0.6)
+            roll = 0.0 if split else (0.7 if i % 2 else -0.6)
             arrive = t + 0.3
             if not keys:
-                keys.append(Key(0.0, 0.0, x, y, z * 0.92, strength, roll))
+                keys.append(Key(0.0, 0.0, x, y, z * 0.92, strength, roll, split=split))
                 continue
             prev = keys[-1]
             new_cluster = c != merged[i - 1][3]
@@ -949,7 +982,7 @@ class FilmComposer:
                 arrive = start + travel
             if arrive - start < 0.3:
                 arrive = start + 0.3
-            keys.append(Key(arrive, start, x, y, z, strength, roll, whip))
+            keys.append(Key(arrive, start, x, y, z, strength, roll, whip, split))
         made = [x for x in self.things if x.kind in film.CREATES]
         if self.tail >= 1.5 and made:              # the end: the camera pulls back to the whole wall
             box = made[0].box()
@@ -968,7 +1001,7 @@ class FilmComposer:
     def _hold(self, k: int, t: float) -> tuple[float, float, float, float, float]:
         key = self.keys[k]
         held = max(0.0, t - key.t)
-        z = key.z * min(1.07, 1 + 0.028 * held)               # a slow push-in while it holds
+        z = key.z if key.split else key.z * min(1.07, 1 + 0.028 * held)
         return key.x, key.y, z, key.strength, key.roll
 
     def camera(self, t: float) -> tuple[float, float, float, float, float]:
@@ -994,14 +1027,15 @@ class FilmComposer:
             strength = astr + (key.strength - astr) * p
             roll = aroll + (key.roll - aroll) * p
         # handheld drift and stamp shakes, in screen pixels
-        dx = 7 * math.sin(0.8 * t) + 3 * math.sin(2.1 * t + 1.3)
-        dy = 5 * math.sin(0.6 * t + 0.7) + 2.5 * math.sin(1.7 * t + 2.1)
+        dx = 0.0 if key.split else 7 * math.sin(0.8 * t) + 3 * math.sin(2.1 * t + 1.3)
+        dy = 0.0 if key.split else 5 * math.sin(0.6 * t + 0.7) + 2.5 * math.sin(1.7 * t + 2.1)
         for at, amp in self.shakes:
             age = t - at
             if 0 <= age < 0.4:
                 dy += amp * math.exp(-age * 12) * math.sin(age * 75)
                 dx += amp * 0.5 * math.exp(-age * 12) * math.sin(age * 61 + 1)
-        roll += 0.45 * math.sin(0.31 * t) + 0.2 * math.sin(0.97 * t + 1)
+        if not key.split:
+            roll += 0.45 * math.sin(0.31 * t) + 0.2 * math.sin(0.97 * t + 1)
         return x + dx / z, y + dy / z, z, roll, strength
 
     # --- drawing ------------------------------------------------------------------------------
@@ -1044,7 +1078,9 @@ class FilmComposer:
         corners = np.array([[0, 0], [ww, 0], [0, hh], [ww, hh]], np.float64) @ L.T + t
         x0, y0 = np.floor(corners.min(0)).astype(int) - 1
         x1, y1 = np.ceil(corners.max(0)).astype(int) + 1
-        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(self.W, x1), min(self.H, y1)
+        clip = getattr(self, "_active_clip", None)
+        left, top, right, bottom = clip or (0, 0, self.W, self.H)
+        x0, y0, x1, y1 = max(round(left), x0), max(round(top), y0), min(round(right), x1), min(round(bottom), y1)
         if x1 <= x0 or y1 <= y0:
             return
         M = np.hstack([L, (t - [x0, y0])[:, None]])
@@ -1095,6 +1131,10 @@ class FilmComposer:
         age = t - thing.born
         if age < 0:
             return
+        lane = thing.line.lane or (thing.target.line.lane if thing.target is not None else "")
+        geo = self.compositions[min(thing.cluster, len(self.compositions) - 1)]
+        lane_view = geo.viewport(lane) if not geo.single and lane else None
+        self._active_clip = None if lane_view is None else (lane_view.x0, lane_view.y0, lane_view.x1, lane_view.y1)
         if thing.kind in film.PINNED:
             p = _out(age / 0.3)
             scale = 1.1 - 0.1 * p
@@ -1225,7 +1265,27 @@ class FilmComposer:
             if abs(thing.x - cx) > reach or abs(thing.y - cy) > reach:
                 continue
             self._draw_thing(frame, view, thing, t)
-        return self._finish(frame, view, z, strength, speed)
+        self._active_clip = None
+        out = self._finish(frame, view, z, strength, speed)
+        shot = max((i for i, start in enumerate(self._starts()) if t >= start), default=0)
+        geo = self.compositions[min(shot, len(self.compositions) - 1)]
+        if not geo.single and geo.divider != "none":
+            if self.format == "long":
+                x = round((geo.lanes[0].x1 + geo.lanes[1].x0) / 2)
+                cv2.line(out, (x, 0), (x, round(geo.caption_top)), INK, 8 if geo.divider == "line" else 4)
+                if geo.divider == "vs":
+                    cv2.putText(out, "VS", (x - 25, 48), cv2.FONT_HERSHEY_SIMPLEX, 1.0, INK, 2, cv2.LINE_AA)
+            else:
+                y = round((geo.lanes[0].y1 + geo.lanes[1].y0) / 2)
+                cv2.line(out, (0, y), (self.W, y), INK, 8 if geo.divider == "line" else 4)
+                if geo.divider == "vs":
+                    cv2.putText(out, "VS", (self.W // 2 - 25, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 1.0, INK, 2,
+                                cv2.LINE_AA)
+        return out
+
+    def _starts(self) -> list[float]:
+        """Shot starts in seconds, kept deterministic for split divider selection."""
+        return [self.word_time(shot.get("start_word", 0)) for shot in self.shots]
 
     def frame(self, t: float) -> Image.Image:
         return Image.fromarray(self.frame_rgb(t), "RGB").convert("RGBA")

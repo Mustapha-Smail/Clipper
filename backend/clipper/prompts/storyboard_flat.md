@@ -15,6 +15,7 @@ You get the narration as numbered words with their times. Cut it into scenes, us
 Composition rules:
 - At most {max_elements} elements per scene, and leave space: one clear idea per picture.
 - Slots: top, center and bottom run down the middle; left/right and the corner slots sit beside them. {format_rules}
+- The default is one composition. For a deliberate two-beat comparison, set the composition kind to `split`, its lanes to `a` and `b`, and its divider to `line`, `vs`, or `none`; put each element's `lane` to `a` or `b`. Lane A is left in a long video and upper in a Short. Never invent left/right lane names; keep the lane content readable above the caption-safe area.
 - The narrator (glasses) is the host: use him to react, point at things, shrug at absurd facts. Use other cast members for people in the story (scientist, royal, fancy for anyone historical, worker, kid, chef, person).
 - Props are single objects (a light bulb, a fridge, a human eye, a coin), not scenes. Reuse library props by their exact name; invent a new snake_case name for anything else and describe it in new_props.
 - Text elements show key words or short phrases the viewer should remember, written exactly as displayed (capitals for punch, correct case for names and formulas such as InGaN); number elements show a striking figure ("450 nm", "1993", "x8"). Do not repeat the whole narration on screen: captions already do that.

@@ -290,6 +290,17 @@
                         @for (o of options.CAMERAS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
                     <label class="field wide"><span>Note</span>
                       <input type="text" [ngModel]="scene.note" (ngModelChange)="change(i, { note: $event })" /></label>
+                    <label class="field"><span>Composition</span>
+                      <select [ngModel]="scene.composition?.kind ?? 'single'"
+                              (ngModelChange)="change(i, { composition: { kind: $event, lanes: $event === 'split' ? ['a', 'b'] : [], divider: $event === 'split' ? (scene.composition?.divider ?? 'line') : 'none' } })">
+                        <option value="single">Single frame</option><option value="split">Split comparison</option>
+                      </select></label>
+                    @if (scene.composition?.kind === 'split') {
+                      <label class="field"><span>Divider</span>
+                        <select [ngModel]="scene.composition.divider" (ngModelChange)="changeCompositionDivider(i, $event)">
+                          @for (o of options.DIVIDERS; track o) { <option [value]="o">{{ o }}</option> }
+                        </select></label>
+                    }
                   </div>
 
                   @for (e of scene.elements; track $index; let k = $index) {
@@ -331,6 +342,12 @@
                         <label class="field"><span>{{ e.kind === 'arrow' ? 'From' : 'Place' }}</span>
                           <select [ngModel]="e.slot" (ngModelChange)="changeElement(i, k, { slot: $event })">
                             @for (o of options.SLOTS; track o) { <option [value]="o">{{ label(o) }}</option> }</select></label>
+                        @if (scene.composition?.kind === 'split') {
+                          <label class="field"><span>Lane</span>
+                            <select [ngModel]="e.lane ?? 'a'" (ngModelChange)="changeElement(i, k, { lane: $event })">
+                              <option value="a">A</option><option value="b">B</option>
+                            </select></label>
+                        }
                         @if (e.kind === 'arrow') {
                           <label class="field"><span>To</span>
                             <select [ngModel]="e.to_slot" (ngModelChange)="changeElement(i, k, { to_slot: $event })">

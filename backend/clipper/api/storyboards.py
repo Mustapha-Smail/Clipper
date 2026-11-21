@@ -248,7 +248,14 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
         board.scenes = shots
     else:
         try:
-            scenes = [storyboard_mod.Scene.model_validate(scene).model_dump() for scene in body.scenes]
+            scenes = []
+            for raw in body.scenes:
+                item = storyboard_mod.Scene.model_validate(raw).model_dump(exclude_none=True)
+                # Keep missing composition/lane fields absent for old flat plans;
+                # the cleaner emits canonical split contracts only when requested.
+                if "composition" not in raw:
+                    item.pop("composition", None)
+                scenes.append(item)
         except ValidationError as err:
             first = err.errors()[0]
             raise HTTPException(400, f"{'.'.join(str(x) for x in first['loc'])}: {first['msg']}") from err

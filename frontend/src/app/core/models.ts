@@ -626,6 +626,13 @@ export interface StoryElement {
   enter: 'pop' | 'slide' | 'fade' | 'none';
   enter_word: number | null;
   motion: string;
+  lane?: 'a' | 'b' | null;
+}
+
+export interface StoryComposition {
+  kind: 'single' | 'split';
+  lanes: ('a' | 'b')[];
+  divider: 'none' | 'line' | 'vs';
 }
 
 /**
@@ -643,6 +650,7 @@ export interface StoryScene {
   cut?: boolean;
   /** Ink shots: where it happens, drawn behind it in the cartoon look; empty = where the shot before was. */
   place?: string;
+  composition?: StoryComposition;
 }
 
 /** A place for the cartoon look. Six are drawn by code; the others by Claude when a video needs them. */

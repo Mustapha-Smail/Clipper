@@ -32,6 +32,8 @@ plan as text opens each shot with `N shot "what it shows" [cut]`.
 import re
 from dataclasses import dataclass, field
 
+from . import composition
+
 TOKEN = re.compile(r'"[^"]*"|\S+')
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 CREATES = ("photo", "flag", "big", "count", "card", "doc", "map")
@@ -58,6 +60,7 @@ class Line:
     ident: str = ""
     bar: bool = False
     colour: str = ""
+    lane: str = ""
 
     @property
     def id(self) -> str:
@@ -106,6 +109,8 @@ class Line:
             parts.append(self.colour)
         if self.ident and v in CREATES:
             parts += ["as", self.ident]
+        if self.lane:
+            parts += ["lane", self.lane]
         return " ".join(parts)
 
 
@@ -142,6 +147,10 @@ def parse_line(raw: str) -> Line | None:
         nxt = rest[i + 1] if i + 1 < len(rest) else None
         if tok == "as" and nxt and NAME.match(nxt):
             line.ident = nxt
+            i += 2
+            continue
+        if tok.lower() == "lane" and nxt and nxt.lower() in {"a", "b"}:
+            line.lane = nxt.lower()
             i += 2
             continue
         if tok == "on" and nxt and NAME.match(nxt):
@@ -224,7 +233,8 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
 
     Returns (shots, the lines that were dropped)."""
     dropped: list[str] = []
-    known: dict[str, str] = {}             # id -> verb
+    known: dict[str, tuple[str, str]] = {}  # canonical id -> (verb, lane)
+    aliases: dict[tuple[str, str], str] = {}
     out: list[dict] = []
     last_word = -1
     top = max(0, word_count - 1)
@@ -232,6 +242,7 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
         start = 0 if i == 0 else max(0, min(int(shot.get("start_word", 0) or 0), top))
         if i and start <= last_word:
             start = min(top, last_word + 1)
+        spec = composition.normalize(shot.get("composition"))
         lines: list[tuple[int, str]] = []
         for text in (x for x in shot.get("lines", []) if isinstance(x, str)):
             line = parse_line(text)
@@ -240,26 +251,47 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                     dropped.append(text.strip()[:80])
                 continue
             line.word = max(start, min(line.word, top))
+            if line.lane and spec["kind"] != "split":
+                dropped.append(f"{line.render()}  (lane {line.lane} needs a split scene)")
+                continue
+            if spec["kind"] == "split" and not line.lane and line.verb != "wide":
+                dropped.append(f"{line.render()}  (split-scene beats need lane a or lane b)")
+                continue
+            authored_id = line.id
+            if line.verb in CREATES and line.id in known:
+                n = 2
+                while f"{line.id}_{n}" in known:
+                    n += 1
+                line.ident = f"{line.id}_{n}"
+            if line.verb in CREATES:
+                aliases[(line.lane, authored_id)] = line.id
+            if line.target:
+                line.target = aliases.get((line.lane, line.target), line.target)
+            if line.target2:
+                line.target2 = aliases.get((line.lane, line.target2), line.target2)
             refs = [r for r in (line.target, line.target2) if r]
-            ok = all(r in known for r in refs)
+            ok = all(r in known and (spec["kind"] != "split" or known[r][1] == line.lane) for r in refs)
             if line.verb == "stamp" and not refs:
-                ok = bool(known)                     # a stamp with no target lands on the latest thing
+                ok = any(lane == line.lane for _verb, lane in known.values())
             if line.verb in ("pin", "route"):
-                maps = [k for k, v in known.items() if v == "map"]
+                maps = [k for k, (verb, lane) in known.items() if verb == "map" and lane == line.lane]
                 if line.target:
-                    ok = known.get(line.target) == "map"
+                    ok = known.get(line.target) == ("map", line.lane)
                 else:
                     ok = bool(maps)
             if not ok:
                 dropped.append(text.strip()[:80])
                 continue
             if line.verb in CREATES:
-                known[line.id] = line.verb
+                known[line.id] = (line.verb, line.lane)
             lines.append((line.word, line.render()))
         lines.sort(key=lambda x: x[0])
         last_word = start
-        out.append({"start_word": start, "note": str(shot.get("note", ""))[:200], "lines": [x[1] for x in lines],
-                    "cut": bool(shot.get("cut", False))})
+        item = {"start_word": start, "note": str(shot.get("note", ""))[:200],
+                "lines": [x[1] for x in lines], "cut": bool(shot.get("cut", False))}
+        if shot.get("composition") is not None or spec["kind"] != "single":
+            item["composition"] = spec
+        out.append(item)
     return out, dropped
 
 
@@ -275,8 +307,14 @@ def parse_plan(text: str, word_count: int, offset: int = 0) -> list[dict]:
             continue
         m = SHOT.match(raw)
         if m:
-            shots.append({"start_word": int(m.group(1)) + offset, "note": m.group(2),
-                          "lines": [], "cut": "cut" in m.group(3).split()})
+            options = m.group(3).lower().split()
+            divider = "vs" if "vs" in options else "line" if "line" in options else "none"
+            spec = composition.normalize({"kind": "split", "divider": divider}) if "split" in options else None
+            item = {"start_word": int(m.group(1)) + offset, "note": m.group(2),
+                    "lines": [], "cut": "cut" in options}
+            if spec:
+                item["composition"] = spec
+            shots.append(item)
             continue
         number, _, rest = raw.partition(" ")
         if not shots:
@@ -288,7 +326,14 @@ def parse_plan(text: str, word_count: int, offset: int = 0) -> list[dict]:
 def to_text(shots: list[dict]) -> str:
     out = []
     for shot in shots:
-        out.append(f'{shot["start_word"]} shot {_quote(shot.get("note", ""))}' + (" cut" if shot.get("cut") else ""))
+        options = ["cut"] if shot.get("cut") else []
+        spec = composition.normalize(shot.get("composition"))
+        if spec["kind"] == "split":
+            options.append("split")
+            if spec["divider"] != "none":
+                options.append(spec["divider"])
+        suffix = " " + " ".join(options) if options else ""
+        out.append(f'{shot["start_word"]} shot {_quote(shot.get("note", ""))}{suffix}')
         out += shot.get("lines", [])
     return "\n".join(out)
 

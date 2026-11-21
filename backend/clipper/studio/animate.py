@@ -26,7 +26,7 @@ from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
 from ..settings import load as load_settings
-from . import art, beats, film, sfx, sound, visual_qa
+from . import art, beats, composition, film, sfx, sound, visual_qa
 from . import script as script_mod
 from . import voice as voice_mod
 
@@ -112,6 +112,9 @@ class Composer:
             self.captions_on_yellow = captions_mod.CaptionRenderer(
                 captions_mod.group_words(self.words, 0.0, self.duration), self.font_path,
                 hex_to_rgb(art.PALETTE["red"]))
+        self.compositions = [composition.geometry(board["format"], scene.get("composition"),
+                                                   captions=self.captions is not None)
+                             for scene in self.scenes]
         self._sprites: dict = {}
         self._fonts: dict = {}
         # Long videos show a banner when a new chapter (script section) starts.
@@ -237,15 +240,34 @@ class Composer:
             return self._sprites[key]
         lay = self.layout
         scene = self.scenes[index]
+        geo = self.compositions[index]
         dark = scene["background"] == "blue"
         items = []
+        groups: dict[str, list[int]] = {}
         for e in scene["elements"]:
-            cx, cy = lay.slots[e["slot"]]
+            lane = e.get("lane") or ("a" if not geo.single else "")
+            view = geo.viewport(lane)
+            cx, cy = ((lay.slots[e["slot"]][0] * lay.width, lay.slots[e["slot"]][1] * lay.height)
+                      if geo.single else composition.slot(self.board["format"], e["slot"], view))
             sprite = self.base_sprite(e, dark)
             w, h = (sprite.width, sprite.height) if sprite else (0, 0)
-            items.append([cx * lay.width, cy * lay.height, 1.0, w, h])
-        result = separate(items, lay.width * MARGIN, lay.width * (1 - MARGIN), lay.height * lay.stage_top,
-                          lay.height * lay.stage_bottom)
+            items.append([cx, cy, 1.0, w, h])
+            groups.setdefault(lane, []).append(len(items) - 1)
+        result = [(x[0], x[1], x[2]) for x in items]
+        if geo.single:
+            result = separate(items, lay.width * MARGIN, lay.width * (1 - MARGIN), lay.height * lay.stage_top,
+                              lay.height * lay.stage_bottom)
+        else:
+            # Run the established collision solver independently in each lane;
+            # no pair can push content across the divider or into captions.
+            for lane, indices in groups.items():
+                view = geo.viewport(lane)
+                local = [items[i] for i in indices]
+                margin = min(view.width, view.height) * MARGIN
+                placed = separate(local, view.x0 + margin, view.x1 - margin,
+                                  view.y0 + margin, view.y1 - margin)
+                for i, value in zip(indices, placed, strict=True):
+                    result[i] = value
         self._sprites[key] = result
         return result
 
@@ -263,6 +285,7 @@ class Composer:
         lay = self.layout
         index = self.scene_at(t)
         scene = self.scenes[index]
+        geo = self.compositions[index]
         scene_start = self.starts[index]
         scene_end = self.starts[index + 1] if index + 1 < len(self.scenes) else self.duration
         dark = scene["background"] == "blue"
@@ -271,6 +294,21 @@ class Composer:
         mouth = int(self.mouths[min(frame_no, len(self.mouths) - 1)]) if self.mouths is not None else 0
 
         places = self.placement(index)
+        if not geo.single and geo.divider != "none":
+            draw = ImageDraw.Draw(canvas)
+            if self.board["format"] == "long":
+                x = round((geo.lanes[0].x1 + geo.lanes[1].x0) / 2)
+                draw.line((x, 0, x, round(geo.caption_top)), fill=art.INK,
+                          width=8 if geo.divider == "line" else 4)
+                if geo.divider == "vs":
+                    draw.text((x, geo.caption_top / 2), "VS", font=self.font(42), fill=art.INK, anchor="mm")
+            else:
+                y = round((geo.lanes[0].y1 + geo.lanes[1].y0) / 2)
+                draw.line((0, y, lay.width, y), fill=art.INK,
+                          width=8 if geo.divider == "line" else 4)
+                if geo.divider == "vs":
+                    draw.text((lay.width / 2, y), "VS", font=self.font(42), fill=art.INK, anchor="mm")
+
         for n, e in enumerate(scene["elements"]):
             appear = max(scene_start, self.word_time(e.get("enter_word"))) if e.get("enter_word") is not None \
                 else scene_start
@@ -278,7 +316,9 @@ class Composer:
             if age < 0:
                 continue
             seed = n * 1.7 + index
-            cx = lay.slots[e["slot"]][0]
+            view = geo.viewport(e.get("lane") or "a")
+            cx = (lay.slots[e["slot"]][0] if geo.single else
+                  composition.slot(self.board["format"], e["slot"], view)[0] / lay.width)
             x, y, scale = places[n]
             alpha, angle = 1.0, 0.0
             p = min(1.0, age / ENTER) if e["enter"] != "none" else 1.0
@@ -303,7 +343,7 @@ class Composer:
                 scale *= 0.8 + 0.3 * art.ease_out(min(1.0, age / 2.5))
 
             if e["kind"] == "arrow":
-                self._arrow(canvas, e, min(1.0, age / 0.4), dark)
+                self._arrow(canvas, e, min(1.0, age / 0.4), dark, geo)
                 continue
             if e["kind"] == "character":
                 y += art.wobble(t, seed, 5)
@@ -313,9 +353,11 @@ class Composer:
                 sprite = self.prop(e)
             else:
                 sprite = self.text(e, dark)
-            self._paste(canvas, sprite, x, y, scale, alpha, angle)
+            bounds = None if geo.single else (view.x0, view.y0, view.x1, view.y1)
+            self._paste(canvas, sprite, x, y, scale, alpha, angle, bounds)
 
-        camera = scene["camera"]
+        # Split comparisons must keep both lanes and their divider stable.
+        camera = scene["camera"] if geo.single else "still"
         if camera != "still":
             progress = art.ease_out(min(1.0, (t - scene_start) / max(scene_end - scene_start, 0.5)))
             zoom, shift = 1.0, 0.0
@@ -362,7 +404,7 @@ class Composer:
 
     @staticmethod
     def _paste(canvas: Image.Image, sprite: Image.Image, x: float, y: float, scale: float, alpha: float,
-               angle: float) -> None:
+               angle: float, bounds: tuple[float, float, float, float] | None = None) -> None:
         if scale <= 0.02 or alpha <= 0.01:
             return
         if abs(scale - 1) > 0.01:
@@ -373,12 +415,17 @@ class Composer:
         if alpha < 1:
             sprite = sprite.copy()
             sprite.putalpha(sprite.getchannel("A").point(lambda a: int(a * alpha)))
-        _composite_clipped(canvas, sprite, round(x - sprite.width / 2), round(y - sprite.height / 2))
+        _composite_clipped(canvas, sprite, round(x - sprite.width / 2), round(y - sprite.height / 2), bounds)
 
-    def _arrow(self, canvas: Image.Image, e: dict, progress: float, dark: bool) -> None:
+    def _arrow(self, canvas: Image.Image, e: dict, progress: float, dark: bool, geo=None) -> None:
         lay = self.layout
-        (ax, ay), (bx, by) = lay.slots[e["slot"]], lay.slots[e["to_slot"]]
-        ax, ay, bx, by = ax * lay.width, ay * lay.height, bx * lay.width, by * lay.height
+        if geo is not None and not geo.single:
+            view = geo.viewport(e.get("lane") or "a")
+            ax, ay = composition.slot(self.board["format"], e["slot"], view)
+            bx, by = composition.slot(self.board["format"], e["to_slot"], view)
+        else:
+            (ax, ay), (bx, by) = lay.slots[e["slot"]], lay.slots[e["to_slot"]]
+            ax, ay, bx, by = ax * lay.width, ay * lay.height, bx * lay.width, by * lay.height
         # Leave room for whatever sits in the two slots.
         sx, sy = ax + (bx - ax) * 0.3, ay + (by - ay) * 0.3
         ex, ey = ax + (bx - ax) * 0.7, ay + (by - ay) * 0.7
@@ -458,13 +505,17 @@ def separate(items: list[list[float]], left: float, right: float, top: float, bo
     return [(x, y, s) for x, y, s, _, _ in items]
 
 
-def _composite_clipped(canvas: Image.Image, sprite: Image.Image, left: int, top: int) -> None:
-    """alpha_composite for a sprite that hangs off the edge of the frame."""
-    box = (max(0, -left), max(0, -top),
-           min(sprite.width, canvas.width - left), min(sprite.height, canvas.height - top))
+def _composite_clipped(canvas: Image.Image, sprite: Image.Image, left: int, top: int,
+                       bounds: tuple[float, float, float, float] | None = None) -> None:
+    """Alpha-composite a sprite, clipped to the frame and optionally one semantic lane."""
+    x0, y0, x1, y1 = bounds or (0, 0, canvas.width, canvas.height)
+    x0, y0 = max(0, round(x0)), max(0, round(y0))
+    x1, y1 = min(canvas.width, round(x1)), min(canvas.height, round(y1))
+    box = (max(0, x0 - left), max(0, y0 - top),
+           min(sprite.width, x1 - left), min(sprite.height, y1 - top))
     if box[2] <= box[0] or box[3] <= box[1]:
         return
-    canvas.alpha_composite(sprite.crop(box), (max(0, left), max(0, top)))
+    canvas.alpha_composite(sprite.crop(box), (max(x0, left), max(y0, top)))
 
 
 # --- loading and rendering -----------------------------------------------------------------

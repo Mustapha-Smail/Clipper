@@ -33,10 +33,10 @@ Show what is named, the way a good editor cuts in a visual:
 These are where a viewer's eye goes; use them whenever the narration names one.
 
 The beat language. Each line starts with the number of the narration word on which it happens. A shot line opens each shot; beat lines follow it:
-  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut] [in SETTING]
-  N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [as ID]
-  N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [as ID]
-  N write "1 to 6 words" [PLACE] [big] [COLOUR] [as ID]
+  N shot "what the viewer sees, in one sentence" [wide|push|drift|close] [cut] [in SETTING] [split line|split vs]
+  N actor WHO [PLACE] [POSE] [FACE] [talk] [small|large] [lane a|lane b] [as ID]
+  N draw PROP [PLACE] [small|large] ["label of 1 to 3 words"] [lane a|lane b] [as ID]
+  N write "1 to 6 words" [PLACE] [big] [COLOUR] [lane a|lane b] [as ID]
   N flag COUNTRY [PLACE] [small|large] [as ID]          (COUNTRY: two-letter code, like ro or it)
   N map COUNTRY [COUNTRY...] [PLACE] [large] [COLOUR] [as ID]   (those countries in colour, labelled)
   N timeline "label" "label"... [PLACE] [COLOUR] [as ID]        (2 to 7 moments, in order, left to right)
@@ -50,7 +50,7 @@ The beat language. Each line starts with the number of the narration word on whi
   N shake|bounce|pulse|spin|grow|shrink TARGET
   N erase TARGET|all
   N look TARGET|all          (the camera moves in on something, or back out)
-PLACE: left center right top bottom top_left top_right bottom_left bottom_right
+PLACE: left center right top bottom top_left top_right bottom_left bottom_right. In a split shot, add `lane a` or `lane b` to every beat that belongs to that lane; lane A is left in a long video and upper in a Short. Use `split line` or `split vs` on the shot line; omit it for the legacy single frame. Do not use a lane modifier in a single shot.
 POSE (held until the next one): stand point hold push pull carry drop shrug think facepalm cheer wave surprised sad crossed hips present scared. point, hold, push, pull and carry take a TARGET, and the actor walks up to it by itself; carry picks a prop up, and it goes wherever the actor moves until drop (or any other pose) lets it fall.
 ACTION (a recorded movement, played once, about 1 to 3 seconds): {actions}. kick and throw take a TARGET, which flies off.
 GAIT (how a move gets there): walk (default) run march zombie

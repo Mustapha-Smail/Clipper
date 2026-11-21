@@ -20,7 +20,7 @@ understand and says how many.
 import re
 from dataclasses import dataclass, field
 
-from . import art, geo, ink
+from . import art, composition, geo, ink
 
 SLOTS = ("left", "center", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right")
 SIZES = {"small": "small", "medium": "medium", "large": "large", "s": "small", "m": "medium", "l": "large",
@@ -62,6 +62,7 @@ class Line:
     talk: bool = False
     big: bool = False
     extra: list[str] = field(default_factory=list)
+    lane: str = ""                         # split-scene scope: a or b
 
     @property
     def id(self) -> str:
@@ -93,6 +94,8 @@ class Line:
             parts += [v for v in (self.slot, self.size, self.color) if v]
             if self.ident:
                 parts += ["as", self.ident]
+            if self.lane:
+                parts += ["lane", self.lane]
             return " ".join(parts)
         if self.verb == "write":
             parts.append(_quote(self.text))
@@ -113,6 +116,8 @@ class Line:
             parts.append("talk")
         if self.ident:
             parts += ["as", self.ident]
+        if self.lane:
+            parts += ["lane", self.lane]
         return " ".join(parts)
 
 
@@ -148,7 +153,18 @@ def parse_line(raw: str) -> Line | None:
     if verb in ("flag", "map", "timeline", "who", "photo"):
         return _parse_shown(line, rest)
     refs: list[str] = []
-    for token in rest:
+    # Lane is a semantic modifier, not a left/right slot. Strip it before the
+    # existing token parser so every legacy line parses exactly as before.
+    lane_rest = []
+    i = 0
+    while i < len(rest):
+        if rest[i].lower() == "lane" and i + 1 < len(rest) and rest[i + 1].lower() in {"a", "b"}:
+            line.lane = rest[i + 1].lower()
+            i += 2
+            continue
+        lane_rest.append(rest[i])
+        i += 1
+    for token in lane_rest:
         low = token.lower()
         if token.startswith('"') and token.endswith('"') and len(token) >= 2:
             if line.text:
@@ -216,8 +232,14 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
     """flag CODE, map CODE CODE..., timeline "a" "b"..., who ID "Name" TRAIT...: the order of the rest is free."""
     words: list[str] = []
     quoted: list[str] = []
-    for token in rest:
+    i = 0
+    while i < len(rest):
+        token = rest[i]
         low = token.lower()
+        if low == "lane" and i + 1 < len(rest) and rest[i + 1].lower() in {"a", "b"}:
+            line.lane = rest[i + 1].lower()
+            i += 2
+            continue
         if token.startswith('"') and token.endswith('"') and len(token) >= 2:
             quoted.append(token[1:-1].strip())
         elif low in SLOTS and not line.slot:
@@ -228,6 +250,7 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
             line.color = low
         else:
             words.append(_name(token))
+        i += 1
     words = [w for w in words if w]
     if line.verb == "photo":
         if not quoted or not quoted[0].strip():
@@ -263,16 +286,24 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
 # --- shots --------------------------------------------------------------------------------
 
 def shot(start_word: int, note: str = "", camera: str = "wide", page: bool = False,
-         lines: list[str] | None = None, cut: bool = False, place: str = "") -> dict:
+         lines: list[str] | None = None, cut: bool = False, place: str = "",
+         composition_spec: dict | None = None, **kwargs) -> dict:
     """A shot. `cut`: the camera jumps to it (a hard cut) instead of gliding across the page.
 
     `place`: where it happens ("in kitchen"), drawn behind it in the cartoon look; a
     shot without one stays where the shot before it was.
     """
+    # ``composition`` is the public keyword used by API/editor callers;
+    # ``composition_spec`` keeps the local name explicit for old call sites.
+    if composition_spec is None and "composition" in kwargs:
+        composition_spec = kwargs["composition"]
     place = _name(place or "")
-    return {"start_word": start_word, "note": note, "camera": camera if camera in CAMERAS else "wide",
-            "page": bool(page), "cut": bool(cut), "lines": list(lines or []),
-            "place": place if NAME.match(place) else ""}
+    result = {"start_word": start_word, "note": note, "camera": camera if camera in CAMERAS else "wide",
+              "page": bool(page), "cut": bool(cut), "lines": list(lines or []),
+              "place": place if NAME.match(place) else ""}
+    if composition_spec is not None:
+        result["composition"] = composition.normalize(composition_spec)
+    return result
 
 
 def place_at(shots: list[dict], index: int) -> str:
@@ -314,7 +345,10 @@ def parse_plan(text: str, word_count: int, offset: int = 0, check: bool = True) 
             words = re.sub(r'"[^"]*"', " ", rest).lower().split()
             camera = next((w for w in words if w in CAMERAS), "wide")
             place = words[words.index("in") + 1] if "in" in words[:-1] else ""
-            shots.append(shot(word, note, camera, "page" in words, cut="cut" in words, place=place))
+            divider = "vs" if "vs" in words else "line" if "line" in words else "none"
+            spec = composition.normalize({"kind": "split", "divider": divider}) if "split" in words else None
+            shots.append(shot(word, note, camera, "page" in words, cut="cut" in words, place=place,
+                              composition_spec=spec))
             continue
         line = parse_line(raw)
         if line is None:
@@ -348,11 +382,13 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
             ordered[-1]["lines"] += list(raw.get("lines") or [])
             continue
         ordered.append(shot(start, str(raw.get("note", ""))[:200], raw.get("camera", "wide"), raw.get("page", False),
-                            list(raw.get("lines") or []), raw.get("cut", False), str(raw.get("place") or "")))
+                            list(raw.get("lines") or []), raw.get("cut", False), str(raw.get("place") or ""),
+                            raw.get("composition")))
     if ordered:
         ordered[0]["start_word"] = 0
 
     previous: dict[str, Line] = {}     # still on stage at the end of the shot before
+    previous_aliases: dict[tuple[str, str], str] = {}
     personas: set[str] = set()         # people defined with `who`, usable as actors from then on
     for i, sh in enumerate(ordered):
         end = ordered[i + 1]["start_word"] - 1 if i + 1 < len(ordered) else last
@@ -365,43 +401,61 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
             line.word = max(sh["start_word"], min(line.word, end))
             parsed.append(line)
         parsed.sort(key=lambda x: x.word)
+        spec = composition.normalize(sh.get("composition"))
+        if "composition" in sh or spec["kind"] != "single":
+            sh["composition"] = spec
+        else:
+            sh.pop("composition", None)
 
-        live: dict[str, Line] = {}       # id -> the line that created it
+        live: dict[str, Line] = {}       # canonical id -> the line that created it
         order: list[str] = []
         kept: list[Line] = []
         carried = dict(previous)
+        aliases = dict(previous_aliases)  # (lane, authored id) -> canonical, globally unique id
         for line in parsed:
+            if line.lane and spec["kind"] != "split":
+                dropped.append(f"{line.render()}  (lane {line.lane} needs a split scene)")
+                continue
+            if spec["kind"] == "split" and not line.lane and line.verb != "who" and not (
+                    line.verb in {"look", "erase"} and line.who in {"all", "wide"}):
+                dropped.append(f"{line.render()}  (split-scene beats need lane a or lane b)")
+                continue
             if line.verb == "who":
                 personas.add(line.who)
                 kept.append(line)
                 continue
             if line.verb in CREATES:
+                authored_id = line.id
+                current_id = aliases.get((line.lane, authored_id), authored_id)
                 if line.verb == "actor":
                     if line.who not in art.CHARACTERS and line.who not in personas:
                         line.who = "person"
-                    if line.id in live and live[line.id].verb == "actor":
+                    if current_id in live and live[current_id].verb == "actor" \
+                            and live[current_id].lane == line.lane:
                         # the same actor again: that is a change of pose or place, not a second actor
                         if line.pose or line.expression:
-                            kept.append(Line(word=line.word, verb="do", who=line.id, pose=line.pose,
-                                             expression=line.expression))
-                        if line.slot and line.slot != live[line.id].slot:
-                            kept.append(Line(word=line.word, verb="move", who=line.id, slot=line.slot))
+                            kept.append(Line(word=line.word, verb="do", who=current_id, pose=line.pose,
+                                             expression=line.expression, lane=line.lane))
+                        if line.slot and line.slot != live[current_id].slot:
+                            kept.append(Line(word=line.word, verb="move", who=current_id, slot=line.slot,
+                                             lane=line.lane))
                         continue
-                    carried.pop(line.id, None)
+                    carried.pop(current_id, None)
                 elif line.verb == "draw":
                     line.who = _name(line.who)
                     if not NAME.match(line.who):
                         dropped.append(f"{line.render()}  (not a prop name)")
                         continue
-                if line.id in live:          # the same thing twice: give it its own id
+                if line.id in live:          # globally unique ids keep every renderer cache lane-safe
                     n = 2
                     while f"{line.id}_{n}" in live:
                         n += 1
                     line.ident = f"{line.id}_{n}"
+                aliases[(line.lane, authored_id)] = line.id
                 crowd = [x for x in order if live[x].verb != "actor"]
                 if len(live) >= MAX_LIVE and crowd:
                     oldest = crowd[0]
-                    kept.append(Line(word=line.word, verb="erase", who=oldest))
+                    kept.append(Line(word=line.word, verb="erase", who=oldest, lane=live[oldest].lane))
                     order.remove(oldest)
                     live.pop(oldest)
                 live[line.id] = line
@@ -410,19 +464,30 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                 continue
             if line.verb == "erase" and line.who == "all":
                 kept.append(line)
-                live = {k: v for k, v in live.items() if v.verb == "actor"}
+                live = {k: v for k, v in live.items()
+                        if v.verb == "actor" or (line.lane and v.lane != line.lane)}
                 order = [x for x in order if x in live]
                 continue
             if line.verb == "look" and line.who in ("all", "wide"):
                 line.who = "all"
                 kept.append(line)
                 continue
+            # References stay inside their lane. When two lanes author the same
+            # id, the second create was canonicalised above and all later beats
+            # are rewritten to that stable id before the runtime sees them.
+            if line.who and line.who not in SLOTS:
+                line.who = aliases.get((line.lane, line.who), line.who)
+            if line.target and line.target not in SLOTS:
+                line.target = aliases.get((line.lane, line.target), line.target)
             refs = [line.who] + ([line.target] if line.target and line.verb in ("arrow", "do", "move") else [])
             why = ""
             for ref in refs:
-                if ref in live or ref in SLOTS:
+                if ref in SLOTS:
                     continue
-                if ref in carried:           # from the shot before: it comes along
+                if ref in live and (spec["kind"] != "split" or live[ref].lane == line.lane):
+                    continue
+                if ref in carried and (spec["kind"] != "split" or carried[ref].lane == line.lane):
+                    # from the shot before: it comes along
                     live[ref] = carried.pop(ref)
                     order.append(ref)
                     continue
@@ -430,9 +495,10 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                     # a cast member used before being brought on: bring them on, rather than lose the line
                     taken = {x.slot for x in live.values()}
                     slot = next((s for s in ("left", "right", "center") if s not in taken), "left")
-                    actor = Line(word=line.word, verb="actor", who=ref, slot=slot)
+                    actor = Line(word=line.word, verb="actor", who=ref, slot=slot, lane=line.lane)
                     kept.append(actor)
                     live[ref] = actor
+                    aliases[(line.lane, ref)] = ref
                     order.append(ref)
                     continue
                 why = f"nothing called {ref} is on stage then"
@@ -452,6 +518,7 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                     order.remove(line.who)
             kept.append(line)
         previous = dict(live)
+        previous_aliases = {key: value for key, value in aliases.items() if value in live}
         sh["lines"] = [x.render() for x in kept]
     return ordered, dropped
 
@@ -480,6 +547,11 @@ def to_text(shots: list[dict]) -> str:
     out = []
     for sh in shots:
         options = [sh["camera"]] if sh["camera"] != "wide" else []
+        spec = composition.normalize(sh.get("composition"))
+        if spec["kind"] == "split":
+            options.append("split")
+            if spec["divider"] != "none":
+                options.append(spec["divider"])
         if sh.get("page"):
             options.append("page")
         if sh.get("cut"):

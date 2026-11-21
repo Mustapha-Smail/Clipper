@@ -30,7 +30,7 @@ from .. import config, llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
-from . import art, beats, film, hold, ink
+from . import art, beats, composition, film, hold, ink
 from . import places as places_mod
 from . import voice as voice_mod
 
@@ -57,6 +57,18 @@ class Element(BaseModel):
     enter_word: int | None = Field(None, description="Number of the word on which this element appears; "
                                                      "null to appear with the scene")
     motion: Literal["none", "bounce", "shake", "pulse", "float", "spin", "grow"] = "none"
+    lane: Literal["a", "b"] | None = Field(None, description="split scene lane; omit for the default lane")
+
+
+class CompositionSpec(BaseModel):
+    """Renderer-independent scene composition.
+
+    ``lanes`` remains accepted for hand-authored plans, but clean() emits the
+    canonical ``split`` spelling so all renderers share one contract.
+    """
+    kind: Literal["single", "split", "lanes"] = "single"
+    lanes: list[Literal["a", "b"]] = Field(default_factory=list)
+    divider: Literal["none", "line", "vs"] = "none"
 
 
 class Scene(BaseModel):
@@ -65,6 +77,7 @@ class Scene(BaseModel):
     background: Literal[art.BACKGROUNDS] = "paper"
     camera: Literal["still", "zoom_in", "zoom_out", "pan_left", "pan_right"] = "still"
     elements: list[Element]
+    composition: CompositionSpec = Field(default_factory=CompositionSpec)
 
 
 class PropRequest(BaseModel):
@@ -202,6 +215,7 @@ def clean(scenes: list[dict], word_count: int) -> list[dict]:
         if start <= last and out:
             continue
         last = start
+        spec = composition.normalize(scene.get("composition"))
         elements = []
         for e in scene["elements"]:
             if e["kind"] == "character" and e["name"] not in art.CHARACTERS:
@@ -214,8 +228,22 @@ def clean(scenes: list[dict], word_count: int) -> list[dict]:
                 continue
             if e.get("enter_word") is not None:
                 e["enter_word"] = max(start, min(e["enter_word"], word_count - 1))
+            lane = str(e.get("lane") or "").lower()
+            if lane not in {"a", "b"}:
+                e.pop("lane", None)
+            elif spec["kind"] != "split":
+                # A lane modifier in a single scene is invalid, but dropping
+                # the modifier keeps the otherwise valid element usable.
+                e.pop("lane", None)
+            else:
+                e["lane"] = lane
             elements.append(e)
-        out.append({**scene, "start_word": start, "elements": elements[:MAX_ELEMENTS]})
+        item = {**scene, "start_word": start, "elements": elements[:MAX_ELEMENTS]}
+        if scene.get("composition") is not None or spec["kind"] != "single":
+            item["composition"] = spec
+        else:
+            item.pop("composition", None)
+        out.append(item)
     if out:
         out[0]["start_word"] = 0
     return out

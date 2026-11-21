@@ -906,6 +906,13 @@ class StoryboardOut(StoryboardSummary):
                                   description="Deterministic continuity advice for the saved plan")
 
 
+class CompositionSpec(BaseModel):
+    """Shared scene composition contract used by ink, flat and film renderers."""
+    kind: Literal["single", "split", "lanes"] = "single"
+    lanes: list[Literal["a", "b"]] = Field(default_factory=list)
+    divider: Literal["none", "line", "vs"] = "none"
+
+
 class ThumbnailsMake(BaseModel):
     only: Literal["A", "B", "C"] | None = Field(None, description="Plan this one again; the others stay")
     note: str = Field("", max_length=500, description="What you want changed in it")
