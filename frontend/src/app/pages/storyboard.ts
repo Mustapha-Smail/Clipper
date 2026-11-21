@@ -5,7 +5,7 @@ import { Api } from '../core/api';
 import { AgoPipe, MegabytesPipe, UntilPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
-  ALL_LOOKS, ArchivePhoto, Asset, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
+  ALL_LOOKS, ArchivePhoto, Asset, CaptionMode, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack, StoryElement, StoryScene, Storyboard,
   SuggestedTrack, YoutubeText, Place, ExportInfo,
 } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -372,6 +372,13 @@ export class StoryboardPage {
         this.version.set(Date.now());
         this.toasts.ok(`${this.lookName(look).replace(/^./, (c) => c.toUpperCase())} look saved. Render again to see it in the video.`);
       },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected setCaptionMode(mode: CaptionMode): void {
+    this.api.setCaptionMode(this.id, mode).subscribe({
+      next: (board) => { this.board.set(board); this.version.set(Date.now()); this.toasts.ok('Caption setting saved'); },
       error: (err) => this.toasts.error(err),
     });
   }

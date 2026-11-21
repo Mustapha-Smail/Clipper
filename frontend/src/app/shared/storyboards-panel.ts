@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api } from '../core/api';
 import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { ALL_LOOKS, FILM_LOOKS, INK_LOOKS, Look, Script, StoryStyle, StoryboardSummary } from '../core/models';
+import { ALL_LOOKS, CaptionMode, FILM_LOOKS, INK_LOOKS, Look, Script, StoryStyle, StoryboardSummary } from '../core/models';
 import { Toasts } from '../core/toast';
 
 /** Animated videos made from a script: Shorts, one per section for now. */
@@ -42,6 +42,15 @@ import { Toasts } from '../core/toast';
           </select>
           <small>{{ lookHint() }}</small>
         </label>
+        <label class="field look"><span>Captions</span>
+          <select [ngModel]="captionMode()" (ngModelChange)="captionMode.set($event)">
+            <option value="default">Default for this form</option>
+            <option value="on">Always on</option>
+            <option value="off">Always off</option>
+          </select>
+          <small>Shorts default to captions; long videos default to none. Choose explicitly when needed.</small>
+        </label>
+        <p class="small muted strategy">Strategy: {{ formLabel(script().form) }} · {{ shapeLabel(script().story_shape) }}</p>
         @if (script().video === 'short') {
           <div class="row">
             <button class="primary" (click)="make(script().sections[0].key!)"
@@ -80,6 +89,7 @@ import { Toasts } from '../core/toast';
               <span class="info">
                 <strong>{{ b.title }}</strong>
                 <span class="small muted">{{ b.format === 'short' ? 'Short' : 'Long video' }} ·
+                  {{ formLabel(b.form) }} · {{ shapeLabel(b.story_shape) }} · captions {{ b.caption_mode }} ·
                   {{ b.style === 'flat' ? 'flat' : lookName(b.look) }} · {{ clock(b.duration) }} ·
                   {{ b.scene_count }} {{ b.style === 'flat' ? 'scenes' : 'shots' }} · {{ b.created_at | ago }}</span>
                 @if (b.job) {
@@ -121,6 +131,7 @@ import { Toasts } from '../core/toast';
     }
     .look { max-width: 460px; }
     .look small { display: block; margin-top: 5px; font-size: 12.5px; color: var(--muted); }
+    .strategy { margin: -4px 0 0; }
     .pill.tiny {
       font-size: 10.5px;
       padding: 0 6px;
@@ -177,6 +188,7 @@ export class StoryboardsPanel {
   protected readonly filmLooks = FILM_LOOKS;
   /** A look of the ink or the film style, or the older flat style. The look can change later; the style cannot. */
   protected readonly look = signal<Look | 'flat'>('ink');
+  protected readonly captionMode = signal<CaptionMode>('default');
   protected readonly style = computed<StoryStyle>(() => {
     const look = this.look();
     return look === 'flat' ? 'flat' : FILM_LOOKS.some((l) => l.value === look) ? 'film' : 'ink';
@@ -192,6 +204,14 @@ export class StoryboardsPanel {
     const hint = ALL_LOOKS.find((l) => l.value === look)?.hint ?? '';
     const other = this.style() === 'film' ? 'the other documentary look' : 'another ink look';
     return hint.charAt(0).toUpperCase() + hint.slice(1) + `. You can switch to ${other} later without planning again.`;
+  }
+
+  protected formLabel(form: Script['form']): string {
+    return form === 'micro_short' ? 'Micro concept test' : form === 'short' ? 'Narrated Short' : 'Long video';
+  }
+
+  protected shapeLabel(shape: Script['story_shape']): string {
+    return shape ? shape.replace('_', ' ') : 'default story shape';
   }
 
   protected thumb(b: StoryboardSummary): string {
@@ -230,7 +250,7 @@ export class StoryboardsPanel {
 
   protected makeLong(): void {
     this.starting.set('long');
-    this.api.createStoryboard(this.script().id, null, 'long', this.style(), this.inkLook()).subscribe({
+    this.api.createStoryboard(this.script().id, null, 'long', this.style(), this.inkLook(), this.captionMode()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();
@@ -254,7 +274,7 @@ export class StoryboardsPanel {
         this.store.refresh();
         return;
       }
-      this.api.createStoryboard(this.script().id, key, 'short', this.style(), this.inkLook()).subscribe({
+      this.api.createStoryboard(this.script().id, key, 'short', this.style(), this.inkLook(), this.captionMode()).subscribe({
         next: () => {
           queued++;
           next();
@@ -267,7 +287,7 @@ export class StoryboardsPanel {
 
   protected make(sectionKey: string): void {
     this.starting.set(sectionKey);
-    this.api.createStoryboard(this.script().id, sectionKey, 'short', this.style(), this.inkLook()).subscribe({
+    this.api.createStoryboard(this.script().id, sectionKey, 'short', this.style(), this.inkLook(), this.captionMode()).subscribe({
       next: (board) => {
         this.starting.set(null);
         this.store.refresh();

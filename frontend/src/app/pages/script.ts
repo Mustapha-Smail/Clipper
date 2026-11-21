@@ -6,7 +6,7 @@ import { AgoPipe } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
 import {
   ClaimVerdict, HoldRole, Script, ScriptClaim, ScriptSection, StoryMap, StoryMapBeat, StoryMapEdit, StoryPurpose,
-  StoryTemplate,
+  StoryShape, StoryTemplate,
 } from '../core/models';
 import { ThemesStore } from '../core/themes-store';
 import { Toasts } from '../core/toast';
@@ -66,6 +66,10 @@ export class ScriptPage {
   ];
   protected readonly storyPurposes: StoryPurpose[] = [
     'question', 'evidence', 'answer', 'twist', 'payoff', 'callback',
+  ];
+  protected readonly storyShapes: { value: StoryShape; label: string }[] = [
+    { value: 'parallel', label: 'Parallel lanes' }, { value: 'explain', label: 'Explain' },
+    { value: 'scorecard', label: 'Scorecard' }, { value: 'investigation', label: 'Investigation' },
   ];
   protected readonly verdictLabels: Record<ClaimVerdict, string> = {
     supported: 'Supported', contradicted: 'Contradicted', unclear: 'Unclear', joke: 'Joke',
@@ -426,6 +430,14 @@ export class ScriptPage {
     this.api.updateScript(this.id, { target_minutes: minutes }).subscribe({
       next: (updated) => this.script.set(updated),
       error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected setStoryShape(value: StoryShape | ''): void {
+    if (value === this.script()?.story_shape) return;
+    this.api.updateScript(this.id, { story_shape: value || null }).subscribe({
+      next: (updated) => { this.script.set(updated); this.toasts.ok('Story shape saved'); },
+      error: (err) => this.toasts.error(errorMessage(err)),
     });
   }
 

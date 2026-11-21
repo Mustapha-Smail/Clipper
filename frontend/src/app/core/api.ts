@@ -2,8 +2,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
-  ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, BufferChannel, Campaign, CampaignPatch, Chapters, Clip, ClipListItem,
-  ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
+  ActivityEvent, AiModels, AppSettings, ArchivePhoto, Asset, BufferChannel, Campaign, CampaignPatch, CaptionMode, Chapters, Clip, ClipListItem,
+  ClipFormat, ClipStatus, CostOf, CostReport, ExportInfo, Idea, IdeaLineage, IdeaPatch, Job, JobEvent, Look, MomentInput, MusicFound,
   MusicSuggestion, MusicTrack, NewPost, NewVideo, Place, Post, PostingStatus, PublishCheck, Script, ScriptPatch, ScriptSection, ScriptSummary,
   SettingsBundle, StoryScene, StoryStyle, Storyboard, StoryboardListItem, StoryboardSummary, SubtitleMode,
   StoryMapEdit, SystemStatus, Theme, ThemeBoard, ThemeContents, ThemeLearning, ThemePatch, PromptInfo, ThumbnailEdit, UndoResult, UsageReport, VideoDetail, VideoSummary, VoiceOptions, VoiceTake, YoutubeStatus, YoutubeText,
@@ -121,8 +121,8 @@ export class Api {
   suggestThemes(hint: string): Observable<{ theme: string; why: string; example: string }[]> {
     return this.http.post<{ theme: string; why: string; example: string }[]>(`${BASE}/ideas/themes`, { hint });
   }
-  addIdea(text: string, themeId: number | null): Observable<Idea> {
-    return this.http.post<Idea>(`${BASE}/ideas`, { text, theme_id: themeId });
+  addIdea(text: string, themeId: number | null, form: 'long' | 'short' | 'micro_short' = 'long', storyShape: string | null = null): Observable<Idea> {
+    return this.http.post<Idea>(`${BASE}/ideas`, { text, theme_id: themeId, form, story_shape: storyShape });
   }
 
   // Themes (v2): the home of the work, from idea to published video
@@ -200,13 +200,23 @@ export class Api {
   updateIdea(id: number, patch: IdeaPatch): Observable<Idea> {
     return this.http.patch<Idea>(`${BASE}/ideas/${id}`, patch);
   }
+  conceptTest(id: number): Observable<Idea> {
+    return this.http.post<Idea>(`${BASE}/ideas/${id}/concept-test`, {});
+  }
+  promoteIdea(id: number): Observable<Idea> {
+    return this.http.post<Idea>(`${BASE}/ideas/${id}/promote`, {});
+  }
+  ideaLineage(id: number): Observable<IdeaLineage> {
+    return this.http.get<IdeaLineage>(`${BASE}/ideas/${id}/lineage`);
+  }
   deleteIdea(id: number): Observable<void> {
     return this.http.delete<void>(`${BASE}/ideas/${id}`);
   }
 
   // Studio scripts
-  startScript(ideaId: number, video: 'long' | 'short', length: number): Observable<Script> {
-    const body = video === 'short' ? { video, target_seconds: length } : { video, target_minutes: length };
+  startScript(ideaId: number, form: 'long' | 'short' | 'micro_short', length: number, storyShape: string | null = null): Observable<Script> {
+    const body = form === 'long' ? { form, target_minutes: length, story_shape: storyShape } :
+      { form, target_seconds: length, story_shape: storyShape };
     return this.http.post<Script>(`${BASE}/ideas/${ideaId}/script`, body);
   }
   scripts(): Observable<ScriptSummary[]> {
@@ -285,9 +295,9 @@ export class Api {
 
   // Studio storyboards and props
   createStoryboard(scriptId: number, sectionKey: string | null, format: 'short' | 'long' = 'short',
-                   style: StoryStyle = 'ink', look: Look = 'ink'): Observable<Storyboard> {
+                   style: StoryStyle = 'ink', look: Look = 'ink', captionMode: 'default' | 'on' | 'off' = 'default'): Observable<Storyboard> {
     return this.http.post<Storyboard>(`${BASE}/scripts/${scriptId}/storyboards`,
-                                      { format, section_key: sectionKey, style, look });
+                                      { format, section_key: sectionKey, style, look, caption_mode: captionMode });
   }
   storyboards(scriptId: number): Observable<StoryboardSummary[]> {
     return this.http.get<StoryboardSummary[]>(`${BASE}/scripts/${scriptId}/storyboards`);
@@ -318,6 +328,9 @@ export class Api {
   }
   setLook(id: number, look: Look): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { look });
+  }
+  setCaptionMode(id: number, captionMode: CaptionMode): Observable<Storyboard> {
+    return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { caption_mode: captionMode });
   }
   publishCheck(id: number): Observable<PublishCheck> {
     return this.http.get<PublishCheck>(`${BASE}/storyboards/${id}/publish-check`);

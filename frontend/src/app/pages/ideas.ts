@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AgoPipe, elapsed } from '../core/format';
 import { JobsStore } from '../core/jobs-store';
-import { AUDIENCES, AppSettings, Audience, Idea, IdeaPatch, IdeaStatus, IdeaVideo, Job, ProvenExample } from '../core/models';
+import { AUDIENCES, AppSettings, Audience, Idea, IdeaForm, IdeaLineage, IdeaPatch, IdeaStatus, IdeaVideo, Job, ProvenExample, StoryShape } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
 import { ThemesStore } from '../core/themes-store';
@@ -102,6 +102,17 @@ export class IdeasPage {
   /** Ideas being checked right now, and the progress of a "check all" run. */
   protected readonly checking = signal<Set<number>>(new Set());
   protected readonly batch = signal<{ done: number; total: number } | null>(null);
+  protected readonly lineage = signal<IdeaLineage | null>(null);
+  protected readonly forms: { value: IdeaForm; label: string }[] = [
+    { value: 'long', label: 'Long video' }, { value: 'short', label: 'Narrated Short' },
+    { value: 'micro_short', label: 'Micro concept test' },
+  ];
+  protected readonly storyShapes: { value: StoryShape; label: string }[] = [
+    { value: 'parallel', label: 'Parallel: same start, two outcomes' },
+    { value: 'explain', label: 'Explain: mechanism and payoff' },
+    { value: 'scorecard', label: 'Scorecard: consistent criteria' },
+    { value: 'investigation', label: 'Investigation: competing explanations' },
+  ];
 
   /** '' shows every theme. */
   protected readonly themeFilter = signal('');
@@ -326,7 +337,7 @@ export class IdeasPage {
   }
 
   protected suggestedSeconds(idea: Idea): number {
-    return idea.length?.seconds ?? 50;
+    return idea.length?.seconds ?? (this.ideaForm(idea) === 'micro_short' ? 15 : 50);
   }
 
   /** A long video (with Shorts cut from its sections), or Shorts only. */
@@ -334,16 +345,57 @@ export class IdeasPage {
     if (idea.video !== video) this.patch(idea, { video });
   }
 
+  protected ideaForm(idea: Idea): IdeaForm {
+    return idea.form ?? (idea.video === 'short' ? 'short' : 'long');
+  }
+
+  protected formLabel(form: IdeaForm): string {
+    return this.forms.find((option) => option.value === form)?.label ?? form;
+  }
+
+  protected shapeLabel(shape: StoryShape | null): string {
+    return this.storyShapes.find((option) => option.value === shape)?.label ?? 'Shape not set';
+  }
+
+  protected setForm(idea: Idea, form: IdeaForm): void {
+    if (this.ideaForm(idea) !== form) this.patch(idea, { form });
+  }
+
+  protected setShape(idea: Idea, shape: StoryShape | ''): void {
+    const value = shape || null;
+    if (idea.story_shape !== value) this.patch(idea, { story_shape: value });
+  }
+
+  protected conceptTest(idea: Idea): void {
+    this.api.conceptTest(idea.id).subscribe({
+      next: (child) => { this.toasts.ok('Concept test created.'); this.ideas.update((items) => items ? [...items, child] : items); },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected promote(idea: Idea): void {
+    this.api.promoteIdea(idea.id).subscribe({
+      next: (child) => { this.toasts.ok('Long-form idea created. Research will start fresh.'); this.ideas.update((items) => items ? [...items, child] : items); },
+      error: (err) => this.toasts.error(err),
+    });
+  }
+
+  protected showLineage(idea: Idea): void {
+    this.api.ideaLineage(idea.id).subscribe({ next: (value) => this.lineage.set(value), error: (err) => this.toasts.error(err) });
+  }
+
   /** Research and write the script for an approved idea, then open it. */
   protected writeScript(idea: Idea, length: number): void {
-    const short = idea.video === 'short';
-    const [low, high] = short ? [15, 90] : [1, 30];
+    const form = this.ideaForm(idea);
+    const short = form !== 'long';
+    const [low, high] = form === 'micro_short' ? [12, 18] : short ? [15, 90] : [1, 30];
     if (!Number.isInteger(length) || length < low || length > high) {
-      this.toasts.error(short ? 'Choose a length between 15 and 90 seconds' : 'Choose a length between 1 and 30 minutes');
+      this.toasts.error(form === 'micro_short' ? 'Choose a concept test between 12 and 18 seconds' :
+        short ? 'Choose a length between 15 and 90 seconds' : 'Choose a length between 1 and 30 minutes');
       return;
     }
     this.starting.set(idea.id);
-    this.api.startScript(idea.id, idea.video, length).subscribe({
+    this.api.startScript(idea.id, form, length, idea.story_shape).subscribe({
       next: (script) => {
         this.starting.set(null);
         this.store.refresh();

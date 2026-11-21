@@ -302,6 +302,29 @@ class IdeaPatch(BaseModel):
     theme_id: int | None = None
 
 
+class LineageIdea(Model):
+    """One idea in a premise lineage, with only evidence already in Clipper."""
+
+    id: int
+    title: str
+    form: IdeaForm
+    story_shape: StoryShape | None
+    parent_idea_id: int | None
+    lineage_kind: Literal["root", "concept_test", "promotion"]
+    status: IdeaStatus
+    publication_state: Literal["idea", "in_progress", "approved", "published"]
+    script_id: int | None
+    storyboard_ids: list[int] = Field(default_factory=list)
+    metric_evidence: list[dict] = Field(default_factory=list)
+
+
+class IdeaLineage(Model):
+    idea: LineageIdea
+    root: LineageIdea
+    ancestors: list[LineageIdea] = Field(default_factory=list)
+    descendants: list[LineageIdea] = Field(default_factory=list)
+
+
 # --- videos ---------------------------------------------------------------------
 
 class CostLine(BaseModel):
@@ -672,7 +695,8 @@ class ScriptCreate(BaseModel):
     form: IdeaForm | None = Field(
         None, description="Defaults to the idea's form; micro_short remains a compatibility Short")
     story_shape: StoryShape | None = Field(None, description="Defaults to the idea's editorial story shape")
-    target_seconds: int | None = Field(None, ge=15, le=90, description="For a Short; defaults to 50")
+    target_seconds: int | None = Field(
+        None, ge=12, le=90, description="For a Short; micro-Shorts require 12–18 seconds, others 15–90")
 
 
 class ScriptPatch(BaseModel):

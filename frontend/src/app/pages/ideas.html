@@ -168,6 +168,7 @@
                 <h3>{{ idea.title }}</h3>
                 <p class="small muted">
                   {{ idea.format === 'list' ? 'List video, one chapter per item' : 'Single topic' }}
+                  · {{ formLabel(ideaForm(idea)) }} · {{ shapeLabel(idea.story_shape) }}
                   · {{ idea.origin === 'you' ? 'your idea' : 'suggested' }} {{ idea.created_at | ago }}
 
                 </p>
@@ -217,7 +218,7 @@
                 <strong>Suggested: {{ len.video === 'short' ? 'a Short of about ' + len.seconds + ' s' : 'about ' + len.minutes + ' min' }}.</strong>
                 <span class="muted">{{ len.reason }}</span>
                 @if (len.video !== idea.video && !idea.script_id) {
-                  <button class="sm quiet" (click)="setVideo(idea, len.video)">
+                  <button class="sm quiet" (click)="setForm(idea, len.video === 'short' ? 'short' : 'long')">
                     {{ len.video === 'short' ? 'Make it Shorts only' : 'Make it a long video' }}</button>
                 }
               </p>
@@ -240,16 +241,23 @@
               @if (idea.script_id) {
                 <a class="btn sm primary" [routerLink]="['/scripts', idea.script_id]">Open the script</a>
               } @else if (idea.status === 'approved') {
-                <div class="kind" role="group" aria-label="Kind of video">
-                  <button class="sm" [class.on]="idea.video === 'long'" (click)="setVideo(idea, 'long')">Long video</button>
-                  <button class="sm" [class.on]="idea.video === 'short'" (click)="setVideo(idea, 'short')">Shorts only</button>
-                </div>
-                @if (idea.video === 'short') {
+                <label class="field compact"><span>Form</span>
+                  <select [ngModel]="ideaForm(idea)" (ngModelChange)="setForm(idea, $event)">
+                    @for (f of forms; track f.value) { <option [value]="f.value">{{ f.label }}</option> }
+                  </select>
+                </label>
+                <label class="field compact"><span>Story shape</span>
+                  <select [ngModel]="idea.story_shape || ''" (ngModelChange)="setShape(idea, $event)">
+                    <option value="">Default</option>
+                    @for (shape of storyShapes; track shape.value) { <option [value]="shape.value">{{ shape.label }}</option> }
+                  </select>
+                </label>
+                @if (ideaForm(idea) !== 'long') {
                   <label class="length small">Length
-                    <input #secs type="number" min="15" max="90" step="5" [value]="suggestedSeconds(idea)"
+                    <input #secs type="number" [min]="ideaForm(idea) === 'micro_short' ? 12 : 15" [max]="ideaForm(idea) === 'micro_short' ? 18 : 90" step="5" [value]="suggestedSeconds(idea)"
                            aria-label="Target length in seconds" /> s</label>
                   <button class="sm primary" (click)="writeScript(idea, +secs.value)" [disabled]="starting() === idea.id">
-                    {{ starting() === idea.id ? 'Starting…' : 'Write the Short' }}</button>
+                    {{ starting() === idea.id ? 'Starting…' : ideaForm(idea) === 'micro_short' ? 'Write concept test' : 'Write the Short' }}</button>
                 } @else {
                   <label class="length small">Length
                     <input #mins type="number" min="1" max="30" [value]="suggestedMinutes(idea)"
@@ -257,8 +265,30 @@
                   <button class="sm primary" (click)="writeScript(idea, +mins.value)" [disabled]="starting() === idea.id">
                     {{ starting() === idea.id ? 'Starting…' : 'Write the script' }}</button>
                 }
+                @if (ideaForm(idea) !== 'micro_short') {
+                  <button class="sm quiet" (click)="conceptTest(idea)">Make concept test</button>
+                } @else {
+                  <button class="sm quiet" (click)="promote(idea)">Promote to long video</button>
+                }
               }
+              <button class="sm quiet" (click)="showLineage(idea)">View lineage</button>
             </div>
+
+            @if (lineage(); as chain) {
+              @if (chain.idea.id === idea.id) {
+                <div class="notice small lineage">
+                  <strong>Lineage:</strong> root “{{ chain.root.title }}” · {{ chain.ancestors.length }} ancestor{{ chain.ancestors.length === 1 ? '' : 's' }} ·
+                  {{ chain.descendants.length }} descendant{{ chain.descendants.length === 1 ? '' : 's' }}.
+                  @for (desc of chain.descendants; track desc.id) {
+                    <span> {{ desc.title }} <span class="muted">({{ desc.form }}, {{ desc.publication_state }})</span></span>
+                    @if (desc.script_id) { <a [routerLink]="['/scripts', desc.script_id]">script</a> }
+                    @for (boardId of desc.storyboard_ids; track boardId) {
+                      <a [routerLink]="['/storyboards', boardId]">video {{ boardId }}</a>
+                    }
+                  }
+                </div>
+              }
+            }
 
             <details class="fold small">
               <summary class="muted">Beats, competition and score</summary>
