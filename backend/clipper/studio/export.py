@@ -43,8 +43,11 @@ def folder_for(board: Storyboard, settings: Settings) -> Path:
     return settings_mod.clips_dir(settings) / "studio" / f"{slug(board.title) or board.format}-{board.id}"
 
 
-def youtube_file(text: dict, thumbnails: list[dict] | None = None) -> str:
-    out = (f"TITLE\n{text.get('title', '')}\n\nDESCRIPTION\n{text.get('description', '')}\n\n"
+def youtube_file(text: dict, thumbnails: list[dict] | None = None, sound_credits: str = "") -> str:
+    description = text.get("description", "")
+    if sound_credits.strip() and sound_credits.strip() not in description:
+        description = f"{description.rstrip()}\n\nCredits\n{sound_credits.strip()}"
+    out = (f"TITLE\n{text.get('title', '')}\n\nDESCRIPTION\n{description}\n\n"
            f"TAGS\n{', '.join(text.get('tags', []))}\n")
     if thumbnails:
         titles = text.get("titles") or [text.get("title", "")]
@@ -102,7 +105,10 @@ def run(db: Session, board: Storyboard, settings: Settings) -> dict:
             _copy(Path(option["path"]), folder / files[-1])
         if board.youtube:
             files.append("youtube.txt")
-            (folder / "youtube.txt").write_text(youtube_file(board.youtube, thumbs), encoding="utf-8")
+            from . import publish
+
+            (folder / "youtube.txt").write_text(
+                youtube_file(board.youtube, thumbs, publish.sound_credits(db, board)), encoding="utf-8")
         files.append("authorship.txt")
         (folder / "authorship.txt").write_text(compliance.authorship_text(db, board), encoding="utf-8")
     except OSError as err:

@@ -14,11 +14,14 @@ from clipper.studio import openverse, sfx
 
 def test_sound_migration_round_trip(app_env):
     assert "studio_sounds" in inspect(db_mod.get_engine()).get_table_names()
+    assert "storyboard_sounds" in inspect(db_mod.get_engine()).get_table_names()
     command.downgrade(db_mod._alembic_config(), "9d4a7c6e5b10")
     assert "studio_sounds" not in inspect(db_mod.get_engine()).get_table_names()
+    assert "storyboard_sounds" not in inspect(db_mod.get_engine()).get_table_names()
     command.upgrade(db_mod._alembic_config(), "head")
     columns = {column["name"] for column in inspect(db_mod.get_engine()).get_columns("studio_sounds")}
     assert {"kind", "provider", "provider_id", "landing_url", "license", "checksum", "approved_at"} <= columns
+    assert "storyboard_sounds" in inspect(db_mod.get_engine()).get_table_names()
 
 
 def test_only_exact_cc0_and_by_are_safe():

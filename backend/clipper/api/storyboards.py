@@ -4,18 +4,32 @@ import io
 import logging
 import shutil
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from PIL import Image
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import config, jobs, llm, posting
 from .. import settings as settings_mod
 from ..db import get_db
-from ..db.models import Job, Script, Storyboard, StudioAsset, StudioMusic, StudioPhoto, StudioPlace, VoiceTake, utcnow
+from ..db.models import (
+    Job,
+    Script,
+    Storyboard,
+    StoryboardSound,
+    StudioAsset,
+    StudioMusic,
+    StudioPhoto,
+    StudioPlace,
+    StudioSound,
+    VoiceTake,
+    utcnow,
+)
 from ..studio import (
     animate,
     art,
@@ -28,6 +42,7 @@ from ..studio import (
     music_search,
     publish,
     retention,
+    sfx,
     sound,
     youtube,
 )
@@ -910,3 +925,109 @@ def delete_music(music_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "No such music track")
     Path(track.path).unlink(missing_ok=True)
     db.delete(track)
+
+
+# --- licensed sound effects ---------------------------------------------------------------
+
+def _sound_view(row: StudioSound) -> dict:
+    value = {name: getattr(row, name) for name in (
+        "id", "kind", "name", "duration", "gain", "enabled", "provider", "provider_id",
+        "upstream_id", "creator", "creator_url", "landing_url", "license", "license_version", "license_url",
+        "attribution", "checksum", "acquired_at", "approved_at", "rejected_at", "rejection_note")}
+    return {**value, "cached": bool(row.path and Path(row.path).is_file())}
+
+
+@router.get("/sounds", response_model=list[s.SoundOut])
+def list_sounds(db: Session = Depends(get_db)):
+    return [_sound_view(row) for row in db.scalars(select(StudioSound).order_by(StudioSound.kind, StudioSound.id))]
+
+
+@router.get("/sounds/search", response_model=s.SoundSearch)
+def search_sounds(q: str = Query(min_length=2, max_length=200),
+                  provider: Literal["openverse", "wikimedia"] = "openverse",
+                  page: int = Query(1, ge=1, le=50)):
+    try:
+        if provider == "openverse":
+            return sfx.search_openverse(q, page)
+        if provider == "wikimedia":
+            return sfx.search_commons(q)
+    except (RuntimeError, ValueError) as err:
+        raise HTTPException(502, str(err)) from err
+
+
+@router.post("/sounds/import", response_model=s.SoundOut, status_code=201)
+def import_sound(body: s.SoundImport, db: Session = Depends(get_db)):
+    try:
+        # Metadata is always fetched again through the provider adapter. A
+        # browser cannot self-assert a licence or substitute an arbitrary URL.
+        item = sfx.candidate(body.provider, body.provider_id)
+        row = sfx.import_sound(db, item, body.kind)
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from err
+    except (RuntimeError, OSError) as err:
+        raise HTTPException(502, str(err)) from err
+    return _sound_view(row)
+
+
+@router.post("/sounds/{sound_id}/approve", response_model=s.SoundOut)
+def approve_sound(sound_id: int, db: Session = Depends(get_db)):
+    row = db.get(StudioSound, sound_id)
+    if row is None:
+        raise HTTPException(404, "No such sound")
+    try:
+        sfx.approve(row)
+    except ValueError as err:
+        raise HTTPException(409, str(err)) from err
+    return _sound_view(row)
+
+
+@router.post("/sounds/{sound_id}/reject", response_model=s.SoundOut)
+def reject_sound(sound_id: int, body: s.SoundApproval | None = None, db: Session = Depends(get_db)):
+    row = db.get(StudioSound, sound_id)
+    if row is None:
+        raise HTTPException(404, "No such sound")
+    sfx.reject(row, (body or s.SoundApproval()).note)
+    return _sound_view(row)
+
+
+def _storyboard_sound_view(row: StoryboardSound) -> dict:
+    return {"id": row.id, "storyboard_id": row.storyboard_id, "sound_id": row.sound_id, "rule": row.rule,
+            "at": row.at, "gain": row.gain, "created_at": row.created_at, "sound": _sound_view(row.sound)}
+
+
+@router.get("/storyboards/{storyboard_id}/sounds", response_model=list[s.StoryboardSoundOut])
+def list_storyboard_sounds(board: Storyboard = Depends(get_board)):
+    return [_storyboard_sound_view(row) for row in board.sound_assignments]
+
+
+@router.post("/storyboards/{storyboard_id}/sounds", response_model=s.StoryboardSoundOut, status_code=201)
+def assign_storyboard_sound(body: s.StoryboardSoundAssign, board: Storyboard = Depends(get_board),
+                            db: Session = Depends(get_db)):
+    _idle(db, board)
+    row = db.get(StudioSound, body.sound_id)
+    if row is None:
+        raise HTTPException(404, "No such sound")
+    if not sfx.usable(row):
+        raise HTTPException(409, "Approve a cached local sound before assigning it")
+    duration = max(0.0, board.end - board.start)
+    if duration and body.at >= duration:
+        raise HTTPException(422, "The sound cue must be before the end of the storyboard")
+    cue = StoryboardSound(storyboard_id=board.id, sound_id=row.id, rule=body.rule.strip(), at=body.at, gain=body.gain)
+    db.add(cue)
+    try:
+        db.flush()
+    except IntegrityError as err:
+        db.rollback()
+        raise HTTPException(409, "A sound cue already exists at that time and rule") from err
+    return _storyboard_sound_view(cue)
+
+
+@router.delete("/storyboards/{storyboard_id}/sounds/{assignment_id}", status_code=204)
+def delete_storyboard_sound(assignment_id: int, board: Storyboard = Depends(get_board),
+                            db: Session = Depends(get_db)):
+    _idle(db, board)
+    cue = db.scalar(select(StoryboardSound).where(StoryboardSound.id == assignment_id,
+                                                  StoryboardSound.storyboard_id == board.id))
+    if cue is None:
+        raise HTTPException(404, "No such sound cue")
+    db.delete(cue)

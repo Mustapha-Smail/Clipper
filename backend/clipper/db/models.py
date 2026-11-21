@@ -401,6 +401,31 @@ class Storyboard(Base):
     script: Mapped[Script] = relationship(back_populates="storyboards")
     music: Mapped["StudioMusic | None"] = relationship()
     take: Mapped["VoiceTake | None"] = relationship()
+    sound_assignments: Mapped[list["StoryboardSound"]] = relationship(
+        back_populates="storyboard", cascade="all, delete-orphan", order_by="StoryboardSound.at")
+
+
+class StoryboardSound(Base):
+    """A creator-selected local effect cue for one storyboard.
+
+    ``sound_id`` is intentionally a historical selection, not a live provider
+    reference: changing or deleting a library candidate never rewrites a cue.
+    """
+
+    __tablename__ = "storyboard_sounds"
+    __table_args__ = (UniqueConstraint("storyboard_id", "at", "rule", name="ux_storyboard_sounds_cue"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    storyboard_id: Mapped[int] = mapped_column(
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_storyboard_sounds_storyboard_id"), index=True)
+    sound_id: Mapped[int] = mapped_column(
+        ForeignKey("studio_sounds.id", ondelete="RESTRICT", name="fk_storyboard_sounds_sound_id"), index=True)
+    rule: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    at: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    gain: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    storyboard: Mapped[Storyboard] = relationship(back_populates="sound_assignments")
+    sound: Mapped[StudioSound] = relationship()
 
 
 class VideoAnalytics(Base):

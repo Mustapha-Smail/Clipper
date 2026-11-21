@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm, prompts
-from ..db.models import Storyboard, StudioPhoto, utcnow
+from ..db.models import Storyboard, StudioPhoto, StudioSound, utcnow
 from . import film, sound
 
 # YouTube's limits (Studio refuses more).
@@ -36,14 +36,27 @@ SYSTEM = prompts.Prompt("youtube_text")
 
 
 def credits(db: Session, board: Storyboard) -> str:
-    """Every credit line the description needs: archive pictures, then music."""
+    """Every credit line the description needs: archive pictures, music, then local SFX."""
     music = board.music
     music_line = (music.attribution or f"Music: {music.name}") if music and music.license else ""
     queries = film.photo_searches(board.style, board.scenes)
     found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
         if queries else {}
-    return "\n".join([*(f"Picture: {_credit(found[q])}" for q in queries if q in found),
-                      *([music_line] if music_line else [])])
+    lines = [*(f"Picture: {_credit(found[q])}" for q in queries if q in found),
+             *([music_line] if music_line else [])]
+    lines.extend(sound_credits(db, board).splitlines())
+    return "\n".join(lines)
+
+
+def sound_credits(db: Session, board: Storyboard) -> str:
+    """Credits for licensed effects actually mixed into the successful render."""
+    from . import sfx
+
+    ids = list(dict.fromkeys(((board.render_meta or {}).get("sound_effects") or {}).get("licensed_ids") or []))
+    if not ids:
+        return ""
+    found = {row.id: row for row in db.scalars(select(StudioSound).where(StudioSound.id.in_(ids)))}
+    return "\n".join(sfx.credit(found[sound_id]) for sound_id in ids if sound_id in found)
 
 
 def _credit(photo: StudioPhoto) -> str:
