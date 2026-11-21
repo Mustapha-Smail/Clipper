@@ -5,7 +5,8 @@ shares of the audience and keeps the one watched most. Three options that look
 alike teach it nothing, so each one takes a different angle:
 
   A  reaction  a character with a strong expression next to the key thing
-  B  stakes    the contrast or the number the video turns on
+  B  contrast  parallel/scorecard: one readable before/after or A/B difference
+     stakes    legacy/other shapes: the consequence or number the video turns on
   C  mystery   the key thing pointed at or circled, little or no text
 
 The model plans them (`llm` task `thumbnail`, writing tier) and answers with a
@@ -52,10 +53,13 @@ log = logging.getLogger("clipper.studio")
 KEYS = ("A", "B", "C")
 ANGLES = {
     "reaction": "a character with a strong, readable expression next to the one thing the video is about",
+    "contrast": "the before and after, opposing sides, or the one number the video turns on",
+    # Read old plans and AI answers written before contrast became canonical.
     "stakes": "the contrast, the before and after, or the one number the video turns on",
     "mystery": "the key thing alone, pointed at or circled, with few words or none: makes the viewer ask why",
 }
-ORDER = tuple(ANGLES)                 # A, B, C
+ORDER = ("reaction", "contrast", "mystery")  # parallel/scorecard A, B, C
+LEGACY_ORDER = ("reaction", "stakes", "mystery")
 W, H = 1920, 1080                     # YouTube asks for 16:9, at least 1280x720
 SMALL_W, SMALL_H = 168, 94            # the smallest size YouTube shows (a phone's list of videos)
 MAX_BYTES = 2 * 1024 * 1024           # the upload limit on every device
@@ -86,7 +90,7 @@ SETTLE = 4.0                          # seconds after the last line: entrances d
 
 
 class AiThumbnail(BaseModel):
-    angle: Literal["reaction", "stakes", "mystery"]
+    angle: Literal["reaction", "contrast", "stakes", "mystery"]
     headline: str = Field(description="At most four words, or empty. Put *stars* around the one word to colour")
     title: int = Field(description="The title option (1, 2 or 3) this thumbnail goes with")
     side: Literal["left", "right"] = Field(description="Where the headline goes; the picture takes the other side")
@@ -364,8 +368,21 @@ def headline_layer(headline: str, side: str, accent: str, plate: bool) -> tuple[
 def compose(picture: Image.Image, option: dict) -> tuple[Image.Image, dict]:
     """The picture with its headline: the final thumbnail at 1920x1080."""
     picture = ImageOps.fit(picture.convert("RGB"), (W, H), Image.LANCZOS)
-    layer, placed = headline_layer(option.get("headline", ""), option.get("side", "left"),
-                                   option.get("accent", "gold"), plate=option.get("mode") == "frame")
+    headline = option.get("headline", "")
+    side = option.get("side", "left")
+    # Contrast thumbnails have a deliberately legible two-zone treatment: a dark text
+    # panel and a clean picture panel. It is deterministic and remains readable at phone size.
+    if option.get("angle") == "contrast" and headline.strip():
+        zone, _ = _zones(side, headline)
+        panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(panel)
+        pd.rectangle(zone, fill=(*INK_RGB, 238))
+        x = zone[2] if side == "left" else zone[0]
+        pd.rectangle((x - 8, 0, x + 8, H), fill=(*ACCENTS.get(option.get("accent", "gold"), ACCENTS["gold"]), 255))
+        picture = Image.alpha_composite(picture.convert("RGBA"), panel).convert("RGB")
+    layer, placed = headline_layer(headline, side,
+                                   option.get("accent", "gold"),
+                                   plate=option.get("mode") == "frame" and option.get("angle") != "contrast")
     out = Image.alpha_composite(picture.convert("RGBA"), layer).convert("RGB")
     return out, placed
 
@@ -493,6 +510,7 @@ class Kit:
         with session_scope() as db:
             board = db.get(Storyboard, storyboard_id)
             self.title = board.title
+            self.story_shape = getattr(board, "story_shape", None)
             self.titles = list((board.youtube or {}).get("titles") or [board.title])
             self.narration = _narration(board)
             self.audience = _audience()
@@ -551,10 +569,26 @@ def system(kit: Kit, count: int) -> str:
                                      expressions=", ".join(beats.EXPRESSIONS))
     else:
         picture = FRAME_PICTURE.format(shots=kit.shot_list())
-    many = ("Plan three thumbnails, one per angle, in this order: reaction, stakes, mystery. They must look "
+    wanted = angle_order(getattr(kit, "story_shape", None))
+    many = (f"Plan exactly three thumbnails, one per angle, in this order: {', '.join(wanted)}. They must look "
             "clearly different from each other, or the test finds no winner.") if count == 3 else \
         "Plan one thumbnail, for the angle asked."
     return SYSTEM.format(count=many, audience=kit.audience, picture=picture, **ANGLES)
+
+
+def canonical_angle(angle: str) -> str:
+    """Map the pre-contrast name to the canonical angle without breaking old JSON."""
+    return "contrast" if angle == "stakes" else angle
+
+
+def angle_order(story_shape: str | None = None) -> tuple[str, str, str]:
+    """Use contrast for comparison shapes and preserve the established policy otherwise."""
+    return ORDER if story_shape in {"parallel", "scorecard"} else LEGACY_ORDER
+
+
+def matches_angle(candidate: str, wanted: str) -> bool:
+    """Accept an old stakes answer as contrast only when contrast was requested."""
+    return candidate == wanted or (wanted == "contrast" and candidate == "stakes")
 
 
 def _content(kit: Kit, extra: str = "") -> str:
@@ -599,7 +633,7 @@ def by_rules(kit: Kit) -> list[dict]:
     while len(picks) < 3:
         picks.append(picks[-1] if picks else 0)
     out = []
-    for key, angle, i in zip(KEYS, ORDER, picks, strict=True):
+    for key, angle, i in zip(KEYS, angle_order(getattr(kit, "story_shape", None)), picks, strict=True):
         out.append({"key": key, "angle": angle, "headline": "", "accent": "gold", "side": "left", "title": 1,
                     "why": "Picked by rules: the busiest shot of this part of the video", "by": "rules",
                     "title_text": kit.titles[0],
@@ -701,12 +735,13 @@ def run(storyboard_id: int, settings: Settings, rep: Reporter, only: str | None 
         else:
             answer = llm.ask("thumbnail", system(kit, 3), _content(kit), AiThumbnails, effort="medium")
             ideas = list(answer.thumbnails)
-            for angle in ORDER:      # one per angle, in order; missing angles take whatever is left
-                if not any(i.angle == angle for i in ideas):
+            for angle in angle_order(getattr(kit, "story_shape", None)):      # one per angle, in order
+                if not any(matches_angle(i.angle, angle) for i in ideas):
                     rep.warn(f"The AI planned no {angle} thumbnail")
-            ordered = [next((i for i in ideas if i.angle == a), None) for a in ORDER]
+            ordered = [next((i for i in ideas if matches_angle(i.angle, a)), None)
+                       for a in angle_order(getattr(kit, "story_shape", None))]
             spare = [i for i in ideas if i not in ordered]
-            for key, angle, idea in zip(KEYS, ORDER, ordered, strict=True):
+            for key, angle, idea in zip(KEYS, angle_order(getattr(kit, "story_shape", None)), ordered, strict=True):
                 idea = idea or (spare.pop(0) if spare else None)
                 if idea is None:
                     raise RuntimeError("The AI planned fewer than three thumbnails")
@@ -781,7 +816,33 @@ def run(storyboard_id: int, settings: Settings, rep: Reporter, only: str | None 
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         board.thumbnails = {"options": options, "made_at": utcnow().isoformat(),
-                            "by": by if not only else stored.get("by", "ai")}
+                            "by": by if not only else stored.get("by", "ai"),
+                            # These are deliberately separate: neither is inferred from CTR.
+                            "selected_key": stored.get("selected_key"),
+                            "winner_key": stored.get("winner_key")}
+
+
+_UNSET = object()
+
+
+def record_result(storyboard_id: int, *, selected_key: str | None | object = _UNSET,
+                  winner_key: str | None | object = _UNSET) -> dict:
+    """Record creator choice and manually observed A/B winner, never analytics inference."""
+    if selected_key is not _UNSET and selected_key is not None and selected_key not in KEYS:
+        raise KeyError(selected_key)
+    if winner_key is not _UNSET and winner_key is not None and winner_key not in KEYS:
+        raise KeyError(winner_key)
+    with session_scope() as db:
+        board = db.get(Storyboard, storyboard_id)
+        value = dict(board.thumbnails or {})
+        if not value:
+            raise KeyError("thumbnails")
+        if selected_key is not _UNSET:
+            value["selected_key"] = selected_key
+        if winner_key is not _UNSET:
+            value["winner_key"] = winner_key
+        board.thumbnails = value
+        return public(value)
 
 
 def edit(storyboard_id: int, key: str, change: dict, settings: Settings) -> dict:

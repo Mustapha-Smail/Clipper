@@ -877,6 +877,12 @@ class ThumbnailEdit(BaseModel):
     beats: str | None = Field(None, max_length=2000, description="Drawn mode: the picture's beat lines")
 
 
+class ThumbnailResult(BaseModel):
+    """Creator-entered metadata; winner is never calculated from CTR or views."""
+    selected_key: Literal["A", "B", "C"] | None = None
+    winner_key: Literal["A", "B", "C"] | None = None
+
+
 class YoutubeEdit(BaseModel):
     title: str = Field(max_length=300)
     description: str = Field(max_length=20000)

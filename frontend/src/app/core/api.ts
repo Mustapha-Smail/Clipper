@@ -340,6 +340,9 @@ export class Api {
   editThumbnail(id: number, key: string, edit: ThumbnailEdit): Observable<Storyboard> {
     return this.http.put<Storyboard>(`${BASE}/storyboards/${id}/thumbnails/${key}`, edit);
   }
+  recordThumbnailResult(id: number, result: { selected_key?: 'A' | 'B' | 'C' | null; winner_key?: 'A' | 'B' | 'C' | null }): Observable<Storyboard> {
+    return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}/thumbnails/result`, result);
+  }
   thumbnailUrl(id: number, key: string, version: string): string {
     return `${BASE}/storyboards/${id}/thumbnails/${key}.jpg?v=${encodeURIComponent(version)}`;
   }

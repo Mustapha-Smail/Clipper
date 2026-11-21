@@ -97,6 +97,14 @@ def test_the_jpeg_stays_under_youtubes_two_megabytes():
     assert len(thumbnail.jpeg(noise)) <= thumbnail.MAX_BYTES
 
 
+def test_parallel_and_scorecard_replace_stakes_without_changing_other_shapes():
+    assert thumbnail.angle_order("parallel") == ("reaction", "contrast", "mystery")
+    assert thumbnail.angle_order("scorecard") == ("reaction", "contrast", "mystery")
+    assert thumbnail.angle_order("explain") == ("reaction", "stakes", "mystery")
+    assert thumbnail.angle_order(None) == ("reaction", "stakes", "mystery")
+    assert thumbnail.matches_angle("stakes", "contrast")  # tolerate one old model answer
+
+
 def test_the_youtube_file_lists_which_title_goes_with_which_thumbnail():
     text = export.youtube_file({"title": "T1", "titles": ["T1", "T2"], "description": "D", "tags": []},
                                [{"key": "A", "angle": "reaction", "title": 2}])
@@ -193,6 +201,13 @@ def test_three_thumbnails_are_planned_drawn_checked_and_edited(client, script_wi
     assert c["look"]["redrawn"] and c["headline"] == "Cold? *Never*"    # judged unclear: planned once more
     assert all("score" in o["check"] and o["check"]["lines"] for o in thumbs["options"])
     assert "path" not in a
+
+    recorded = client.patch(f"/api/v1/storyboards/{board_id}/thumbnails/result",
+                            json={"selected_key": "B", "winner_key": "C"}).json()["thumbnails"]
+    assert recorded["selected_key"] == "B" and recorded["winner_key"] == "C"
+    cleared = client.patch(f"/api/v1/storyboards/{board_id}/thumbnails/result",
+                           json={"winner_key": None}).json()["thumbnails"]
+    assert cleared["selected_key"] == "B" and cleared["winner_key"] is None
 
     image = client.get(f"/api/v1/storyboards/{board_id}/thumbnails/A.jpg")
     assert image.status_code == 200 and image.headers["content-type"] == "image/jpeg"

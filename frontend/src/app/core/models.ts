@@ -762,7 +762,7 @@ export interface RenderMeta {
   visual_qa: VisualQa;
 }
 
-export type ThumbnailAngle = 'reaction' | 'stakes' | 'mystery';
+export type ThumbnailAngle = 'reaction' | 'contrast' | 'stakes' | 'mystery';
 export type ThumbnailAccent = 'gold' | 'warm' | 'bad' | 'good';
 
 /** One line of a thumbnail's check: what was measured and the points it cost. */
@@ -800,6 +800,9 @@ export interface Thumbnails {
   options: ThumbnailOption[];
   made_at: string;
   by: 'ai' | 'rules';
+  /** Creator choice, distinct from an observed A/B winner. */
+  selected_key?: 'A' | 'B' | 'C' | null;
+  winner_key?: 'A' | 'B' | 'C' | null;
 }
 
 export interface ThumbnailEdit {
