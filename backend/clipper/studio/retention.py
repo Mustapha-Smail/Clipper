@@ -72,14 +72,24 @@ def sweep(settings: Settings, now: datetime | None = None) -> list[int]:
             when = deadline(board, keep) if board is not None else None
             if when is None or when > now:          # approved or rendered again in the meantime
                 continue
-            folder, video = render_dir(board), Path(board.video_path)
+            folder, video = render_dir(board).resolve(), Path(board.video_path).resolve()
+            try:
+                video.relative_to(folder)
+            except ValueError:
+                # A corrupt or legacy database value must never turn retention into an
+                # arbitrary-file deletion primitive. Leave both the row and file alone
+                # so an operator can inspect and repair the unexpected path.
+                log.error(
+                    "refusing to delete a render outside its storyboard folder",
+                    extra={"storyboard_id": board.id, "video_path": str(video), "folder": str(folder)},
+                )
+                continue
             board.video_path, board.review, board.review_at, board.expired_at = None, "pending", None, now
             compliance.record(db, board.script_id, "expired", "app",
                               f"Deleted the render: not approved within {keep} days", storyboard_id=board.id)
         # Files go after the database agrees, so a row never points at a file that is gone.
-        size = _size(folder) + (video.stat().st_size if video.is_file() and folder not in video.parents else 0)
+        size = _size(folder)
         shutil.rmtree(folder, ignore_errors=True)
-        video.unlink(missing_ok=True)
         freed += size
         cleared.append(board_id)
         log.info("unapproved render deleted",

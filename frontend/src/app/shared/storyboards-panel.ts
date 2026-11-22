@@ -39,6 +39,11 @@ import { Toasts } from '../core/toast';
             <optgroup label="The first style">
               <option value="flat">Flat colour: scene by scene</option>
             </optgroup>
+            @if (threeDEnabled()) {
+              <optgroup label="Beta: 3D mechanisms and spatial explainers">
+                <option value="3d">3D explainer</option>
+              </optgroup>
+            }
           </select>
           <small>{{ lookHint() }}</small>
         </label>
@@ -53,6 +58,9 @@ import { Toasts } from '../core/toast';
           </select>
           <small>Shorts default to captions; long videos default to none. Choose explicitly when needed.</small>
         </label>
+        }
+        @if (style() === '3d') {
+          <div class="notice small"><span>Best for mechanisms, construction, spatial change and visible cause and effect. It is not for character-led stories. The plan stays editable as safe, word-numbered scene lines; Blender controls stay out of the editor.</span></div>
         }
         <p class="small muted strategy">Strategy: {{ formLabel(script().form) }} · {{ shapeLabel(script().story_shape) }}</p>
         @if (script().video === 'short') {
@@ -94,7 +102,7 @@ import { Toasts } from '../core/toast';
                 <strong>{{ b.title }}</strong>
                 <span class="small muted">{{ b.format === 'short' ? 'Short' : 'Long video' }} ·
                   {{ formLabel(b.form) }} · {{ shapeLabel(b.story_shape) }} · captions {{ b.caption_mode }} ·
-                  {{ b.style === 'flat' ? 'flat' : lookName(b.look) }} · {{ clock(b.duration) }} ·
+                  {{ styleName(b) }} · {{ clock(b.duration) }} ·
                   {{ b.scene_count }} {{ b.style === 'flat' ? 'scenes' : 'shots' }} · {{ b.created_at | ago }}</span>
                 @if (b.job) {
                   <span class="pill running">{{ b.job.message }}</span>
@@ -191,20 +199,24 @@ export class StoryboardsPanel {
   protected readonly looks = INK_LOOKS;
   protected readonly filmLooks = FILM_LOOKS;
   /** A look of the ink or the film style, or the older flat style. The look can change later; the style cannot. */
-  protected readonly look = signal<Look | 'flat'>('ink');
+  protected readonly look = signal<Look | 'flat' | '3d'>('ink');
   protected readonly captionMode = signal<CaptionMode>('default');
+  /** Off by default so an older API never advertises a renderer it cannot run. */
+  protected readonly threeDEnabled = signal(false);
   protected readonly style = computed<StoryStyle>(() => {
     const look = this.look();
-    return look === 'flat' ? 'flat' : FILM_LOOKS.some((l) => l.value === look) ? 'film' : 'ink';
+    return look === '3d' ? '3d' : look === 'flat' ? 'flat' : FILM_LOOKS.some((l) => l.value === look) ? 'film' : 'ink';
   });
   private inkLook(): Look {
     const look = this.look();
-    return look === 'flat' ? 'ink' : look;
+    // `look` remains an existing drawing contract. The 3D style owns its single renderer look.
+    return look === 'flat' || look === '3d' ? 'ink' : look;
   }
 
   protected lookHint(): string {
     const look = this.look();
     if (look === 'flat') return 'The first style: scene by scene, flat colour.';
+    if (look === '3d') return 'A persistent miniature world for mechanisms, assembly, cutaways and spatial cause and effect. Beta.';
     const hint = ALL_LOOKS.find((l) => l.value === look)?.hint ?? '';
     const other = this.style() === 'film' ? 'the other documentary look' : 'another ink look';
     return hint.charAt(0).toUpperCase() + hint.slice(1) + `. You can switch to ${other} later without planning again.`;
@@ -227,11 +239,20 @@ export class StoryboardsPanel {
     return s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
 
-    protected lookName(look: Look): string {
+  protected lookName(look: Look): string {
     return (ALL_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
   }
 
+  protected styleName(board: StoryboardSummary): string {
+    return board.style === '3d' ? '3D explainer' : board.style === 'flat' ? 'flat'
+      : this.lookName(board.look === '3d' ? 'ink' : board.look);
+  }
+
   constructor() {
+    this.api.settings().subscribe({
+      next: (bundle) => this.threeDEnabled.set(bundle.settings.studio_3d_enabled === true),
+      error: () => this.threeDEnabled.set(false),
+    });
     let known = '';
     effect(() => {
       const id = this.script().id;

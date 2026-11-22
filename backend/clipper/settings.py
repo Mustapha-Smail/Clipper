@@ -46,6 +46,9 @@ class Settings(BaseModel):
     # After a storyboard is planned, the AI director looks at stills of its shots and rewrites the weak ones
     # (studio/director.py): one writing-tier call per 4 to 6 shots, free on a subscription tier.
     director_pass: bool = False
+    # Beta: allow creation of validated 3D explainer plans. Existing 3D plans remain readable/editable when off;
+    # rendering is enabled separately when the dedicated Blender worker is installed.
+    studio_3d_enabled: bool = False
     # Each new theme gets a banner drawn by the writing model (one call, a few cents; free on a plan).
     # Off: no banner is drawn and the option is hidden on the theme's page.
     theme_banners: bool = True

@@ -185,6 +185,26 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   redrawn when used; `origin == "you"` props are never redrawn. The renderer's layout
   pass (`animate.separate`) keeps elements inside the stage and apart; keep it
   when adding element kinds. Captions reuse `captions.py`.
+- Blender 3D explainers are an opt-in Studio beta (`Settings.studio_3d_enabled`,
+  off by default). The model emits only the word-numbered language validated by
+  `studio/world3d.py`; it never emits Python, coordinates, paths, URLs, materials
+  or Blender expressions. `studio/blender_render.py` converts cleaned lines to a
+  versioned JSON contract, and the packaged `blender/render_scene.py` resolves
+  only code-owned procedural assets, slots, cameras and materials. The current
+  beta planner/editor advertises only the P2 renderer verbs; future legal verbs
+  fail before a Blender process starts, never silently. 3D jobs use
+  `plan -> build3d` and `build3d -> animate`; legacy styles keep `draw` and never
+  pass through Blender. Blender renders a pre-caption intermediate; the normal
+  Clipper composer still adds captions, approved/local or synthesized effects,
+  music, QA, final encoding, review and publishing gates. The worker Docker
+  target is checksum-pinned x86-64 Blender; API and migrate use the lean runtime
+  target. Renderer paths stay inside the storyboard media folder, cancellation
+  kills the process group and removes only renderer-owned partials, and failed
+  final renders preserve the last successful video and snapshot. Cached 3D
+  intermediates/previews are disposable render-folder data; retention may remove
+  that folder but must never follow a database path outside it. New packaged 3D
+  assets need a recorded compatible licence or must be original code-owned
+  geometry; model-generated or unlicensed meshes do not enter the pack.
 - AI director (`studio/director.py`, `llm` task `direct`, writing tier): the
   renderer draws three stills per shot onto contact sheets (`animate.still`), the
   model looks at them with the shots' narration and beat lines, and answers with

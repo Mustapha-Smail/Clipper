@@ -555,6 +555,10 @@ def craft_comparisons(videos: list[dict]) -> list[str]:
             for outcome, outcome_label in COMPARISON_OUTCOMES:
                 groups: dict[str, list[float]] = {}
                 for row in rows:
+                    # 3D has one beta, code-owned look and is not comparable to the established drawing looks.
+                    # Keep all other craft evidence, but exclude it from visual-style conclusions for now.
+                    if field == "look" and row.get("style") == "3d":
+                        continue
                     group, value = _comparison_group(row, field), row.get(outcome)
                     if group is not None and value is not None:
                         groups.setdefault(group, []).append(float(value))

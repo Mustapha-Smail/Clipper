@@ -8,6 +8,7 @@ voice. Everything is cached that can be: a video reuses a few drawings
 thousands of times.
 """
 
+import json
 import math
 import subprocess
 import threading
@@ -677,7 +678,7 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
             beats.prop_names(board.scenes)
             if board.style == "ink"
             else set()
-            if board.style == "film"
+            if board.style in ("film", "3d")
             else {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
         )
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
@@ -697,7 +698,111 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
 
                 data["places"] = places_mod.resolved(board.scenes)
                 data["place_svgs"] = places_mod.drawings(sorted(set(data["places"])), board.format == "short")
+        if board.style == "3d":
+            folder = video_path(data).parent
+            data["scene_3d"] = str(folder / "scene.mp4")
+            manifest = folder / "manifest.json"
+            if manifest.is_file():
+                try:
+                    data["blender_manifest"] = json.loads(manifest.read_text())
+                except (OSError, json.JSONDecodeError):
+                    data["blender_manifest"] = {}
     return data, props, wav
+
+
+class ThreeDComposer:
+    """Sequential frame source for a trusted Blender intermediate.
+
+    Blender owns only the pre-caption picture. Clipper still observes that
+    picture, burns Pillow captions, derives semantic SFX, and performs the
+    final audio/video encode exactly as it does for every other Studio style.
+    """
+
+    def __init__(self, board: dict, settings: Settings):
+        import cv2
+
+        from . import world3d
+
+        self.board = board
+        self.layout = LAYOUTS[board["format"]]
+        self.words = board["words"]
+        self.scenes = board["scenes"]
+        self.duration = board["end"] - board["start"]
+        self.tail = 0.0
+        self.manifest = dict(board.get("blender_manifest") or {})
+        self.path = Path(board.get("scene_3d") or "")
+        if not self.path.is_file():
+            raise RuntimeError("The prepared 3D scene is missing. Retry the render so build3d can make it.")
+        self.capture = cv2.VideoCapture(str(self.path))
+        if not self.capture.isOpened():
+            raise RuntimeError("The prepared 3D scene could not be decoded. Retry its Blender build.")
+        self.frame_count = max(1, round(self.capture.get(cv2.CAP_PROP_FRAME_COUNT)))
+        self.source_fps = float(self.capture.get(cv2.CAP_PROP_FPS)) or FPS
+        self._next_frame = 0
+        self._last: np.ndarray | None = None
+        self.captions = None
+        if (
+            captions_mod.resolved_mode(board["format"], board.get("caption_mode"), settings.captions_enabled)
+            and self.words
+        ):
+            groups = captions_mod.group_words(self.words, 0.0, self.duration)
+            self.captions = captions_mod.CaptionRenderer(
+                groups,
+                resolve_font(settings),
+                hex_to_rgb(settings.highlight_color),
+                fmt=captions_mod.studio_format(board["format"]),
+            )
+        self._lines = [line for shot in self.scenes for line in world3d.parsed(shot)]
+
+    def close(self) -> None:
+        self.capture.release()
+
+    def word_time(self, index: int | None) -> float:
+        if index is None or not self.words:
+            return 0.0
+        return float(self.words[max(0, min(index, len(self.words) - 1))]["s"])
+
+    def _read(self, t: float) -> np.ndarray:
+        import cv2
+
+        wanted = min(self.frame_count - 1, max(0, round(t * self.source_fps)))
+        if wanted != self._next_frame:
+            self.capture.set(cv2.CAP_PROP_POS_FRAMES, wanted)
+            self._next_frame = wanted
+        ok, frame = self.capture.read()
+        if ok:
+            self._next_frame = wanted + 1
+            self._last = frame
+        elif self._last is None:
+            raise RuntimeError("The prepared 3D scene ended before its first frame")
+        frame = self._last.copy()
+        if frame.shape[1] != self.layout.width or frame.shape[0] != self.layout.height:
+            frame = cv2.resize(frame, (self.layout.width, self.layout.height), interpolation=cv2.INTER_LANCZOS4)
+        return np.ascontiguousarray(frame)
+
+    def bgr(self, t: float, observer: visual_qa.FrameObserver | None = None) -> np.ndarray:
+        frame = self._read(t)
+        if observer is not None:
+            observer.observe(t, frame[:, :, ::-1])  # pre-caption RGB
+        if self.captions is not None:
+            self.captions.draw(frame, t)
+        return frame
+
+    def sound_events(self) -> list[tuple[float, str]]:
+        events: list[tuple[float, str]] = []
+        for line in self._lines:
+            at = self.word_time(line.word)
+            if line.verb in {"strike", "drop"}:
+                events.append((at, "impact"))
+            elif line.verb == "lift":
+                events.append((at, "lift"))
+            elif line.verb == "cycle":
+                events.extend((at + 0.65 * n, "impact") for n in range(line.count))
+            elif line.verb in {"camera", "explode", "scale"}:
+                events.append((at, "slide"))
+            elif line.verb in {"add", "label"}:
+                events.append((at, "prop" if line.verb == "add" else "label"))
+        return sorted(event for event in events if event[0] < self.duration)
 
 
 def composer_for(board: dict, props: dict[str, str | None], settings: Settings, mouths: np.ndarray | None):
@@ -710,6 +815,8 @@ def composer_for(board: dict, props: dict[str, str | None], settings: Settings, 
         from .wall import FilmComposer
 
         return FilmComposer(board, props, settings, mouths)
+    if board.get("style") == "3d":
+        return ThreeDComposer(board, settings)
     return Composer(board, props, settings, mouths)
 
 
@@ -881,7 +988,11 @@ def video_path(board: dict) -> Path:
 
 
 def render_snapshot(
-    board: Storyboard, settings: Settings, visual_qa: dict | None = None, sound_effects: dict | None = None
+    board: Storyboard,
+    settings: Settings,
+    visual_qa: dict | None = None,
+    sound_effects: dict | None = None,
+    renderer: dict | None = None,
 ) -> dict:
     """Immutable craft facts for a successful render. Live settings are resolved here, once."""
     from . import hold, story_map
@@ -920,7 +1031,7 @@ def render_snapshot(
             at = item.get("time_s")
             if isinstance(at, int | float) and board.start <= at <= board.end:
                 micro_checkpoints.append({**item, "time_s": round(float(at) - board.start, 3)})
-    return {
+    snapshot = {
         "version": 1,
         "at": utcnow().isoformat(),
         "look": board.look,
@@ -948,6 +1059,22 @@ def render_snapshot(
         "first_visual_event_s": (visual_qa or {}).get("first_visual_event_s"),
         "visual_qa": visual_qa or {},
     }
+    if board.style == "3d" and renderer:
+        for key in (
+            "blender_version",
+            "engine",
+            "asset_pack_version",
+            "plan_hash",
+            "render_width",
+            "render_height",
+            "resolution_percentage",
+            "samples",
+            "render_seconds",
+            "peak_intermediate_bytes",
+        ):
+            if key in renderer:
+                snapshot[key] = renderer[key]
+    return snapshot
 
 
 def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
@@ -966,7 +1093,12 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     tail = getattr(composer, "tail", 0.0)  # the film style holds a closing shot after the voice ends
     duration = voiced + tail
     total = math.ceil(duration * FPS)
-    observer = visual_qa.Observer(board.get("words", []), voiced, loop=board.get("form") == "micro_short")
+    observer = visual_qa.Observer(
+        board.get("words", []),
+        voiced,
+        loop=board.get("form") == "micro_short",
+        profile="3d" if board.get("style") == "3d" else "",
+    )
     out = video_path(board)
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_suffix(".partial.mp4")
@@ -1043,13 +1175,25 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         proc.wait()
         partial.unlink(missing_ok=True)
         raise
+    finally:
+        close = getattr(composer, "close", None)
+        if close is not None:
+            close()
     partial.replace(out)
     qa_result = observer.finish()
+    if board.get("style") == "3d":
+        qa_result = visual_qa.three_d_advice(board["scenes"], qa_result)
     for warning in qa_result.get("warnings", []):
         rep.warn(warning)
     with session_scope() as db:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"
         row.review_at = row.expired_at = row.published_at = None  # new render starts review and publication again
-        row.render_meta = render_snapshot(row, settings, qa_result, fx_status)
+        row.render_meta = render_snapshot(
+            row,
+            settings,
+            qa_result,
+            fx_status,
+            getattr(composer, "manifest", None),
+        )
     rep.info(f"Rendered {out.name}: {out.stat().st_size / 1e6:.1f} MB. It waits for your review.")

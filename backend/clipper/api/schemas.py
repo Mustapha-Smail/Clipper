@@ -862,11 +862,20 @@ class AiTakeCreate(BaseModel):
 
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
-    style: Literal["ink", "flat", "film"] = Field(
-        "ink", description="ink: beats on one page; film: a documentary on an evidence wall; flat: the first style"
+    style: Literal["ink", "flat", "film", "3d"] = Field(
+        "ink",
+        description=(
+            "ink: beats on one page; film: a documentary on an evidence wall; flat: the first style; "
+            "3d: an opt-in mechanism or spatial explainer"
+        ),
     )
-    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] = (
-        Field("ink", description="How it is drawn. Ink looks change drawing only; film style uses wall or studio")
+    look: Literal[
+        "ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio", "3d"
+    ] = (
+        Field(
+            "ink",
+            description="How it is drawn. Ink looks change drawing only; film uses wall/studio; 3D is code-owned",
+        )
     )
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
@@ -883,10 +892,10 @@ class StoryboardSummary(Model):
     form: IdeaForm = "short"
     story_shape: StoryShape | None = None
     caption_mode: CaptionMode = "default"
-    style: Literal["ink", "flat", "film"]
-    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] = (
-        "ink"
-    )
+    style: Literal["ink", "flat", "film", "3d"]
+    look: Literal[
+        "ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio", "3d"
+    ] = "ink"
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
@@ -958,6 +967,12 @@ class StoryboardOut(StoryboardSummary):
     photo_searches_missing: list[str] = []  # searches with no picture yet (found when it renders)
     credits: str = ""  # every credit line the description needs
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
+    complexity: dict | None = Field(
+        None, description="3D style: arithmetic workload facts, never an aesthetic quality score"
+    )
+    preview_3d: dict | None = Field(
+        None, description="3D style: cached-preview availability, build time and saved-plan staleness"
+    )
     youtube: YoutubeText | None = None
     director: dict | None = Field(None, description="The AI director's last pass: notes per shot, kept or refused")
     director_undoable: bool = False
@@ -1028,7 +1043,10 @@ class StoryboardPatch(BaseModel):
         None, max_length=300, description="Its YouTube link, for statistics; empty to remove"
     )
     look: (
-        Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] | None
+        Literal[
+            "ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio", "3d"
+        ]
+        | None
     ) = Field(None, description="Ink style: render again to see it")
     music_id: int | None = None
     music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")

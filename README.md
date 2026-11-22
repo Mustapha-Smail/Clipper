@@ -47,7 +47,47 @@ docker compose up -d --build
 Open http://localhost:8000. Needs `ANTHROPIC_API_KEY` in `.env` (see `.env.example`).
 
 This starts five containers: `db` (Postgres), `migrate` (applies migrations and
-exits), `api`, `worker` and `web`. Everything runs on CPU.
+exits), `api`, `worker` and `web`. Everything runs on CPU. The API and migration
+containers use the lean `runtime` backend image. The worker uses the separate
+`blender-worker` image, which adds the pinned Blender runtime without increasing
+the API image.
+
+The Blender worker is currently an x86-64 VM target. Blender 4.5.16's official
+Linux archive is x86-64; ARM hosts must not emulate it in production. On the VM,
+pin the published SHA-256 in `.env` before building (the value is intentionally
+not committed):
+
+```bash
+BLENDER_SHA256=$(curl -fsSL \
+  https://download.blender.org/release/Blender4.5/blender-4.5.16.sha256 \
+  | awk '$2 ~ /blender-4.5.16-linux-x64.tar.xz$/ {print $1}')
+printf 'BLENDER_SHA256=%s\n' "$BLENDER_SHA256"  # copy this line into .env
+```
+
+The Dockerfile and Compose file already carry this same pinned value as a safe
+default; setting it in `.env` makes the deployment pin explicit and reviewable.
+
+Check that `uname -m` reports `x86_64` before running the stack. The worker image
+build verifies this checksum and runs a display-free 64x64 Eevee smoke render at
+build time. The native Mac workflow remains usable for existing non-3D styles;
+3D rendering requires the VM worker image.
+
+To verify the worker explicitly:
+
+```bash
+docker compose build worker
+docker compose run --rm --no-deps worker blender --background --version
+docker compose run --rm --no-deps worker sh -ec \
+  "blender --background --factory-startup --python-expr \"import bpy; s=bpy.context.scene; s.render.engine='BLENDER_EEVEE_NEXT'; s.render.image_settings.file_format='PNG'; s.render.resolution_x=64; s.render.resolution_y=64; s.render.resolution_percentage=100; s.render.filepath='/tmp/blender-smoke.png'; bpy.ops.render.render(write_still=True)\" && test -s /tmp/blender-smoke.png && rm /tmp/blender-smoke.png"
+docker compose up -d
+docker compose ps                         # API health should become healthy
+docker compose logs --tail 30 worker      # worker heartbeat/startup
+```
+
+`docker compose build worker` leaves the smoke-render output in the build log; it
+does not write into `/data`. Allocate at least 8 GB free Docker disk for a release
+build so the new worker image can coexist with the running image. Override this
+guard with `CLIPPER_NEED_GB` only after checking the VM's actual free space.
 
 | What | In the containers | On the host (change in `.env`) |
 |---|---|---|
@@ -401,7 +441,52 @@ makes a Short from any section, or the long video. Pick the look first:
   and numbers roll up on the word the narrator says; red string leads from
   each part of the wall to the next. **Studio board** is the same on a light
   board.
+- **3D explainer** (beta): a persistent procedural miniature world for
+  mechanisms, construction, assembly and spatial cause/effect. The editor uses
+  safe word-numbered scene lines rather than Blender controls. Enable new 3D
+  boards under **Settings > Studio > 3D explainers** only after deploying the
+  dedicated Blender worker. Turning the switch off hides new creation but keeps
+  existing 3D plans readable and editable.
 - **Flat colour** (the first style): scene by scene, stickers in fixed slots.
+
+### The 3D explainer beta
+
+The model plans data, never Blender code. Clipper validates every asset ID,
+object reference, label, cycle and word number, then writes a versioned render
+contract. Blender resolves that contract through code-owned procedural geometry,
+semantic slots, fixed materials, safe camera rigs and Eevee. The first beta is
+deliberately limited to add, scale, lift, drop, strike, explode, cutaway, label,
+cycle and camera actions; recognized future actions produce a clear build error
+before Blender starts.
+
+Planning runs `plan -> build3d`; rendering runs `build3d -> animate`. The build
+stage caches the Blender intermediate and one preview per shot. The editor marks
+previews stale after saved scene changes and can rebuild them without rendering
+the final video. Final composition still uses Clipper's existing captions,
+licensed/local or synthesized effects, music ducking, visual QA, encoding, human
+review and publishing gates. The render snapshot records the exact Blender
+version, engine, asset-pack version and plan hash only after final success.
+
+`scene.mp4`, its manifest, plan and preview images are disposable cache inside
+the storyboard render folder. They may be large and currently remain there so a
+rerender can reuse them; the normal unapproved-render retention sweep removes the
+whole folder after its grace period. Cleanup refuses any stored video path outside
+that storyboard folder. Approved/exported videos are never deleted by this cache
+cleanup.
+
+Common failures:
+
+- **Blender worker image missing:** build/deploy the `worker` service, not only
+  the API runtime image, and verify `blender --background --version` inside it.
+- **Unsupported operation:** edit the named line to the beta action set above;
+  it was validated for a future renderer but was not executed.
+- **No cached preview:** use **Build previews** or retry the failed `build3d` job.
+- **Low disk or interrupted worker:** free Docker/data-disk space and retry. A
+  failed/cancelled build removes its partials and keeps the last good final video.
+
+Rollback is non-destructive: turn off **3D explainers** to stop new creation, or
+point the worker back to the `runtime` target if Blender blocks deployment.
+Existing 3D rows remain stored and are never rewritten into another style.
 
 ### The ink style
 
@@ -854,7 +939,7 @@ On a machine that runs the Docker stack from a git checkout (the homelab LXC):
 It fetches the tags, refuses to run over local changes to tracked files,
 checks the release out, runs `docker compose up -d --build` (migrations
 included), then waits until the app answers with that version. Before
-building it checks that Docker has 6 GB free (a new image sits next to the
+building it checks that Docker has 8 GB free (a new image sits next to the
 running one until the switch); if not, it removes unused images and build cache
 older than a week, and stops if that is still not enough, with the app left
 running. After a good update it removes the image the old containers ran. On
@@ -874,7 +959,9 @@ older release is checked out, install a copy:
 4. YouTube often blocks downloads from cloud servers. If links fail, export a
    `cookies.txt` from your browser, put it in the data folder and set
    **Cookies file** to `/data/cookies.txt` on the Settings page.
-5. If the VM's user is not uid 1000, add `user: "<uid>:<gid>"` to the backend
+5. Confirm `uname -m` is `x86_64`, set the pinned `BLENDER_SHA256` in `.env`, and
+   run `docker compose build worker` to execute the headless 64x64 smoke render.
+6. If the VM's user is not uid 1000, add `user: "<uid>:<gid>"` to the backend
    block in `docker-compose.yml` so the containers can write to the data folder.
 
 A VM without a GPU transcribes on CPU. Pick the **Small** or **Medium** speech

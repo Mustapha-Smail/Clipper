@@ -98,6 +98,22 @@ def test_sweep_removes_the_render_of_a_replaced_plan(app_env):
     assert not folders[0].exists() and folders[1].is_dir()
 
 
+def test_sweep_refuses_a_video_path_outside_the_storyboard_folder(app_env):
+    board_id = make_board("Unsafe legacy path", days_ago=40)
+    sentinel = app_env / "must-not-delete.mp4"
+    sentinel.write_bytes(b"keep me")
+    with session_scope() as db:
+        board = db.get(Storyboard, board_id)
+        board.video_path = str(sentinel)
+
+    assert retention.sweep(Settings()) == []
+    assert sentinel.read_bytes() == b"keep me"
+    with session_scope() as db:
+        board = db.get(Storyboard, board_id)
+        assert board.video_path == str(sentinel)
+        assert board.expired_at is None
+
+
 def test_export_needs_approval_and_fills_the_output_folder(client, app_env):
     board_id = make_board("Why LEDs are blue: a 30-year hunt!", fmt="long", days_ago=2)
     out = app_env / "nextcloud"

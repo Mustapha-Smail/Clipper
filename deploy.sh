@@ -49,6 +49,22 @@ previous=$(git describe --tags --exact-match 2>/dev/null || git rev-parse --shor
 port=${CLIPPER_PORT:-$( (sed -n 's/^CLIPPER_PORT=//p' .env 2>/dev/null || true) | tail -1)}
 port=${port:-8000}
 
+arch=$(uname -m)
+case "$arch" in
+  x86_64|amd64) ;;
+  *) fail "the Blender worker requires an x86-64 VM; this host reports $arch (no emulated production renderer)." ;;
+esac
+
+# Compose reads .env itself, but validate the worker's pinned Blender checksum before
+# spending time rebuilding the stack. Keep it in .env (not in git) and update it only
+# when deliberately upgrading the Blender archive.
+blender_sha=${BLENDER_SHA256:-$( (sed -n 's/^BLENDER_SHA256=//p' .env 2>/dev/null || true) | tail -1)}
+blender_sha=${blender_sha:-23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11}
+if ! [[ $blender_sha =~ ^[0-9a-fA-F]{64}$ ]]; then
+  fail "BLENDER_SHA256 must be a 64-character SHA-256 for Blender 4.5.16 in .env (see README.md)."
+fi
+export BLENDER_SHA256="$blender_sha"
+
 failed() {
   echo
   docker compose ps || true
@@ -62,7 +78,7 @@ git checkout --quiet --detach "refs/tags/$tag"
 
 # A build needs room for a whole new image next to the running one. Unused images and
 # build cache older than a week are safe to drop: containers keep the images they run.
-NEED_GB=${CLIPPER_NEED_GB:-6}
+NEED_GB=${CLIPPER_NEED_GB:-8}
 free_gb() {
   local root
   root=$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)

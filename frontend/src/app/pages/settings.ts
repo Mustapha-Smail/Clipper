@@ -79,6 +79,18 @@ import { YoutubeConnect } from '../shared/youtube-connect';
             </div>
           </section>
 
+          <section class="card" id="studio-3d">
+            <h3>3D explainers (beta)</h3>
+            <p class="small muted">The 3D style is for mechanisms, assembly and visible cause and effect. Blender runs in
+              the dedicated worker image; enabling this setting does not change existing storyboards.</p>
+            <div class="form-grid">
+              <label class="check wide"><input type="checkbox" [(ngModel)]="f.studio_3d_enabled" />
+                <span>Allow new 3D explainer storyboards<small>Off by default. When off, the 3D choice is hidden when
+                  making a new video, while existing 3D plans remain readable and editable. Save after the Blender worker
+                  is deployed to enable new plans.</small></span></label>
+            </div>
+          </section>
+
           <section class="card" id="studio-drawings">
             <h3>Studio drawings</h3>
             <p class="small muted">New props are drawn by Claude (the writing model) as shaded illustrations, then looked at
@@ -787,7 +799,8 @@ export class SettingsPage {
       { title: 'General', items: [{ id: 'features', label: 'Features' }, { id: 'appearance', label: 'Appearance' }] },
     ];
     if (f?.feature_studio) {
-      groups.push({ title: 'Studio', items: [{ id: 'studio-themes', label: 'Themes' }, { id: 'studio-drawings', label: 'Drawings' },
+      groups.push({ title: 'Studio', items: [{ id: 'studio-themes', label: 'Themes' }, { id: 'studio-3d', label: '3D explainers' },
+        { id: 'studio-drawings', label: 'Drawings' },
         { id: 'studio-youtube', label: 'YouTube' }, { id: 'studio-sounds', label: 'Attention sounds' },
         { id: 'studio-voice', label: 'Voice' }, { id: 'studio-ink', label: 'Ink style' }] });
     }
@@ -849,8 +862,12 @@ export class SettingsPage {
   }
 
   private apply(bundle: SettingsBundle): void {
-    this.bundle.set(bundle);
-    this.form.set({ ...bundle.settings });
+    // Older API responses may omit the beta switch; omission is always the safe, off state.
+    // Normalize both copies so an old response does not make the form look dirty forever.
+    const settings = { ...bundle.settings, studio_3d_enabled: bundle.settings.studio_3d_enabled === true };
+    const defaults = { ...bundle.defaults, studio_3d_enabled: bundle.defaults.studio_3d_enabled === true };
+    this.bundle.set({ ...bundle, settings, defaults });
+    this.form.set({ ...settings });
   }
 
   protected reset(): void {

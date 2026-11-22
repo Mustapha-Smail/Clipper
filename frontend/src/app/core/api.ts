@@ -321,6 +321,9 @@ export class Api {
   renderStoryboard(id: number): Observable<Job> {
     return this.http.post<Job>(`${BASE}/storyboards/${id}/render`, {});
   }
+  rebuild3dPreviews(id: number): Observable<Job> {
+    return this.http.post<Job>(`${BASE}/storyboards/${id}/previews`, {});
+  }
   reviewStoryboard(id: number, review: 'pending' | 'approved' | 'rejected'): Observable<Storyboard> {
     return this.http.patch<Storyboard>(`${BASE}/storyboards/${id}`, { review });
   }

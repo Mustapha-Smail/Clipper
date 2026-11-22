@@ -30,7 +30,7 @@ from .. import config, llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
-from . import art, beats, composition, data_graphics, film, hold, ink
+from . import art, beats, composition, data_graphics, film, hold, ink, story_map, world3d
 from . import places as places_mod
 from . import voice as voice_mod
 
@@ -302,7 +302,7 @@ def prop_names(style: str, scenes: list[dict]) -> set[str]:
     """Every library prop a storyboard uses."""
     if style == "ink":
         return beats.prop_names(scenes)
-    if style == "film":
+    if style in ("film", "3d"):
         return set()
     return {e["name"] for s in scenes for e in s.get("elements", []) if e["kind"] == "prop"}
 
@@ -325,6 +325,9 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
         return
     if style == "film":
         plan_film(storyboard_id, words, fmt, title, headings, rep, marks, cards, micro=micro)
+        return
+    if style == "3d":
+        plan_world3d(storyboard_id, words, fmt, title, headings, rep, marks, micro=micro)
         return
     known = library()
     system = PLAN.format(max_elements=MAX_ELEMENTS, format_rules=FORMAT_RULES[fmt])
@@ -383,6 +386,141 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
                 db.add(StudioAsset(name=name, description=descriptions.get(name, name.replace("_", " "))))
     used = sum(len(s["elements"]) for s in scenes)
     rep.info(f"{len(scenes)} scenes, {used} elements, {len(descriptions)} new props to draw")
+
+
+# --- planning a persistent three-dimensional world -------------------------------------------
+
+
+class World3dPlan(BaseModel):
+    beats: str = Field(description="The storyboard in the validated 3D beat language, one operation per line")
+
+
+WORLD3D_PLAN = prompts.Prompt("storyboard_3d")
+WORLD3D_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_3d_{fmt}") for fmt in ("short", "long")}
+WORLD3D_SECONDS = {"long": 3.0, "short": 2.0}
+
+
+def _world3d_assets() -> str:
+    return "\n".join(f"- {name}: {description}" for name, description in world3d.ASSETS.items())
+
+
+def _world3d_mechanisms() -> str:
+    return "\n".join(
+        f"- {name}: {', '.join(sorted(actions & {'explode', 'cutaway', 'cycle'}))}"
+        for name, actions in sorted(world3d.CAPABILITIES.items())
+        if actions & {"explode", "cutaway", "cycle"}
+    )
+
+
+def _world3d_story_input(script) -> tuple[str, dict[str, dict], str]:
+    """The current valid story map and cards, or an explicit reason they are unavailable."""
+    if not script.story_map:
+        return "", {}, "no story map has been made"
+    current, reasons = story_map.status(script)
+    if not current:
+        return "", {}, "the story map is out of date: " + " ".join(reasons)
+    problems = story_map.problems(script)
+    if problems:
+        return "", {}, "the story map has validation problems: " + " ".join(problems)
+    return story_map.prompt_value(script), data_graphics.stored(script.story_map), ""
+
+
+def _world3d_context(map_value: str, cards: dict[str, dict]) -> str:
+    blocks = []
+    if map_value:
+        blocks.append(f"<story_map>\n{map_value}\n</story_map>")
+    if cards:
+        blocks.append(
+            "<data_cards>\nThese are the exact source-backed values available for short labels or measurements:\n"
+            + json.dumps(list(cards.values()), ensure_ascii=False, indent=2)
+            + "\n</data_cards>"
+        )
+    return "\n\n".join(blocks)
+
+
+def plan_world3d(
+    storyboard_id: int,
+    words: list[dict],
+    fmt: str,
+    title: str,
+    headings: dict,
+    rep: Reporter,
+    marks: dict[int, str] | None = None,
+    micro: bool = False,
+) -> None:
+    """Plan a validated persistent 3D world, carrying canonical state from chapter to chapter."""
+    with session_scope() as db:
+        board = db.get(Storyboard, storyboard_id)
+        map_value, cards, map_why = _world3d_story_input(board.script)
+    if map_why:
+        rep.info(f"Planning without a current story map: {map_why}")
+    else:
+        rep.info(f"Planning from the current story map and {len(cards)} source-backed data cards")
+    system = WORLD3D_PLAN.format(
+        assets=_world3d_assets(),
+        mechanisms=_world3d_mechanisms(),
+        max_live=world3d.MAX_LIVE,
+        max_labels=world3d.MAX_LABELS,
+        max_cycles=world3d.MAX_CYCLES,
+        format_rules=WORLD3D_FORMAT_RULES[fmt],
+    )
+    if micro:
+        system += "\n\n" + str(MICRO_PLAN)
+    context = _world3d_context(map_value, cards)
+    chunks = _chunks(words) if fmt == "long" else [(0, words, None)]
+    rep.info(
+        f"Planning a persistent 3D world for {words[-1]['e']:.0f} seconds of "
+        f"{'designed visual cues' if micro else 'narration'}"
+        + (f", chapter by chapter ({len(chunks)})" if len(chunks) > 1 else "")
+    )
+    shots: list[dict] = []
+    all_issues: list[str] = []
+    for index, (offset, part, key) in enumerate(chunks, 1):
+        chapter = headings.get(key, "") if key else ""
+        chapter_line = f"<chapter>{chapter}</chapter>\n\n" if chapter else ""
+        seconds = part[-1]["e"] - part[0]["s"]
+        previous = world3d.to_text(shots)
+        prior = (
+            "<world_so_far>\nContinue this same world and reuse its object IDs:\n"
+            + previous
+            + "\n</world_so_far>\n\n"
+            if previous
+            else ""
+        )
+        prompt = (
+            f"<video_title>{title}</video_title>\n\n{chapter_line}"
+            f"<length>{seconds:.0f} seconds: aim for about "
+            f"{max(4, round(seconds / WORLD3D_SECONDS[fmt]))} visible operations</length>\n\n"
+            f"{context}\n\n{turns_block(marks or {}, offset, len(part))}{prior}{_timed_input(part, micro)}"
+        )
+        result = llm.ask("storyboard", system, prompt, World3dPlan, effort="medium", cache=True)
+        part_shots, parse_issues = world3d.parse_plan(result.beats, len(words), offset, check=False)
+        if part_shots and part_shots[0]["start_word"] != offset:
+            parse_issues.append(
+                f"chapter {index}: first shot word {part_shots[0]['start_word']} bounded to chapter word {offset}"
+            )
+            part_shots[0]["start_word"] = offset
+        shots.extend(part_shots)
+        all_issues.extend(parse_issues)
+        shots, interim_issues = world3d.clean(shots, len(words))
+        all_issues.extend(interim_issues)
+        rep.progress(index / len(chunks), f"Planned {index} of {len(chunks)} chapters")
+    shots, clean_issues = world3d.clean(shots, len(words))
+    all_issues.extend(clean_issues)
+    if all_issues:
+        rep.warn(
+            f"{len(all_issues)} planned 3D lines were dropped or bounded, such as: " + "; ".join(all_issues[:3])
+        )
+    with session_scope() as db:
+        board = db.get(Storyboard, storyboard_id)
+        board.scenes = shots
+        board.video_path = board.published_at = None
+    report = world3d.complexity(shots)
+    rep.info(
+        f"{report['shots']} shots, {report['objects']} objects (at most {report['max_live_objects']} live), "
+        f"{report['motions']} motions, {report['camera_moves']} camera moves, {report['labels']} labels; "
+        f"complexity {report['units']} units ({report['band']})"
+    )
 
 
 # --- planning in ink ---------------------------------------------------------------------------

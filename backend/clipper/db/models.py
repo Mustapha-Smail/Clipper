@@ -367,8 +367,8 @@ class Storyboard(Base):
     story_shape: Mapped[str | None] = mapped_column(String(16))  # copied from its script when created
     # default preserves current behavior: captions on Shorts and off long videos.
     caption_mode: Mapped[str] = mapped_column(String(8), default="default")  # default|on|off
-    style: Mapped[str] = mapped_column(String(8), default="ink")  # ink (beats on one page) | flat (slides)
-    look: Mapped[str] = mapped_column(String(12), default="ink")  # ink style only: ink | paper | blueprint
+    style: Mapped[str] = mapped_column(String(8), default="ink")  # ink | flat | film | 3d
+    look: Mapped[str] = mapped_column(String(12), default="ink")  # renderer-owned look/profile name
     section_key: Mapped[str | None] = mapped_column(String(16))  # NULL = the whole script
     title: Mapped[str] = mapped_column(Text, default="")
     start: Mapped[float] = mapped_column(Float, default=0.0)  # seconds into the take's audio

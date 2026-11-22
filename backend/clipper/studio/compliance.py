@@ -142,9 +142,15 @@ def authorship(db: Session, board: Storyboard) -> dict:
         n = sum(e.amount for e in plan_edits)
         line("Visuals", f"Planned by the AI; you changed {n} beat line{'s' if n != 1 else ''} in "
                         f"{len(plan_edits)} edit{'s' if len(plan_edits) != 1 else ''}", n >= 5)
-    elif board.style in ("ink", "film"):
+    elif board.style in ("ink", "film", "3d"):
         line("Visuals", "Planned by the AI; not edited by you yet", False)
-    if any(e.kind == "look" for e in events) or board.look not in ("ink", "wall"):
+    if board.style == "3d":
+        line(
+            "Visuals",
+            "Rendered by Clipper from code-owned procedural 3D assets; no model-generated footage or uploaded mesh",
+            False,
+        )
+    if board.style != "3d" and (any(e.kind == "look" for e in events) or board.look not in ("ink", "wall")):
         line("Visuals", f"Look: {board.look}, chosen by you", True)
     swaps = [e for e in events if e.kind == "photo"]
     if swaps:
@@ -172,7 +178,7 @@ def authorship(db: Session, board: Storyboard) -> dict:
     if not any(x["yours"] for x in lines if x["part"] in ("Script", "Voice")):
         advice.append("The words and the voice are all AI so far. Putting the script in your own words "
                       "(or recording it yourself) is the strongest sign of your own work.")
-    if not plan_edits and board.style in ("ink", "film"):
+    if not plan_edits and board.style in ("ink", "film", "3d"):
         advice.append("Changing some scenes to your taste makes the video less like a template.")
     return {"lines": lines, "yours": yours, "parts": len(lines), "advice": advice,
             "events": [{"at": as_utc(e.created_at).isoformat(), "kind": e.kind, "by": e.by, "summary": e.summary,
@@ -332,7 +338,14 @@ def kids(board: Storyboard) -> dict:
 
 def disclosure(db: Session, board: Storyboard) -> dict:
     """Whether YouTube's 'altered or synthetic content' label applies, with the reason for each part."""
-    lines: list[dict] = [{"needs": False, "text": "Drawn animation is clearly not real footage, so it needs no label."}]
+    if board.style == "3d":
+        lines: list[dict] = [{
+            "needs": False,
+            "text": "The scene is visibly stylised animation rendered by code from Clipper's approved procedural "
+                    "3D asset pack, not generated or altered footage.",
+        }]
+    else:
+        lines = [{"needs": False, "text": "Drawn animation is clearly not real footage, so it needs no label."}]
     take = board.take
     if take is None or take.source == "recording":
         lines.append({"needs": False, "text": "The narration is your own voice."})

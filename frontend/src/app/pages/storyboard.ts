@@ -7,6 +7,7 @@ import { JobsStore } from '../core/jobs-store';
 import {
   ALL_LOOKS, ArchivePhoto, Asset, CaptionMode, Chapters, FILM_LOOKS, INK_LOOKS, Look, MusicSuggestion, MusicTrack,
   StoryElement, StoryScene, Storyboard, StoryboardSound, StudioSound, SuggestedTrack, YoutubeText, Place, ExportInfo,
+  StoryboardLook,
 } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Confirm } from '../core/confirm';
@@ -71,6 +72,23 @@ The number is the narration word (the small numbers above the words). Each line 
 of its moment: the camera goes to it by itself, and a red string leads from shot to shot.
 IDs are snake_case, given with "as"; refer only to things already made.`;
 
+const WORLD3D_CHEAT_SHEET = `N shot "what the viewer sees"             (use Split to start a shot)
+N add ASSET SLOT [small|medium|large] as ID
+N scale ID small|medium|large|FACTOR     N explode ID   N cutaway ID
+N lift ID             N drop ID [ONTO]    N strike TOOL TARGET
+N cycle ID COUNT      N label ID "1 to 4 words"
+N camera wide|push|pull|orbit|follow|close|cut [TARGET]
+
+ASSET   plank nail hammer pile ram anvil cylinder guide_rods crane pile_hammer house wall fence bridge pump pipe water_plane ground arrow
+SLOT    left center right top bottom (semantic places only; never coordinates)
+SIZE    small medium large
+
+The number is the narration word (the small numbers above the words). IDs are snake_case,
+given with "as", and can only be used after they are made. Keep one persistent world: add,
+animate and explain the same objects instead of rebuilding the scene each shot. This beta editor
+shows only actions the current Blender proof renderer supports. The renderer owns geometry,
+materials, camera bounds and safe areas; do not add Blender code, paths or URLs.`;
+
 function blank(kind: StoryElement['kind']): StoryElement {
   return {
     kind, name: kind === 'character' ? 'narrator' : kind === 'prop' ? '' : '', slot: 'center',
@@ -118,7 +136,7 @@ export class StoryboardPage {
     { value: 'wide', label: 'Wide, follows the action' }, { value: 'push', label: 'Push: slowly moves in' },
     { value: 'drift', label: 'Drift: a calm slide' }, { value: 'close', label: 'Close: frames small things tightly' },
   ];
-  protected readonly cheatSheet = computed(() => (this.film() ? FILM_CHEAT_SHEET : INK_CHEAT_SHEET));
+  protected readonly cheatSheet = computed(() => this.world3d() ? WORLD3D_CHEAT_SHEET : this.film() ? FILM_CHEAT_SHEET : INK_CHEAT_SHEET);
   protected readonly looks = computed(() => (this.film() ? FILM_LOOKS : INK_LOOKS));
   protected readonly board = signal<Storyboard | null>(null);
   protected readonly scenes = signal<StoryScene[]>([]);
@@ -148,9 +166,10 @@ export class StoryboardPage {
     this.store.jobs().find((j) => j.storyboard_id === this.id && (j.state === 'queued' || j.state === 'running'))
     ?? this.board()?.job ?? null);
   protected readonly busy = computed(() => this.job() !== null);
-  /** Planned in beat lines: the ink style and the film style (the documentary wall). */
-  protected readonly beats = computed(() => this.board()?.style === 'ink' || this.board()?.style === 'film');
+  /** Planned in line language: ink, documentary wall, and the 3D world. */
+  protected readonly beats = computed(() => this.board()?.style === 'ink' || this.board()?.style === 'film' || this.world3d());
   protected readonly film = computed(() => this.board()?.style === 'film');
+  protected readonly world3d = computed(() => this.board()?.style === '3d');
   protected readonly dirty = computed(() => {
     const board = this.board();
     return !!board && JSON.stringify(this.scenes()) !== JSON.stringify(board.scenes);
@@ -431,11 +450,13 @@ export class StoryboardPage {
     return '';
   }
 
-  protected lookName(look: Look): string {
+  protected lookName(look: StoryboardLook): string {
+    if (look === '3d') return '3D explainer';
     return (ALL_LOOKS.find((l) => l.value === look)?.label ?? 'Ink sketch').toLowerCase();
   }
 
-  protected lookHint(look: Look): string {
+  protected lookHint(look: StoryboardLook): string {
+    if (look === '3d') return 'The 3D renderer owns this fixed look.';
     const hint = ALL_LOOKS.find((l) => l.value === look)?.hint ?? '';
     return hint.charAt(0).toUpperCase() + hint.slice(1);
   }
@@ -490,7 +511,7 @@ export class StoryboardPage {
 
   protected changeElement(scene: number, element: number, patch: Partial<StoryElement>): void {
     this.scenes.update((list) => list.map((s, i) => (i !== scene ? s : {
-      ...s, elements: s.elements.map((e, k) => (k === element ? { ...e, ...patch } : e)),
+      ...s, elements: (s.elements ?? []).map((e, k) => (k === element ? { ...e, ...patch } : e)),
     })));
   }
 
@@ -501,15 +522,16 @@ export class StoryboardPage {
 
   protected addElement(scene: number, kind: StoryElement['kind']): void {
     const s = this.scenes()[scene];
-    if (s.elements.length >= 4) {
+    const elements = s.elements ?? [];
+    if (elements.length >= 4) {
       this.toasts.error('Four elements per scene at most: keep the picture readable');
       return;
     }
-    this.change(scene, { elements: [...s.elements, blank(kind)] });
+    this.change(scene, { elements: [...elements, blank(kind)] });
   }
 
   protected removeElement(scene: number, element: number): void {
-    this.change(scene, { elements: this.scenes()[scene].elements.filter((_, k) => k !== element) });
+    this.change(scene, { elements: (this.scenes()[scene].elements ?? []).filter((_, k) => k !== element) });
   }
 
   /** The beats of an ink shot, as typed: blank lines are kept while editing and dropped on save. */
@@ -535,9 +557,15 @@ export class StoryboardPage {
       const lines = scene.lines ?? [];
       const keep = lines.filter((l) => parseInt(l, 10) < word || isNaN(parseInt(l, 10)));
       const moved = lines.filter((l) => parseInt(l, 10) >= word);
-      const shot: StoryScene = { ...structuredClone(scene), start_word: word, note: 'New shot', camera: 'wide', page: false,
-                                 lines: moved };
-      this.scenes.update((list) => [...list.slice(0, index), { ...scene, lines: keep }, shot, ...list.slice(index + 1)]);
+      // 3D scenes have a deliberately smaller wire shape than ink/film shots:
+      // keep only the canonical start_word/note/lines fields when splitting one.
+      const kept = this.world3d()
+        ? { start_word: scene.start_word, note: scene.note, lines: keep }
+        : { ...scene, lines: keep };
+      const shot: StoryScene = this.world3d()
+        ? { start_word: word, note: 'New shot', lines: moved }
+        : { ...structuredClone(scene), start_word: word, note: 'New shot', camera: 'wide', page: false, lines: moved };
+      this.scenes.update((list) => [...list.slice(0, index), kept, shot, ...list.slice(index + 1)]);
       this.openScene.set(index + 1);
       return;
     }
@@ -553,7 +581,9 @@ export class StoryboardPage {
 
   protected save(after?: () => void): void {
     this.saving.set(true);
-    const scenes = this.scenes().map((s) => (s.lines ? { ...s, lines: s.lines.map((l) => l.trim()).filter(Boolean) } : s));
+    const scenes = this.world3d()
+      ? this.scenes().map((s) => ({ start_word: s.start_word, note: s.note, lines: (s.lines ?? []).map((l) => l.trim()).filter(Boolean) }))
+      : this.scenes().map((s) => (s.lines ? { ...s, lines: s.lines.map((l) => l.trim()).filter(Boolean) } : s));
     this.api.saveScenes(this.id, scenes).subscribe({
       next: (board) => {
         this.saving.set(false);
@@ -603,6 +633,19 @@ export class StoryboardPage {
     const go = () => this.api.renderStoryboard(this.id).subscribe({
       next: () => {
         this.toasts.ok('Rendering. A one-minute Short takes a couple of minutes.');
+        this.store.refresh();
+        this.load();
+      },
+      error: (err) => this.toasts.error(err),
+    });
+    if (this.dirty()) this.save(go);
+    else go();
+  }
+
+  protected rebuild3dPreviews(): void {
+    const go = () => this.api.rebuild3dPreviews(this.id).subscribe({
+      next: () => {
+        this.toasts.ok('Building the 3D scene and cached shot previews.');
         this.store.refresh();
         this.load();
       },

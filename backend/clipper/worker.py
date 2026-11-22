@@ -21,7 +21,7 @@ from .ingest import find_video, source_dir
 from .log import configure
 from .studio import animate as animate_mod
 from .studio import banner as banner_mod
-from .studio import compliance, learning, retention
+from .studio import blender_render, compliance, learning, retention
 from .studio import director as director_mod
 from .studio import hold as hold_mod
 from .studio import ideas as ideas_mod
@@ -129,6 +129,8 @@ def run_job(job_id: int) -> None:
                 storyboard_mod.plan(params["storyboard_id"], rep)
             elif stage == "draw":
                 storyboard_mod.draw_missing(params["storyboard_id"], rep)
+            elif stage == "build3d":
+                blender_render.build(params["storyboard_id"], rep)
             elif stage == "animate":
                 animate_mod.render(params["storyboard_id"], settings, rep)
             elif stage == "direct":

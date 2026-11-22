@@ -15,7 +15,9 @@
 name: clipper
 
 x-backend: &backend
-  build: ./backend
+  build:
+    context: ./backend
+    target: runtime
   image: clipper-backend:latest
   restart: unless-stopped
   env_file:
@@ -69,6 +71,12 @@ services:
   # Exactly one worker: it runs jobs one at a time and assumes it owns the queue.
   worker:
     <<: *backend
+    build:
+      context: ./backend
+      target: blender-worker
+      args:
+        BLENDER_SHA256: ${BLENDER_SHA256:-23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11}
+    image: clipper-backend-blender:latest
     command: ["clipper", "worker"]
     depends_on:
       migrate:

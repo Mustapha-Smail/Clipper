@@ -6,7 +6,7 @@
         <h1>{{ b.title }}</h1>
         <p class="muted small">{{ b.form === 'micro_short' ? 'Micro concept test' : b.format === 'short' ? 'Short, vertical 9:16' : 'Long video, 16:9' }} ·
           {{ b.story_shape || 'default story shape' }} · captions {{ b.caption_mode }} ·
-          {{ beats() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
+          {{ world3d() ? '3D explainer' : beats() ? lookName(b.look) : 'flat colour' }} · {{ b.duration.toFixed(1) }} s ·
           {{ scenes().length }} {{ beats() ? 'shots' : 'scenes' }} · made {{ b.created_at | ago }}</p>
         <app-cost-report [of]="{ storyboard: b.id }" label="AI cost of this video, idea to render" />
       </div>
@@ -59,7 +59,7 @@
             }
           }
           <div class="sound look-row">
-            @if (beats()) {
+            @if (beats() && !world3d()) {
               <label class="field"><span>Look</span>
                 <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
                   @for (l of looks(); track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
@@ -102,7 +102,7 @@
             <button class="primary" (click)="render()" [disabled]="busy() || !scenes().length">
               {{ b.has_video ? 'Render again' : 'Render the video' }}</button>
             <button class="quiet" (click)="replan()" [disabled]="busy()">Plan {{ beats() ? 'the shots' : 'the scenes' }} again</button>
-            @if (beats()) {
+            @if (beats() && !world3d()) {
               <button class="quiet" (click)="direct()" [disabled]="busy() || !scenes().length"
                       title="The AI looks at stills of every shot and rewrites the weak ones. You can undo it.">Review with the AI director</button>
             }
@@ -112,6 +112,24 @@
         </section>
       }
       @case ('scenes') {
+        @if (world3d()) {
+          <section class="card world3d-intro">
+            <h3>3D scene plan</h3>
+            <p class="small muted">Each line is validated before Blender runs. Build one persistent miniature world with semantic slots, object IDs and camera moves—never Blender code, coordinates, paths or URLs.</p>
+            <div class="row spread">
+              <p class="small muted">
+                @if (b.preview_3d?.available) {
+                  Cached shot previews built {{ b.preview_3d?.built_at | ago }}.
+                  @if (b.preview_3d?.stale || dirty()) { <strong>They are stale after scene edits.</strong> }
+                  @else { They match the saved plan. }
+                } @else { No cached Blender previews yet. }
+              </p>
+              <button class="quiet" (click)="rebuild3dPreviews()" [disabled]="busy() || saving()">
+                {{ b.preview_3d?.available ? 'Rebuild previews' : 'Build previews' }}
+              </button>
+            </div>
+          </section>
+        }
         @if (b.score; as sc) {
           <section class="card score">
             <div class="row spread">
@@ -224,7 +242,7 @@
           @for (i of g.indices; track i) {
             @let scene = scenes()[i];
             @if (beats()) {
-            <article class="card scene ink" [class.open]="openScene() === i">
+            <article class="card scene ink" [class.world3d]="world3d()" [class.open]="openScene() === i">
               <img class="still" [src]="still(i)" [alt]="'Shot ' + (i + 1)" loading="lazy" (click)="openScene.set(openScene() === i ? null : i)" />
               <div class="body">
                 <div class="row spread">
@@ -232,7 +250,7 @@
                   <span class="small muted num">{{ start(i).toFixed(1) }}–{{ end(i).toFixed(1) }} s</span>
                 </div>
                 <p class="small said">@for (w of spoken(i); track w.n) {<span class="w"><sup>{{ w.n }}</sup>{{ w.w }}</span> }</p>
-                <p class="small muted">{{ scene.note }}@if (film()) {@if (scene.cut) { · hard cut } } @else {@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }@if (scene.place) { · in {{ label(scene.place) }} }}</p>
+                <p class="small muted">{{ scene.note }}@if (film()) {@if (scene.cut) { · hard cut } } @else if (!world3d()) {@if (scene.camera !== 'wide') { · camera: {{ scene.camera }} }@if (scene.place) { · in {{ label(scene.place) }} }}</p>
                 @if (openScene() !== i) {
                   <pre class="beats">{{ (scene.lines ?? []).join('\n') }}</pre>
                 }
@@ -248,7 +266,7 @@
                     <label class="check"><input type="checkbox" [ngModel]="!!scene.cut" (ngModelChange)="change(i, { cut: $event })" />
                       <span>Hard cut<small>Jump here instead of following a red string from the shot before.</small></span></label>
                   </div>
-                  } @else {
+                  } @else if (!world3d()) {
                   <div class="scene-fields ink-fields">
                     <label class="field"><span>Camera</span>
                       <select [ngModel]="scene.camera" (ngModelChange)="change(i, { camera: $event })">
@@ -260,7 +278,7 @@
                              [placeholder]="placeOf(i) ? 'same: ' + label(placeOf(i)) : 'chosen when drawn'" /></label>
                   </div>
                   }
-                  <label class="field"><span>Beats: one per line, the word number first (the small numbers above the words)</span>
+                  <label class="field"><span>{{ world3d() ? '3D lines' : 'Beats' }}: one per line, the word number first (the small numbers above the words)</span>
                     <textarea class="beats" spellcheck="false" [rows]="Math.max(4, (scene.lines ?? []).length + 1)"
                               [ngModel]="(scene.lines ?? []).join('\n')" (ngModelChange)="setLines(i, $event)"></textarea></label>
                   <details class="fold small">
@@ -289,7 +307,7 @@
                 <p class="small said">“@for (w of spoken(i); track w.n) {{{ w.w }} }”</p>
                 <p class="small muted">{{ scene.note }}</p>
                 <div class="chips">
-                  @for (e of scene.elements; track $index) {
+                  @for (e of (scene.elements ?? []); track $index) {
                     <span class="chip">{{ e.kind === 'character' ? e.name + ' · ' + label(e.pose) : e.kind === 'prop' ? e.name : e.kind === 'data' ? 'data · ' + e.data_card : e.kind === 'arrow' ? 'arrow' : '“' + e.text + '”' }}</span>
                   }
                 </div>
@@ -320,7 +338,7 @@
                     }
                   </div>
 
-                  @for (e of scene.elements; track $index; let k = $index) {
+                  @for (e of (scene.elements ?? []); track $index; let k = $index) {
                     <div class="element">
                       <div class="thumb">
                         @if (e.kind === 'character') { <img [src]="castThumb(e)" alt="" /> }
@@ -400,7 +418,7 @@
                   <div class="row">
                     <span class="small muted">Add:</span>
                     @for (kind of ['character', 'prop', 'text', 'number', 'arrow', 'data']; track kind) {
-                      <button class="sm" (click)="addElement(i, $any(kind))" [disabled]="scene.elements.length >= 4">{{ kind }}</button>
+                      <button class="sm" (click)="addElement(i, $any(kind))" [disabled]="(scene.elements ?? []).length >= 4">{{ kind }}</button>
                     }
                     <span class="grow"></span>
                     <label class="field split"><span>New scene from</span>

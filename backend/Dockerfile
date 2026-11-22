@@ -1,5 +1,5 @@
-# Clipper backend: one image, run as the API or as the worker.
-FROM python:3.12-slim-bookworm
+# Clipper backend runtime. Keep this target lean: API and migration containers use it.
+FROM python:3.12-slim-bookworm AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
@@ -86,3 +86,74 @@ USER clipper
 
 EXPOSE 8000
 CMD ["clipper", "api", "--host", "0.0.0.0", "--port", "8000"]
+
+# Blender is deliberately isolated from the API/migration image. The official Linux
+# build is x86-64 only; fail on ARM rather than silently running an emulated renderer
+# in production. Pass the published archive SHA-256 as BLENDER_SHA256 at build time.
+FROM runtime AS blender-worker
+
+ARG BLENDER_VERSION=4.5.16
+ARG BLENDER_SHA256=23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11
+ARG TARGETARCH
+
+USER root
+RUN test -n "$BLENDER_SHA256" || (echo "BLENDER_SHA256 is required for the blender-worker target (see README.md)" >&2; exit 1)
+
+# These are the runtime libraries used by Blender's headless Eevee binary. Keep the
+# list here (instead of adding it to runtime) so API and migrate stay Blender-free.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      curl \
+      xz-utils \
+      libdbus-1-3 \
+      libegl1 \
+      libfontconfig1 \
+      libfreetype6 \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
+      libice6 \
+      libpulse0 \
+      libsm6 \
+      libwayland-client0 \
+      libwayland-egl1 \
+      libx11-6 \
+      libx11-xcb1 \
+      libxcb1 \
+      libxcursor1 \
+      libxext6 \
+      libxfixes3 \
+      libxi6 \
+      libxinerama1 \
+      libxkbcommon0 \
+      libxkbcommon-x11-0 \
+      libxrandr2 \
+      libxrender1 \
+      libxxf86vm1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) blender_arch=x64 ;; \
+      *) echo "Blender $BLENDER_VERSION has no supported Linux build for $TARGETARCH; use an x86-64 VM (no emulation)." >&2; exit 1 ;; \
+    esac; \
+    archive="blender-${BLENDER_VERSION}-linux-${blender_arch}.tar.xz"; \
+    url="https://download.blender.org/release/Blender4.5/${archive}"; \
+    curl -fsSL "$url" -o "/tmp/$archive"; \
+    echo "$BLENDER_SHA256  /tmp/$archive" | sha256sum -c -; \
+    mkdir -p /opt/blender; \
+    tar -xJf "/tmp/$archive" --strip-components=1 -C /opt/blender; \
+    ln -s /opt/blender/blender /usr/local/bin/blender; \
+    rm -f "/tmp/$archive"; \
+    chown -R clipper:clipper /opt/blender
+
+# Build-time smoke check: no X server, network, or user data is needed. Eevee is
+# intentionally rendered at 64x64 to catch missing headless/runtime dependencies.
+USER clipper
+RUN blender --background --factory-startup --version \
+    && blender --background --factory-startup \
+      --python-expr "import bpy; s=bpy.context.scene; s.render.engine='BLENDER_EEVEE_NEXT'; s.render.image_settings.file_format='PNG'; s.render.resolution_x=64; s.render.resolution_y=64; s.render.resolution_percentage=100; s.render.filepath='/tmp/blender-smoke.png'; bpy.ops.render.render(write_still=True)" \
+    && test -s /tmp/blender-smoke.png \
+    && rm -f /tmp/blender-smoke.png
+
+CMD ["clipper", "worker"]

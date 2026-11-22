@@ -1,0 +1,33 @@
+{
+  "word_count": 55,
+  "scenes": [
+    {
+      "start_word": 0,
+      "note": "A small fastener shows the impact principle",
+      "lines": [
+        "0 add plank center medium as board",
+        "0 add nail center small as nail",
+        "2 add hammer right small as hammer",
+        "5 strike hammer nail",
+        "9 scale nail large"
+      ]
+    },
+    {
+      "start_word": 12,
+      "note": "The same principle becomes a foundation machine",
+      "lines": [
+        "12 add ground bottom large as site",
+        "13 add pile center large as foundation",
+        "14 add crane right large as crane",
+        "16 add pile_hammer center large as driver",
+        "19 camera wide driver",
+        "22 explode driver",
+        "28 label driver \"IMPACT DRIVER\"",
+        "32 cutaway driver",
+        "36 cycle driver 3",
+        "44 camera orbit driver",
+        "50 camera close driver"
+      ]
+    }
+  ]
+}

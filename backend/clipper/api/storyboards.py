@@ -34,6 +34,7 @@ from ..studio import (
     animate,
     art,
     beats,
+    blender_render,
     cartoon,
     compliance,
     continuity,
@@ -45,6 +46,7 @@ from ..studio import (
     retention,
     sfx,
     sound,
+    world3d,
     youtube,
 )
 from ..studio import director as director_mod
@@ -123,9 +125,14 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     used = [found[q] for q in queries if q in found]
     credits = publish.credits(db, board)
     score = None
+    complexity = None
+    preview_3d = None
     if board.style == "ink" and board.scenes and board.words:
         words = board.words
         score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"], board.end - board.start)
+    elif board.style == "3d" and board.scenes:
+        complexity = world3d.complexity(board.scenes)
+        preview_3d = blender_render.preview_status(board)
     map_value = board.script.story_map if board.script.story_map and story_map_mod.status(board.script)[0] else None
     cards = data_graphics.stored(map_value)
     continuity_lines = continuity.check(
@@ -141,6 +148,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
         missing_props=sorted(names - drawn),
         music_credit=credit,
         score=score,
+        complexity=complexity,
+        preview_3d=preview_3d,
         photos=used,
         photo_searches_missing=[q for q in queries if q not in found],
         credits=credits,
@@ -160,6 +169,7 @@ LOOKS = {
     "ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow"),
     "film": ("wall", "studio"),
     "flat": ("ink",),
+    "3d": ("3d",),
 }
 
 
@@ -177,6 +187,10 @@ def _idle(db: Session, board: Storyboard) -> None:
 def _enqueue(db: Session, board: Storyboard, kind: str) -> Job:
     _idle(db, board)
     stages = None
+    if kind == "storyboard" and board.style == "3d":
+        stages = ["plan", "build3d"]
+    if kind == "animate" and board.style == "3d":
+        stages = ["build3d", "animate"]
     if kind == "storyboard" and board.style in director_mod.KITS and settings_mod.load().director_pass:
         stages = [*jobs.STAGES["storyboard"], "direct"]  # Settings: the director looks after every plan
     return jobs.enqueue(db, kind, board.title, {"script_id": board.script_id, "storyboard_id": board.id}, stages=stages)
@@ -188,6 +202,8 @@ def _enqueue(db: Session, board: Storyboard, kind: str) -> Job:
 @router.post("/scripts/{script_id}/storyboards", response_model=s.StoryboardOut, status_code=202)
 def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """Plan scenes for a section (a Short) or the whole script, timed to a voice take."""
+    if body.style == "3d" and not settings_mod.load().studio_3d_enabled:
+        raise HTTPException(409, "3D explainers are a beta. Turn on 3D explainers in Settings to create one.")
     take = db.get(VoiceTake, body.take_id) if body.take_id else next((t for t in script.takes if t.chosen), None)
     if take is None or take.script_id != script.id:
         raise HTTPException(409, "Choose a voice take for the video first (Voice, then 'Use for the video')")
@@ -330,6 +346,26 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
                 board.id,
             )
         board.scenes = shots
+    elif board.style == "3d":
+        shots, issues = world3d.clean(body.scenes, len(board.words))
+        if issues:
+            raise HTTPException(
+                400,
+                f"{len(issues)} line{'s' if len(issues) != 1 else ''} could not be used: "
+                + "; ".join(issues[:3]),
+            )
+        changed = compliance.lines_changed(board.scenes or [], shots)
+        if changed:
+            compliance.record(
+                db,
+                board.script_id,
+                "beats_edit",
+                "you",
+                f"Edited the 3D scenes ({changed} line{'s' if changed != 1 else ''})",
+                changed,
+                board.id,
+            )
+        board.scenes = shots
     else:
         try:
             scenes = []
@@ -387,11 +423,31 @@ def render(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
     return _enqueue(db, board, "animate")
 
 
+@router.post("/storyboards/{storyboard_id}/previews", response_model=s.JobOut, status_code=202)
+def rebuild_previews(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+    """Build or refresh the cached Blender scene and representative shot stills."""
+    if board.style != "3d":
+        raise HTTPException(409, "Cached Blender previews are available for 3D storyboards only")
+    if not board.scenes:
+        raise HTTPException(409, "The storyboard has no 3D scenes yet")
+    return _enqueue(db, board, "build3d")
+
+
 @router.get("/storyboards/{storyboard_id}/still")
 def still(
     t: float = Query(0.0, ge=0), width: int = Query(540, ge=120, le=1080), board: Storyboard = Depends(get_board)
 ):
     """One frame, for previews in the editor."""
+    if board.style == "3d":
+        try:
+            png, stale = blender_render.preview(board.id, t, width)
+        except FileNotFoundError as err:
+            raise HTTPException(409, "No cached 3D preview yet. Finish or retry the 3D build job.") from err
+        return Response(
+            png,
+            media_type="image/png",
+            headers={"Cache-Control": "no-store", "X-Clipper-Preview-Stale": str(stale).lower()},
+        )
     png = animate.still(board.id, t, settings_mod.load(), width)
     return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
 

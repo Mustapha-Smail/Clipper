@@ -218,6 +218,8 @@ export interface AppSettings {
   unapproved_keep_days: number;
   prop_drawing: 'careful' | 'quick';
   director_pass: boolean;
+  /** Beta: allow new Blender-backed 3D explainers. Existing 3D boards still round-trip when this is off. */
+  studio_3d_enabled: boolean;
   /** Optional effects: an attention sound at 0 s, and risers into the first twist and the payoff. */
   sound_starter: boolean;
   sound_riser: boolean;
@@ -668,9 +670,10 @@ export interface StoryComposition {
 export interface StoryScene {
   start_word: number;
   note: string;
-  background: string;
-  camera: string;
-  elements: StoryElement[];
+  /** Flat scenes carry these fields; 3D scenes intentionally carry only lines. */
+  background?: string;
+  camera?: string;
+  elements?: StoryElement[];
   lines?: string[];
   page?: boolean;
   cut?: boolean;
@@ -678,6 +681,9 @@ export interface StoryScene {
   place?: string;
   composition?: StoryComposition;
 }
+
+/** Canonical minimum shape returned for a Blender-backed 3D shot. */
+export type Story3dScene = Pick<StoryScene, 'start_word' | 'note'> & { lines: string[] };
 
 /** A place for the cartoon look. Six are drawn by code; the others by Claude when a video needs them. */
 export interface Place {
@@ -739,7 +745,7 @@ export interface StoryboardSummary {
   story_shape: StoryShape | null;
   caption_mode: CaptionMode;
   style: StoryStyle;
-  look: Look;
+  look: StoryboardLook;
   section_key: string | null;
   title: string;
   review: 'pending' | 'approved' | 'rejected';
@@ -782,6 +788,8 @@ export interface Storyboard extends StoryboardSummary {
   missing_props: string[];
   music_credit: string;
   score: LivelinessScore | null;
+  complexity?: Record<string, unknown> | null;
+  preview_3d?: { available: boolean; built_at: string | null; stale: boolean } | null;
   photos: ArchivePhoto[];
   photo_searches_missing: string[];
   credits: string;
@@ -946,8 +954,10 @@ export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon' | 'clean_doodle'
 /** How a film storyboard (the documentary wall) is drawn. */
 export type FilmLook = 'wall' | 'studio';
 export type Look = InkLook | FilmLook;
-/** ink: beats on one page; film: a documentary on an evidence wall; flat: the first style, slides. */
-export type StoryStyle = 'ink' | 'flat' | 'film';
+/** The 3D renderer owns one fixed look; it is not a user-selectable drawing variant. */
+export type StoryboardLook = Look | '3d';
+/** ink: beats on one page; film: an evidence wall; 3d: a code-rendered mechanism explainer; flat: slides. */
+export type StoryStyle = 'ink' | 'flat' | 'film' | '3d';
 
 export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'ink', label: 'Ink sketch', hint: 'brush lines drawn on cream paper' },
@@ -1303,7 +1313,7 @@ export interface ThemeVideo {
   root_idea_id: number | null;
   lineage_kind: 'root' | 'concept_test' | 'promotion' | null;
   style: string;
-  look: Look;
+  look: StoryboardLook;
   seconds: number | null;
   published_at: string | null;
   published_url: string | null;

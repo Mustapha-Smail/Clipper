@@ -14,6 +14,7 @@ from PIL import Image
 SAMPLE_HZ = 6
 SAMPLE_WIDTH = 180
 MIN_EMPTY_SECONDS = 0.5
+MIN_CLIPPED_SECONDS = 0.5
 OCCUPANCY_MIN = 0.008  # about 260 pixels at 180x320: a small readable drawn object
 EDGE_MIN = 0.003  # excess strong edges beyond a textured border baseline
 BORDER = 4
@@ -54,6 +55,11 @@ def measure(frame) -> dict[str, float | bool]:
     colour = distance > colour_threshold
     border_occupancy = float(colour[border_mask].mean())
     occupancy = max(0.0, float(colour[interior].mean()) - 1.5 * border_occupancy)
+    # A subject covering an appreciable part of the border can itself raise
+    # the p95 threshold above. Use a separate robust background threshold for
+    # the 3D clipped-subject advisory; it does not affect legacy emptiness.
+    clip_threshold = max(18.0, float(np.percentile(distance[border_mask], 60)) + 10.0)
+    border_foreground = float((distance[border_mask] > clip_threshold).mean())
 
     grey = rgb.mean(axis=2)
     gradient = np.hypot(np.diff(grey, axis=1, append=grey[:, -1:]), np.diff(grey, axis=0, append=grey[-1:, :]))
@@ -62,16 +68,22 @@ def measure(frame) -> dict[str, float | bool]:
     border_edges = float(strong[border_mask].mean())
     edge_density = max(0.0, float(strong[interior].mean()) - 1.5 * border_edges)
     meaningful = occupancy >= OCCUPANCY_MIN or edge_density >= EDGE_MIN
-    return {"occupancy": round(occupancy, 4), "edge_density": round(edge_density, 4), "meaningful": meaningful}
+    return {
+        "occupancy": round(occupancy, 4),
+        "edge_density": round(edge_density, 4),
+        "border_foreground": round(border_foreground, 4),
+        "meaningful": meaningful,
+    }
 
 
 class Observer:
     """Collect six measurements a second and, for silent loops, compare the seam."""
 
-    def __init__(self, words: list[dict], voice_duration: float, loop: bool = False):
+    def __init__(self, words: list[dict], voice_duration: float, loop: bool = False, profile: str = ""):
         self.words = words
         self.voice_duration = max(0.0, voice_duration)
         self.loop = loop
+        self.profile = profile
         self.next_sample = 0.0
         self.samples: list[dict] = []
         self.problem = ""
@@ -116,6 +128,27 @@ class Observer:
                 f"Near-empty visuals from {run['start_s']:.1f} to {run['end_s']:.1f} s while narration is active."
                 for run in runs
             ]
+            clipped = []
+            if self.profile == "3d":
+                start = last = None
+                for sample in self.samples:
+                    touches = sample["active"] and sample.get("border_foreground", 0) >= 0.12
+                    contiguous = last is not None and sample["at"] - last <= 1.5 / SAMPLE_HZ
+                    if touches and (start is None or contiguous):
+                        start = sample["at"] if start is None else start
+                        last = sample["at"]
+                        continue
+                    if start is not None:
+                        self._keep_run(clipped, start, last)
+                    start, last = (sample["at"], sample["at"]) if touches else (None, None)
+                if start is not None:
+                    self._keep_run(clipped, start, last)
+                warnings += [
+                    f"A 3D subject may be clipped by the frame edge from {run['start_s']:.1f} "
+                    f"to {run['end_s']:.1f} s; check the camera view."
+                    for run in clipped
+                    if run["duration_s"] + 0.005 >= MIN_CLIPPED_SECONDS
+                ]
             seam = None
             if self.loop and self.first_frame is not None and self.last_frame is not None:
                 difference = float(np.abs(self.first_frame - self.last_frame).mean() / 255.0)
@@ -131,7 +164,7 @@ class Observer:
                         "The final visual differs from the opening; restore the opening composition "
                         "before the loop ends."
                     )
-            return {
+            result = {
                 "sample_hz": SAMPLE_HZ,
                 "samples": len(self.samples),
                 "first_visual_event_s": first,
@@ -140,6 +173,9 @@ class Observer:
                 "warnings": warnings,
                 "problem": self.problem or None,
             }
+            if self.profile == "3d":
+                result["clipped_runs"] = clipped
+            return result
         except Exception as err:  # noqa: BLE001 - advisory QA can never fail a render
             return {
                 "sample_hz": SAMPLE_HZ,
@@ -157,3 +193,49 @@ class Observer:
         duration = end - start
         if duration + 0.005 >= MIN_EMPTY_SECONDS:  # sample timestamps are stored to milliseconds
             runs.append({"start_s": round(start, 2), "end_s": round(end, 2), "duration_s": round(duration, 2)})
+
+
+def three_d_advice(scenes: list[dict], result: dict) -> dict:
+    """Add deterministic contract advice that pixels alone cannot explain."""
+    try:
+        from . import world3d
+
+        live: dict[str, bool] = {}
+        labels: list[tuple[int, str]] = []
+        camera_without_view: list[int] = []
+        for shot in scenes:
+            for line in world3d.parsed(shot):
+                if line.verb in world3d.CREATES:
+                    live[line.ident] = True
+                elif line.verb == "remove":
+                    live.pop(line.target, None)
+                elif line.verb == "clear":
+                    live.clear()
+                elif line.verb == "hide":
+                    live[line.target] = False
+                elif line.verb == "show":
+                    live[line.target] = True
+                elif line.verb == "label":
+                    labels.append((line.word, line.text))
+                elif line.verb == "camera":
+                    visible = {name for name, shown in live.items() if shown}
+                    if (line.target and line.target not in visible) or (not line.target and not visible):
+                        camera_without_view.append(line.word)
+        warnings = list(result.get("warnings") or [])
+        long_labels = [(word, text) for word, text in labels if len(text) > 24]
+        if long_labels:
+            warnings.append(
+                "A 3D label is longer than 24 characters and may be unreadable on a phone: "
+                + ", ".join(f"word {word} ({text!r})" for word, text in long_labels[:3])
+                + "."
+            )
+        if camera_without_view:
+            warnings.append(
+                "A 3D camera view has no visible target at word "
+                + ", ".join(str(word) for word in camera_without_view[:6])
+                + "."
+            )
+        return {**result, "warnings": warnings, "long_labels": len(long_labels),
+                "camera_without_visible_target": camera_without_view}
+    except Exception as err:  # noqa: BLE001 - advisory QA cannot fail a valid render
+        return {**result, "problem": result.get("problem") or f"3D QA advice failed: {str(err)[:160]}"}

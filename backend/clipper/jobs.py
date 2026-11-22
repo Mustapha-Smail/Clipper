@@ -49,6 +49,9 @@ STAGES = {
     "direct": ["draw", "direct"],
     "thumbnails": ["thumbnails"],
     "animate": ["draw", "animate"],
+    # 3D storyboards replace `draw` with the contained Blender preparation
+    # stage. API enqueueing supplies the style-specific stage list.
+    "build3d": ["build3d"],
 }
 STAGE_LABELS = {
     "download": "Fetching the video",
@@ -77,6 +80,7 @@ STAGE_LABELS = {
     "cue": "Designing the silent visual timing",
     "plan": "Planning the scenes",
     "draw": "Drawing new props and finding photos",
+    "build3d": "Building the 3D scene and previews",
     "animate": "Animating the video",
     "direct": "The AI director is looking at the shots",
     "thumbnails": "Making the thumbnails",
