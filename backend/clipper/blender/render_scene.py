@@ -302,6 +302,9 @@ class Scene:
         scene.render.film_transparent = False
         scene.render.image_settings.color_mode = "RGB"
         scene.eevee.taa_render_samples = int(self.render["samples"])
+        # use_empty removes every world, so the scene has none until we add one.
+        if scene.world is None:
+            scene.world = bpy.data.worlds.new("clipper_world")
         scene.world.color = (0.025, 0.035, 0.05)
         scene.render.filepath = str(self.output / "scene.part.mp4")
         scene.render.image_settings.color_depth = "8"
@@ -328,8 +331,17 @@ class Scene:
         rim.data.size = 3.0
 
     def track(self, obj, point):
+        """Point the object's -Z axis (a camera's view) at ``point``.
+
+        Tilt is measured from straight down: 0 looks down, 90 degrees looks level.
+        """
         dx, dy, dz = point[0] - obj.location.x, point[1] - obj.location.y, point[2] - obj.location.z
-        obj.rotation_euler = (math.atan2(math.sqrt(dx * dx + dy * dy), dz), 0, math.atan2(dy, dx) - math.pi / 2)
+        obj.rotation_euler = (math.atan2(math.sqrt(dx * dx + dy * dy), -dz), 0, math.atan2(dy, dx) - math.pi / 2)
+
+    def face(self, obj, point):
+        """Turn the object's +Z axis (a text's front) toward ``point``."""
+        loc = obj.location
+        self.track(obj, (2 * loc.x - point[0], 2 * loc.y - point[1], 2 * loc.z - point[2]))
 
     def add_camera(self):
         bpy = self.bpy
@@ -337,7 +349,10 @@ class Scene:
         camera = bpy.context.object
         camera.name = "camera_main"
         camera.data.type = "PERSP"
-        camera.data.lens = 52 if self.render["width"] > self.render["height"] else 58
+        # About 37 degrees of frame height in both formats (vertical fits the
+        # 24 mm sensor height, horizontal the 36 mm width). The old 58/52 mm
+        # lenses cut the assets and their labels off.
+        camera.data.lens = 30 if self.render["width"] > self.render["height"] else 35
         camera.data.sensor_fit = "VERTICAL" if self.render["height"] > self.render["width"] else "HORIZONTAL"
         self.track(camera, (0, 0, 1.8))
         bpy.context.scene.camera = camera
@@ -448,13 +463,27 @@ class Scene:
         curve.extrude = 0.012
         obj = self.bpy.data.objects.new(f"label_{target_id}_{self.labels:02d}", curve)
         obj.data.materials.append(self.material("label", roughness=0.4))
-        obj.location = (target.location.x, target.location.y - 0.45, target.location.z + 2.2)
+        # Above the object's highest point: a label placed at a fixed height sat
+        # inside tall assets (the pile hammer's shell) and could not be seen.
+        obj.location = (target.location.x, target.location.y, self.top(target) + 0.55)
         self.bpy.context.collection.objects.link(obj)
-        self.track(obj, self.camera.location)
+        self.face(obj, self.camera.location)
         obj.scale = (0.01, 0.01, 0.01)
         self.key(obj, start, ("scale",))
         obj.scale = (1, 1, 1)
         self.key(obj, end, ("scale",))
+
+    def top(self, root) -> float:
+        """World height of an asset's highest point, from its parts' own boxes.
+
+        Read from the stored values, not the evaluated scene, so the scale
+        keyframes of an entrance do not shrink the answer.
+        """
+        best = root.location.z + 2.2 * root.scale.z
+        for child in root.children:
+            height = max(corner[2] for corner in child.bound_box) * abs(child.scale.z)
+            best = max(best, root.location.z + root.scale.z * (child.location.z + height))
+        return best
 
     def cycle(self, target_id: str, count: int, start: int):
         if count not in range(1, 7):

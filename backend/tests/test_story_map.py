@@ -163,6 +163,65 @@ def test_run_stores_code_owned_metadata_and_reports_dropped_sources(app_env, mon
     assert any("dropped unknown source number 99" in line for line in rep.warnings)
 
 
+def test_build_ignores_ai_parallel_fields_for_an_explain_map(app_env, monkeypatch):
+    script_id = add_script()
+    proposed = raw_map()
+    proposed["story_shape"] = "explain"
+    proposed["parallel"] = {
+        "shared_start": "same timer",
+        "shared_clock": "one minute",
+        "lanes": [
+            {"id": "a", "label": "A", "rule": "one", "promised_consequence": "first"},
+            {"id": "b", "label": "B", "rule": "two", "promised_consequence": "second"},
+        ],
+    }
+    for beat in proposed["beats"]:
+        beat.update(lane="a", checkpoint="heat")
+    calls = []
+    monkeypatch.setattr(
+        llm,
+        "ask",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or story_map.Draft.model_validate(proposed),
+    )
+    with session_scope() as db:
+        script = db.get(Script, script_id)
+        script.story_shape = "explain"
+        result = story_map.build(script, Capture())
+    assert len(calls) == 1
+    assert "parallel" not in result
+    assert all("lane" not in beat and "checkpoint" not in beat for beat in result["beats"])
+
+
+def test_build_repairs_an_unresolved_loop_once(app_env, monkeypatch):
+    script_id = add_script()
+    broken, repaired = raw_map(), raw_map()
+    broken["beats"][1]["resolves"] = []
+    answers = iter([broken, repaired])
+    calls = []
+
+    def ask(*args, **kwargs):
+        calls.append((args, kwargs))
+        return story_map.Draft.model_validate(next(answers))
+
+    monkeypatch.setattr(llm, "ask", ask)
+    rep = Capture()
+    with session_scope() as db:
+        result = story_map.build(db.get(Script, script_id), rep)
+    assert len(calls) == 2
+    assert "Unresolved loops: heat_path." in calls[1][0][2]
+    assert result["beats"][1]["resolves"] == ["heat_path"]
+    assert any("Repairing" in message for message in rep.infos)
+
+
+def test_build_still_refuses_a_failed_repair(app_env, monkeypatch):
+    script_id = add_script()
+    broken = raw_map()
+    broken["beats"][1]["resolves"] = []
+    monkeypatch.setattr(llm, "ask", lambda *args, **kwargs: story_map.Draft.model_validate(broken))
+    with session_scope() as db, pytest.raises(RuntimeError, match="Unresolved loops: heat_path"):
+        story_map.build(db.get(Script, script_id), Capture())
+
+
 def test_ai_outage_fails_the_new_script_pipeline_and_is_visible(client, monkeypatch):
     with session_scope() as db:
         idea = Idea(title="T", theme="Everyday", hook="H", expected="E", answer="A", angle="X",

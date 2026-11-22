@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import selectors
 import shutil
 import signal
@@ -195,6 +196,10 @@ def command(blender: str, plan: Path, render_dir: Path) -> list[str]:
         blender,
         "--background",
         "--factory-startup",
+        # Without this Blender exits 0 when the script raises, which hides the
+        # real error behind "finished without producing its video".
+        "--python-exit-code",
+        "1",
         "--python",
         str(runner),
         "--",
@@ -236,6 +241,21 @@ def _cleanup_partials(root: Path) -> None:
     frames = _inside(root / "frames.part", root)
     if frames.is_dir():
         shutil.rmtree(frames)
+
+
+def _failure_detail(tail: Iterable[str]) -> str:
+    """The renderer's own error line when there is one, else Blender's last lines."""
+    lines = list(tail)
+    ours = [line.split("CLIPPER_ERROR ", 1)[1] for line in lines if "CLIPPER_ERROR " in line]
+    if ours:
+        return ours[-1].strip()[:400]
+    # A Python traceback ends with "SomethingError: message"; Blender then adds
+    # a generic "Error: script failed, file: ..." that says nothing useful.
+    raised = [line for line in lines
+              if re.match(r"^[A-Za-z_.]*(Error|Exception)\b.*:", line) and not line.startswith("Error: ")]
+    if raised:
+        return raised[-1][:400]
+    return " | ".join(lines)[-800:]
 
 
 def run_plan(
@@ -308,13 +328,16 @@ def run_plan(
         raise
     if proc.returncode:
         _cleanup_partials(root)
-        detail = " | ".join(tail)[-800:] or f"exit code {proc.returncode}"
+        detail = _failure_detail(tail) or f"exit code {proc.returncode}"
         raise BlenderRenderError(f"Blender could not render the 3D scene: {detail}")
     manifest_part = _inside(root / "manifest.part.json", root)
     video_part = _inside(root / "scene.part.mp4", root)
     if not manifest_part.is_file() or not video_part.is_file():
         _cleanup_partials(root)
-        raise BlenderRenderError("Blender finished without producing its video and manifest")
+        detail = _failure_detail(tail)
+        raise BlenderRenderError(
+            "Blender finished without producing its video and manifest" + (f": {detail}" if detail else "")
+        )
     try:
         manifest = json.loads(manifest_part.read_text())
     except (OSError, json.JSONDecodeError) as err:

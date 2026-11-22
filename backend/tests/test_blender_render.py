@@ -121,6 +121,8 @@ def test_plan_and_command_are_contained_by_render_directory(tmp_path):
     )
     cmd = blender_render.command("/opt/blender", plan, root)
     assert cmd[:3] == ["/opt/blender", "--background", "--factory-startup"]
+    # A Python error in the renderer must fail the process instead of exiting 0.
+    assert cmd[cmd.index("--python-exit-code") + 1] == "1"
     assert cmd[-4:] == ["--plan", str(plan), "--output", str(root.resolve())]
     with pytest.raises(blender_render.BlenderRenderError, match="must stay inside"):
         blender_render.command("/opt/blender", tmp_path / "outside.json", root)
@@ -181,6 +183,76 @@ def test_failure_removes_partials_but_preserves_previous_good_render(tmp_path):
     assert (tmp_path / "scene.mp4").read_bytes() == b"previous"
     assert json.loads((tmp_path / "manifest.json").read_text()) == {"previous": True}
     assert not (tmp_path / "scene.part.mp4").exists()
+
+
+def test_missing_output_reports_the_renderers_own_error(tmp_path):
+    scenes, word_count = proof()
+    plan = blender_render.write_plan(scenes, tmp_path, word_count=word_count, width=540, height=960)
+    binary = fake_blender(tmp_path, """
+        import sys
+        print("Blender 4.5.16", flush=True)
+        print("AttributeError: 'NoneType' object has no attribute 'color'", flush=True)
+        print("Blender quit", flush=True)
+    """)
+
+    with pytest.raises(blender_render.BlenderRenderError, match="no attribute 'color'"):
+        blender_render.run_plan(plan, tmp_path, Reporter(), blender_binary=str(binary), timeout=3)
+
+
+def test_failure_detail_prefers_the_python_exception_over_blenders_generic_line():
+    tail = [
+        "    scene.world.color = (0.025, 0.035, 0.05)",
+        "AttributeError: 'NoneType' object has no attribute 'color'",
+        "Error: script failed, file: '/app/render_scene.py', exiting.",
+        "Blender quit",
+    ]
+    assert blender_render._failure_detail(tail) == "AttributeError: 'NoneType' object has no attribute 'color'"
+    assert blender_render._failure_detail(["CLIPPER_ERROR unknown camera move", *tail]) == "unknown camera move"
+
+
+def test_renderer_configures_a_world_after_the_empty_factory_reset(tmp_path):
+    from unittest import mock
+
+    from clipper.blender import render_scene
+
+    bpy = mock.MagicMock()
+    bpy.context.scene.world = None
+    world = mock.MagicMock()
+    bpy.data.worlds.new.return_value = world
+    render = {"fps": 24, "words_per_minute": 150, "width": 540, "height": 960,
+              "resolution_percentage": 50, "samples": 8}
+    scene = render_scene.Scene(bpy, {"render": render, "operations": []}, tmp_path)
+    scene.add_camera = lambda: None  # a stand-in cannot turn tuples into Blender vectors
+
+    scene.configure()
+
+    bpy.ops.wm.read_factory_settings.assert_called_once_with(use_empty=True)
+    assert bpy.context.scene.world is world
+    assert world.color == (0.025, 0.035, 0.05)
+
+
+def test_camera_above_its_target_looks_down_at_it(tmp_path):
+    """Blender's camera looks along -Z: tilt 0 is straight down, 90 degrees is level."""
+    import math
+    from types import SimpleNamespace
+
+    from clipper.blender import render_scene
+
+    render = {"fps": 24, "words_per_minute": 150, "width": 540, "height": 960,
+              "resolution_percentage": 50, "samples": 8}
+    scene = render_scene.Scene(None, {"render": render, "operations": []}, tmp_path)
+    camera = SimpleNamespace(location=SimpleNamespace(x=0.0, y=-10.0, z=10.0), rotation_euler=None)
+    scene.track(camera, (0.0, 0.0, 0.0))
+    tilt, _, turn = camera.rotation_euler
+    assert math.isclose(tilt, math.radians(45))  # down, not up at the sky
+    assert math.isclose(turn, 0.0, abs_tol=1e-9)  # facing +Y, toward the target
+    label = SimpleNamespace(location=SimpleNamespace(x=0.0, y=0.0, z=0.0), rotation_euler=None)
+    scene.face(label, (0.0, -10.0, 10.0))
+    tilt, _, turn = label.rotation_euler
+    # +Z rotated by tilt about X, then by turn about Z, must point at the camera.
+    front = (math.sin(turn) * math.sin(tilt), -math.cos(turn) * math.sin(tilt), math.cos(tilt))
+    toward_camera = (0.0, -math.sqrt(0.5), math.sqrt(0.5))
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(front, toward_camera, strict=True))
 
 
 class CancellingReporter(Reporter):

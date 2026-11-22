@@ -354,15 +354,76 @@ def _shape_prompt(script: Script) -> str:
     return prompts.render(f"story_shape_{shape}")
 
 
+def _clean_ai_draft(draft: Draft, script: Script) -> tuple[Cleaned, bool]:
+    """Clean one model proposal, dropping schema-only parallel fields when they were not requested.
+
+    The structured schema has to expose lane/checkpoint fields so a Parallel map can use them. Some
+    providers fill those optional fields for every shape. They carry no meaning in a non-parallel map,
+    so removing them at this AI boundary is safer than blocking the complete script pipeline. User edits
+    still go through ``clean`` unchanged and continue to reject cross-shape metadata explicitly.
+    """
+    raw = draft.model_dump()
+    shape = script.story_shape or raw.get("story_shape") or "explain"
+    removed = False
+    if shape != "parallel":
+        if raw.get("parallel") is not None:
+            raw["parallel"] = None
+            removed = True
+        for beat in raw.get("beats", []):
+            for field in ("lane", "checkpoint"):
+                if beat.get(field) is not None:
+                    beat[field] = None
+                    removed = True
+    return clean(raw, source_numbers(script), expected_shape=script.story_shape), removed
+
+
+def _repair_prompt(script: Script, draft: Draft, problems: list[str]) -> str:
+    """Ask for one complete structural correction without permitting new research claims."""
+    errors = "\n".join(f"- {problem}" for problem in problems)
+    proposed = json.dumps(draft.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+    return (
+        _prompt(script)
+        + "\n\n<proposed_story_map>\n"
+        + proposed
+        + "\n</proposed_story_map>\n\n<validation_errors>\n"
+        + errors
+        + "\n</validation_errors>\n\n"
+        "Return one complete corrected story map. Correct every validation error while preserving the supplied "
+        "research claims and source numbers. Do not add facts, sources or drama. For a non-parallel story omit "
+        "parallel, lane and checkpoint metadata. Resolve every opened loop in a later beat's resolves list; the "
+        "ending cannot resolve a loop implicitly."
+    )
+
+
 def build(script: Script, rep: Reporter) -> dict:
     """Ask for and validate one map. Does not write the database."""
     try:
         system = PROMPT.format(plain=plain.rules()) + "\n\n" + _shape_prompt(script)
-        draft = llm.ask("story_map", system, _prompt(script), Draft, effort="high")
+        content = _prompt(script)
+        draft = llm.ask("story_map", system, content, Draft, effort="high")
     except llm.AiUnavailable as err:
         rep.warn(f"Story map unavailable: {err}")
         raise RuntimeError(f"Could not build the story map: {err}") from err
-    cleaned = clean(draft.model_dump(), source_numbers(script), expected_shape=script.story_shape)
+    cleaned, removed = _clean_ai_draft(draft, script)
+    if removed:
+        rep.info("Ignored parallel-only fields that the model supplied for a non-parallel story map")
+    if cleaned.problems:
+        first_problems = list(cleaned.problems)
+        rep.info("Repairing the proposed story map from its structural validation errors")
+        try:
+            draft = llm.ask(
+                "story_map",
+                system,
+                _repair_prompt(script, draft, first_problems),
+                Draft,
+                effort="high",
+            )
+        except llm.AiUnavailable as err:
+            rep.warn(f"Story map repair unavailable: {err}")
+            raise RuntimeError(f"Could not repair the story map: {err}") from err
+        cleaned, removed = _clean_ai_draft(draft, script)
+        if removed:
+            rep.info("Ignored parallel-only fields in the repaired non-parallel story map")
     for warning in cleaned.warnings:
         rep.warn(warning)
     for problem in cleaned.problems:

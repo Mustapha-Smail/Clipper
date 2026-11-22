@@ -15,3 +15,11 @@ characters, illustrations, music, thumbnail composition, shot order or frame-lev
 
 `format` remains the orthogonal single-or-list choice. `form` remains the long, short or micro_short runtime choice.
 `story_shape` is exactly one of parallel, explain, scorecard and investigation.
+
+Only `parallel` may use the top-level `parallel` object or beat fields `lane` and `checkpoint`. For explain, scorecard
+and investigation, omit that object and leave every beat's lane and checkpoint absent/null even when the response
+schema offers them.
+
+Before answering, trace the loop IDs in beat order: each `resolves` ID must already be open, each `opens` ID becomes
+open after that beat, and the active set must be empty after the final beat. Do not rely on the ending payoff to close
+a loop implicitly; the resolving beat must name the loop ID in `resolves`.
