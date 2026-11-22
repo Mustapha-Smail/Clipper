@@ -30,7 +30,7 @@ from .. import config, llm, prompts
 from ..db import session_scope
 from ..db.models import Storyboard, StudioAsset, StudioPhoto, VoiceTake, utcnow
 from ..jobs import Reporter
-from . import art, beats, composition, film, hold, ink
+from . import art, beats, composition, data_graphics, film, hold, ink
 from . import places as places_mod
 from . import voice as voice_mod
 
@@ -42,7 +42,7 @@ MAX_ELEMENTS = 4
 
 
 class Element(BaseModel):
-    kind: Literal["character", "prop", "text", "number", "arrow"]
+    kind: Literal["character", "prop", "text", "number", "arrow", "data"]
     name: str = Field("", description="character: a cast name. prop: a prop name in snake_case. Else empty")
     slot: Slot
     to_slot: Slot | None = Field(None, description="arrow only: where it points")
@@ -53,6 +53,8 @@ class Element(BaseModel):
     talking: bool = Field(False, description="character only: mouth moves with the narration")
     text: str = Field("", description="text or number: what to show (at most 5 words). prop: an optional "
                                       "label under it (1 to 3 words)")
+    data_card: str = Field("", max_length=32,
+                           description="data only: stable ID of a cited story-map data card")
     enter: Literal["pop", "slide", "fade", "none"] = "pop"
     enter_word: int | None = Field(None, description="Number of the word on which this element appears; "
                                                      "null to appear with the scene")
@@ -206,7 +208,7 @@ def library() -> dict[str, str]:
                 if a.origin == "you" or art.current_style(a.svg)}
 
 
-def clean(scenes: list[dict], word_count: int) -> list[dict]:
+def clean(scenes: list[dict], word_count: int, data_cards: set[str] | None = None) -> list[dict]:
     """Make a plan safe to render: ordered scenes, valid word numbers, known names, few elements."""
     out = []
     last = -1
@@ -225,6 +227,9 @@ def clean(scenes: list[dict], word_count: int) -> list[dict]:
             if e["kind"] == "arrow" and not e.get("to_slot"):
                 continue
             if e["kind"] in ("text", "number") and not e["text"].strip():
+                continue
+            if e["kind"] == "data" and (not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", e.get("data_card", "")) or
+                                          (data_cards is not None and e["data_card"] not in data_cards)):
                 continue
             if e.get("enter_word") is not None:
                 e["enter_word"] = max(start, min(e["enter_word"], word_count - 1))
@@ -284,15 +289,18 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
         words, fmt, title, style = list(board.words), board.format, board.title, board.style
         headings = {s["key"]: s["heading"] for s in board.script.sections}
         marks, why = turn_marks(words, board.script.sections, board.script.hold)
+        cards = data_graphics.stored(board.script.story_map)
     _report_turns(marks, why, rep)
     if style == "ink":
-        plan_ink(storyboard_id, words, fmt, title, headings, rep, marks)
+        plan_ink(storyboard_id, words, fmt, title, headings, rep, marks, cards)
         return
     if style == "film":
-        plan_film(storyboard_id, words, fmt, title, headings, rep, marks)
+        plan_film(storyboard_id, words, fmt, title, headings, rep, marks, cards)
         return
     known = library()
     system = PLAN.format(max_elements=MAX_ELEMENTS, format_rules=FORMAT_RULES[fmt])
+    if cards:
+        system += "\n\n" + data_graphics.prompt_block(cards)
     props = "\n".join(f"- {name}: {desc}" for name, desc in known.items()) or "(empty so far)"
     chunks = _chunks(words) if fmt == "long" else [(0, words, None)]
     rep.info(f"Planning scenes for {words[-1]['e']:.0f} seconds of narration"
@@ -313,7 +321,7 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
 
     scenes, descriptions = [], {}
     for offset, size, result in results:
-        part = clean([s.model_dump() for s in result.scenes], size)
+        part = clean([s.model_dump() for s in result.scenes], size, set(cards))
         for scene in part:
             scene["start_word"] += offset
             for e in scene["elements"]:
@@ -323,7 +331,7 @@ def plan(storyboard_id: int, rep: Reporter) -> None:
             part[0]["start_word"] = offset   # every chapter starts its own scene
         scenes.extend(part)
         descriptions.update({p.name: p.description for p in result.new_props})
-    scenes = clean(scenes, len(words))
+    scenes = clean(scenes, len(words), set(cards))
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         board.scenes = scenes
@@ -351,17 +359,20 @@ BEAT_SECONDS = {"long": 2.2, "short": 1.6}    # a beat line this often: lively w
 INK_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_ink_{fmt}") for fmt in ("short", "long")}
 
 
-def ink_system(fmt: str, props: str) -> str:
+def ink_system(fmt: str, props: str, cards: dict[str, dict] | None = None) -> str:
     """The planner's instructions with the cast and the prop library: the part every chapter shares."""
     cast = ", ".join(name for name in art.CHARACTERS if name != "narrator")
     actions = ", ".join(f"{name} ({clip['what']})" for name, clip in ink.moves().items() if name in beats.ACTIONS)
-    return (INK_PLAN.format(faces=" ".join(art.EXPRESSIONS), cast=cast, actions=actions,
+    value = (INK_PLAN.format(faces=" ".join(art.EXPRESSIONS), cast=cast, actions=actions,
                             format_rules=INK_FORMAT_RULES[fmt], hair=" ".join(ink.HAIR),
                             colours=" ".join(ink.HAIR_COLOURS), facial=" ".join(ink.FACIAL),
                             hats=" ".join(ink.HEADWEAR), eyes=" ".join(ink.EYEWEAR), outfits=" ".join(ink.OUTFITS),
                             skins=" ".join(ink.SKINS))
             + f"\n\n<cast>\n{CAST}\n</cast>\n\n<prop_library>\n{props}\n</prop_library>"
             + f"\n\n<setting_library>\n{places_mod.listing()}\n</setting_library>")
+    if cards:
+        value += "\n\n" + data_graphics.prompt_block(cards)
+    return value
 
 
 PHOTO_EVERY = {"ink": 40, "film": 30}      # at most one archive photo per this many seconds of narration
@@ -405,11 +416,12 @@ def _report_photo_cut(cut: int, style: str, rep: Reporter) -> None:
 
 
 def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter,
-             marks: dict[int, str] | None = None) -> None:
+             marks: dict[int, str] | None = None, cards: dict[str, dict] | None = None) -> None:
     """Plan an ink storyboard: one call per chapter, the shared instructions cached between them."""
     known = library()
     props = "\n".join(f"- {name}: {desc}" for name, desc in known.items()) or "(empty so far)"
-    system = ink_system(fmt, props)
+    cards = cards or {}
+    system = ink_system(fmt, props, cards)
     chunks = _chunks(words) if fmt == "long" else [(0, words, None)]
     rep.info(f"Planning shots for {words[-1]['e']:.0f} seconds of narration"
               + (f", chapter by chapter ({len(chunks)})" if len(chunks) > 1 else ""))
@@ -452,7 +464,7 @@ def plan_ink(storyboard_id: int, words: list[dict], fmt: str, title: str, headin
         settings.update({beats._name(p.name): p.description for p in result.new_settings})
     _report_photo_cut(cut, "ink", rep)
     _report_big(limit_big(shots, beats.parse_line, "big", marks or {}), rep)
-    shots, dropped = beats.clean(shots, len(words))
+    shots, dropped = beats.clean(shots, len(words), set(cards))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "
                  + "; ".join(dropped[:3]))
@@ -486,9 +498,12 @@ FILM_FORMAT_RULES = {fmt: prompts.Prompt(f"storyboard_film_{fmt}") for fmt in ("
 
 
 def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headings: dict, rep: Reporter,
-              marks: dict[int, str] | None = None) -> None:
+              marks: dict[int, str] | None = None, cards: dict[str, dict] | None = None) -> None:
     """Plan a film storyboard: shots of beat lines on the evidence wall, one call per chapter."""
+    cards = cards or {}
     system = FILM_PLAN.format(format_rules=FILM_FORMAT_RULES[fmt])
+    if cards:
+        system += "\n\n" + data_graphics.prompt_block(cards)
     chunks = _chunks(words) if fmt == "long" else [(0, words, None)]
     rep.info(f"Planning the wall for {words[-1]['e']:.0f} seconds of narration"
              + (f", chapter by chapter ({len(chunks)})" if len(chunks) > 1 else ""))
@@ -523,7 +538,7 @@ def plan_film(storyboard_id: int, words: list[dict], fmt: str, title: str, headi
         shots.extend(part)
     _report_photo_cut(cut, "film", rep)
     _report_big(limit_big(shots, film.parse_line, "bar", marks or {}), rep)
-    shots, dropped = film.clean(shots, len(words))
+    shots, dropped = film.clean(shots, len(words), set(cards))
     if dropped:
         rep.warn(f"{len(dropped)} planned lines could not be used and were left out, such as: "
                  + "; ".join(dropped[:3]))

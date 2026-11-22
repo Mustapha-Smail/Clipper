@@ -20,6 +20,7 @@ The beat language. Each line starts with the number of the narration word on whi
   N count "NUMBER" "CAPTION" [as ID]                  a number rolling up ("$50,000", "35", "12%")
   N card "TITLE" "line" "line"... [as ID]             an index card, typed: a rule, a list, a comparison (up to 4 lines)
   N doc "SOURCE" "DATE LINE" "the exact words" [as ID]  a typeset page quoting a real document
+  N data CARD_ID [as ID]                              a fixed cited graphic listed in <data_cards>
   N stamp "WORD" on ID                                a verdict slammed onto a thing
   N highlight ID ["phrase"]                           a highlighter on a phrase of a card or a page (on big type: a yellow block behind it)
   N circle|underline|cross ID                         pen marks
@@ -27,7 +28,7 @@ The beat language. Each line starts with the number of the narration word on whi
   N look ID                                           the camera goes back to something already on the wall
   N wide                                              the camera pulls back to the whole cluster
 
-For a deliberate comparison, add `split line` or `split vs` to the shot and add `lane a` or `lane b` to each photo, card, map, big type, or number in that lane. Lane A is left in a long video and upper in a Short; keep each lane self-contained. Omit lane modifiers for the normal single wall composition.
+For a deliberate comparison, add `split line` or `split vs` to the shot and add `lane a` or `lane b` to each photo, card, map, data graphic, big type, or number in that lane. Lane A is left in a long video and upper in a Short; keep each lane self-contained. Omit lane modifiers for the normal single wall composition.
 
 How to do it well:
 - One hero per sentence: each sentence of narration gets one new thing or one mark, on the word it is about (the name as it is said, the year, the verdict word, the number). Something new every 2 to 3 seconds; never more than 4 seconds without a beat.

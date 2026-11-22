@@ -38,6 +38,7 @@ N erase TARGET|all                   N look TARGET|all   (the camera moves in, o
 N flag COUNTRY    N map COUNTRY...    N timeline "label" "label"...    (COUNTRY: ro, it, bg...)
 N who ID "Full Name" TRAIT...  then  N actor ID    (traits: tonsure robe mitre laurel toga crown beard...)
 N photo "search words" [PLACE] [small|large|full]   (a real picture from Wikimedia Commons)
+N data CARD_ID [PLACE] [small|large]                 (a cited fixed graphic from the story map)
 
 WHO      ${CAST.join(' ')}
 PLACE    ${SLOTS.join(' ')}
@@ -61,6 +62,7 @@ N count "NUMBER" "CAPTION" [as ID]                    a number rolling up: "$50,
 N card "TITLE" "line" "line"... [as ID]               an index card, typed (up to 4 lines)
 N doc "SOURCE" "DATE LINE" "the exact words" [as ID]  a typeset page, marked RECREATION:
                                                       quote only words the document really says
+N data CARD_ID [as ID]                               a cited fixed graphic from the story map
 N stamp "WORD" on ID                N highlight ID ["phrase"]
 N circle|underline|cross ID         N string ID ID    (red string: this leads to that)
 N look ID                           N wide            (the camera pulls back to the cluster)
@@ -74,6 +76,7 @@ function blank(kind: StoryElement['kind']): StoryElement {
     kind, name: kind === 'character' ? 'narrator' : kind === 'prop' ? '' : '', slot: 'center',
     to_slot: kind === 'arrow' ? 'right' : null, size: 'medium', pose: 'stand', expression: 'neutral',
     facing: 'right', talking: false, text: '', enter: 'pop', enter_word: null, motion: 'none',
+    data_card: '',
   };
 }
 

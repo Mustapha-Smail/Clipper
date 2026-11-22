@@ -498,6 +498,8 @@ export interface StoryMapBeat {
   opens: string[];
   resolves: string[];
   visual_event: string;
+  lane?: string | null;
+  checkpoint?: string | null;
 }
 
 export interface StoryMapEnding {
@@ -506,11 +508,31 @@ export interface StoryMapEnding {
   source_numbers: number[];
 }
 
+export type StoryDataKind = 'metric' | 'comparison' | 'bars' | 'gauge' | 'cohort' | 'clock' | 'scorecard';
+
+export interface StoryDataCard {
+  id: string;
+  kind: StoryDataKind;
+  label: string;
+  value: number | null;
+  unit: string;
+  items: { label: string; value: number }[];
+  max_value: number | null;
+  source_numbers: number[];
+}
+
 export interface StoryMapEdit {
   template: StoryTemplate;
+  story_shape?: StoryShape | null;
+  parallel?: {
+    shared_start: string;
+    shared_clock: string;
+    lanes: { id: string; label: string; rule: string; promised_consequence: string }[];
+  } | null;
   opening: StoryMapOpening;
   beats: StoryMapBeat[];
   ending: StoryMapEnding;
+  data_cards?: StoryDataCard[] | null;
 }
 
 /** A source-backed plan, not an approval or quality score. */
@@ -613,7 +635,7 @@ export interface VoiceTake {
 }
 
 export interface StoryElement {
-  kind: 'character' | 'prop' | 'text' | 'number' | 'arrow';
+  kind: 'character' | 'prop' | 'text' | 'number' | 'arrow' | 'data';
   name: string;
   slot: string;
   to_slot: string | null;
@@ -623,6 +645,7 @@ export interface StoryElement {
   facing: 'left' | 'right';
   talking: boolean;
   text: string;
+  data_card?: string;
   enter: 'pop' | 'slide' | 'fade' | 'none';
   enter_word: number | null;
   motion: string;
@@ -771,6 +794,7 @@ export interface Storyboard extends StoryboardSummary {
   sound_starter_default: boolean;
   sound_riser_default: boolean;
   continuity: string[];
+  data_cards: StoryDataCard[];
 }
 
 export type AttentionMode = 'default' | 'on' | 'off';
@@ -790,6 +814,7 @@ export interface RenderMeta {
   look: string;
   style: string;
   story_template: StoryTemplate | null;
+  data_cards?: StoryDataCard[];
   hook_shape: string | null;
   starter: boolean;
   riser: boolean;

@@ -514,10 +514,14 @@ function strip(s: ScriptSection): ScriptSection {
 function cloneStoryMap(map: StoryMap): StoryMapEdit {
   return {
     template: map.template,
+    story_shape: map.story_shape ?? null,
+    parallel: map.parallel ? { ...map.parallel, lanes: map.parallel.lanes.map((lane) => ({ ...lane })) } : null,
     opening: { ...map.opening, source_numbers: [...map.opening.source_numbers] },
     beats: map.beats.map((beat) => ({ ...beat, source_numbers: [...beat.source_numbers],
       opens: [...beat.opens], resolves: [...beat.resolves] })),
     ending: { ...map.ending, source_numbers: [...map.ending.source_numbers] },
+    data_cards: map.data_cards?.map((card) => ({ ...card, items: card.items.map((item) => ({ ...item })),
+      source_numbers: [...card.source_numbers] })) ?? null,
   };
 }
 

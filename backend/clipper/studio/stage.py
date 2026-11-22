@@ -22,16 +22,17 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .. import captions as captions_mod
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, art, beats, cartoon, composition, geo, ink, looks, photos
+from . import animate, art, beats, cartoon, composition, data_graphics, geo, ink, looks, photos
 
 FPS = 24
 ART_FPS = 12
 # The hand-drawn wobble of the lines: (pixels at 1080p, changes per second). Subtle by default:
 # a strong boil on every line, all the time, is tiring to watch.
 WOBBLE = {"off": (0.0, 1), "subtle": (0.7, 4), "strong": (2.2, 8)}
-BODIES = ("actor", "prop", "text", "flag", "map", "timeline", "photo")   # things with a place on the stage
+BODIES = ("actor", "prop", "text", "flag", "map", "timeline", "photo", "data")  # placed stage objects
 DRAW_TIME = {"actor": 0.7, "prop": 0.8, "arrow": 0.45, "circle": 0.55, "underline": 0.35, "cross": 0.35,
-             "tick": 0.3, "flag": 0.9, "map": 1.5, "timeline": 1.3, "tag": 0.6, "photo": 0.6}
+             "tick": 0.3, "flag": 0.9, "map": 1.5, "timeline": 1.3, "tag": 0.6, "photo": 0.6,
+             "data": 0.45}
 TAG_TIME = 3.2               # how long a person's name stays under them when they first appear
 ERASE_TIME = 0.3
 POSE_TIME = 0.45
@@ -138,6 +139,7 @@ class InkComposer:
         self.sizes = SIZES[self.format]
         self.props = props
         self.photos: dict[str, dict] = board.get("photos") or {}     # search -> {path, width, height}
+        self.data_cards: dict[str, dict] = board.get("data_cards") or {}
         self.mouths = mouths
         self.words = board["words"]
         self.duration = board["end"] - board["start"]
@@ -404,6 +406,10 @@ class InkComposer:
                 scale = {"small": 0.7, "medium": 1.0, "large": 1.15}[size]
                 w = self.W * (0.62 if self.format == "long" else 0.86) * scale
                 h = max(22, w / 22) * 3.6
+            elif x.kind == "data":
+                scale = {"small": 0.68, "medium": 0.84, "large": 1.0}[size]
+                w = self.W * (0.42 if self.format == "long" else 0.78) * scale
+                h = w * 0.58
             else:
                 px = self.sizes["text"][size] * (1.45 if x.line.big else 1.0)
                 x.size_px = int(px)
@@ -1004,6 +1010,16 @@ class InkComposer:
             image = photos.photo_image(found.get("path"), thing.line.text, int(pw * zq), int(ph * zq), p,
                                        t - thing.born, thing.order, full)
             return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
+        if thing.kind == "data":
+            card = self.data_cards.get(thing.line.who)
+            if card is None:
+                return None
+            cx, cy = self.centre(thing, t)
+            _, _, w, h = thing.box
+            image = self._cached(("data", thing.id, pq, zq), lambda: data_graphics.render(
+                card, max(1, round(w * zq)), max(1, round(h * zq)), progress=p,
+                font_path=str(self.font_path)))
+            return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
         if thing.kind in ("flag", "map", "timeline"):
             cx, cy = self.centre(thing, t)
             _, _, w, h = thing.box
@@ -1183,7 +1199,8 @@ class InkComposer:
         pasted = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0)) if self.look.recolour else None
         view = (cx - self.W / 2 / zoom, cy - self.H / 2 / zoom, cx + self.W / 2 / zoom, cy + self.H / 2 / zoom)
         zq = max(0.5, round(zoom * 10) / 10)
-        rank = {"photo": -1, "prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "actor": 1, "arrow": 2,
+        rank = {"photo": -1, "prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "data": 0,
+                "actor": 1, "arrow": 2,
                 "mark": 2, "tag": 2}
         for thing in sorted(self.things, key=lambda x: (rank[x.kind], x.order)):
             if tq < thing.born or (thing.gone is not None and tq > thing.gone + ERASE_TIME):
