@@ -37,7 +37,7 @@ import os
 import re
 from pathlib import Path
 
-VERSION = "2.7.0-rc.3"
+VERSION = "2.7.0-rc.4"
 
 PACKAGE = Path(__file__).resolve().parent
 REPO = PACKAGE.parent.parent
