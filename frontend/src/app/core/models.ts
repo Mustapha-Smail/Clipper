@@ -611,7 +611,7 @@ export type Pauses = 'tight' | 'natural' | 'relaxed';
 export interface VoiceTake {
   id: number;
   script_id: number;
-  source: 'recording' | VoiceEngine;
+  source: 'recording' | 'silent' | VoiceEngine;
   voice: string;
   speed: number | null;
   pauses: Pauses | null;
@@ -619,11 +619,14 @@ export interface VoiceTake {
   chosen: boolean;
   created_at: string;
   alignment: {
+    mode: 'spoken' | 'designed_cues';
     coverage: number;
     sections: { key: string; heading: string; start: number; end: number }[];
     missing: { section: string; heading: string; text: string; heard: string }[];
     extra: { at: number; text: string }[];
     spoken_words: number;
+    cue_tokens?: number | null;
+    checkpoints?: { kind: string; time_s: number; lane: string | null; word_number: number; evidence: string }[];
     script_hash: string;
     /** Measured pace: script words a minute, pauses included. Missing on takes timed before it was measured. */
     wpm?: number | null;
@@ -804,6 +807,7 @@ export interface VisualQa {
   samples: number;
   first_visual_event_s: number | null;
   empty_runs: { start_s: number; end_s: number; duration_s: number }[];
+  loop_seam?: { difference: number; similarity: number; passed: boolean; first_sample_s: number; last_sample_s: number } | null;
   warnings: string[];
   problem: string | null;
 }
@@ -820,12 +824,14 @@ export interface RenderMeta {
   riser: boolean;
   effects: boolean;
   wpm: number | null;
+  timing_mode?: 'spoken' | 'designed_cues' | null;
   hold_hash: string | null;
   hold_score: number | null;
   first_twist_s: number | null;
   longest_gap_s: number | null;
   first_visual_event_s: number | null;
   visual_qa: VisualQa;
+  micro_checkpoints?: { kind: string; time_s: number; lane: string | null; word_number: number; evidence: string }[];
 }
 
 export type ThumbnailAngle = 'reaction' | 'contrast' | 'stakes' | 'mystery';
@@ -911,21 +917,23 @@ export interface PlainCheck {
   hardest: string[];
 }
 
-export type HoldRole = 'hook' | 'context' | 'stakes' | 'question' | 'twist' | 'rehook' | 'fact' | 'payoff'
+export type HoldRole = 'hook' | 'context' | 'stakes' | 'question' | 'twist' | 'rehook' | 'fact' | 'consequence' | 'payoff'
   | 'callback' | 'filler';
 
 /** The hold check. `current` is false once the text changed since the labels were made: then only
  * `previous_score` is known and the check should run again. */
 export interface HoldCheck {
+  mode?: 'designed_cues';
   current: boolean;
   checked_at: string | null;
   score: number | null;
   previous_score?: number | null;
-  verdict?: 'holds well' | 'some slack' | 'likely to lose people';
+  verdict?: 'holds well' | 'some slack' | 'likely to lose people' | 'visual loop ready';
   topic?: string;
   lines?: { points: number; label: string; detail: string }[];
   stats?: { seconds: number; first_twist: number | null; longest_gap: number | null; topic_at: number | null;
-            timing: 'estimated' | 'measured'; wpm: number };
+            timing: 'estimated' | 'measured' | 'designed'; wpm: number | null };
+  visual_checkpoints?: { kind: string; cue: string; at_fraction: number; time_s: number; evidence: string }[];
   promise?: { verdict: 'paid' | 'partial' | 'missing'; answer_sentence: number | null; reason: string };
   loops?: { id: string; question: string; opener_sentence: number; resolver_sentence: number | null; main: boolean }[];
   rehooks?: { sentence: number; delivers_new_information: boolean; opens_loop: string | null; reason: string }[];

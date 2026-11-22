@@ -1,4 +1,4 @@
-"""Voice for a script: your own recording, or an AI voice, then timing every word.
+"""Voice and designed cue timing for a script.
 
 Every take ends as `voice.wav` (48 kHz mono, loudness-normalised for YouTube)
 in its own folder, plus `timeline.json`: each script word with the time it is
@@ -9,7 +9,9 @@ spoken, which the storyboard and renderer will follow.
            expressive, directed by Claude, slower than real time; see
            chatterbox.py); ElevenLabs is a paid cloud service.
   prepare  Your recording: any audio or video file, converted and normalised.
-  align    Whisper transcribes the take; the words are matched to the script,
+  cue      Silent micro-Short: writes a real silent WAV and a designed visual
+           cue timeline. It never calls TTS or Whisper.
+  align    Whisper transcribes a spoken take; the words are matched to the script,
            so the app knows when each section starts and which lines were
            skipped, changed or added.
 """
@@ -41,10 +43,10 @@ from . import script as script_mod
 log = logging.getLogger("clipper.studio")
 
 SAMPLE_RATE = 48_000
-LOUDNESS = "loudnorm=I=-16:TP=-1.5:LRA=11"     # YouTube plays at about -14 LUFS; -16 leaves headroom
-SECTION_PAUSE = 0.55     # deliberate silence between sections in an AI take
-LONG_SILENCE = 0.65      # provider pauses longer than this lose attention
-KEPT_SILENCE = 0.28      # retain a natural beat when shortening a long pause
+LOUDNESS = "loudnorm=I=-16:TP=-1.5:LRA=11"  # YouTube plays at about -14 LUFS; -16 leaves headroom
+SECTION_PAUSE = 0.55  # deliberate silence between sections in an AI take
+LONG_SILENCE = 0.65  # provider pauses longer than this lose attention
+KEPT_SILENCE = 0.28  # retain a natural beat when shortening a long pause
 
 KOKORO_RELEASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 KOKORO_FILES = {"kokoro-v1.0.fp16.onnx": 177_464_787, "voices-v1.0.bin": 28_214_398}
@@ -78,6 +80,7 @@ ELEVENLABS = "https://api.elevenlabs.io"
 
 
 # --- where things are ----------------------------------------------------------------
+
 
 def take_dir(script_id: int, take_id: int) -> Path:
     return config.studio_dir() / f"script-{script_id}" / f"take-{take_id}"
@@ -122,8 +125,26 @@ def _normalise(src: Path, out: Path, highpass: bool) -> None:
     """Convert anything with an audio track to a loudness-normalised 48 kHz mono WAV."""
     filters = ("highpass=f=70," if highpass else "") + LOUDNESS
     partial = out.with_suffix(".partial.wav")
-    run([require("ffmpeg"), "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
-         "-af", filters, "-c:a", "pcm_s16le", str(partial)])
+    run(
+        [
+            require("ffmpeg"),
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(src),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-af",
+            filters,
+            "-c:a",
+            "pcm_s16le",
+            str(partial),
+        ]
+    )
     partial.replace(out)
 
 
@@ -134,6 +155,111 @@ def _write_wav(path: Path, samples: np.ndarray, rate: int) -> None:
         wav.setsampwidth(2)
         wav.setframerate(rate)
         wav.writeframes(pcm.tobytes())
+
+
+MICRO_CUE_STARTS = (0.0, 0.18, 0.36, 0.58, 0.78)
+
+
+def _designed_timeline(script: Script, duration: float) -> tuple[list[dict], list[dict]]:
+    """Turn the fixed five-line cue contract into timed, non-spoken tokens."""
+    cues = script_mod.micro_cues(script.sections)
+    section = script.sections[0]
+    timeline: list[dict] = []
+    starts = [duration * fraction for fraction in MICRO_CUE_STARTS]
+    ends = [*starts[1:], duration]
+    for cue, start, end in zip(cues, starts, ends, strict=True):
+        tokens = f"{cue['label']}: {cue['text']}".split()
+        step = (end - start) / len(tokens)
+        for index, token in enumerate(tokens):
+            timeline.append(
+                {
+                    "section": section["key"],
+                    "w": token,
+                    "s": round(start + step * index, 3),
+                    "e": round(start + step * (index + 1), 3),
+                    "cue": cue["kind"],
+                }
+            )
+    by_kind = {cue["kind"]: (cue, starts[index]) for index, cue in enumerate(cues)}
+    checkpoint_specs = (
+        ("first_event", "setup", None),
+        ("rule", "rule", None),
+        ("reveal", "outcome_a", "a"),
+        ("consequence", "outcome_b", "b"),
+        ("payoff", "loop", None),
+    )
+    checkpoints = []
+    for kind, cue_kind, lane in checkpoint_specs:
+        cue, at = by_kind[cue_kind]
+        token = next(i for i, item in enumerate(timeline) if item["cue"] == cue_kind)
+        checkpoints.append(
+            {"kind": kind, "time_s": round(at, 3), "lane": lane, "word_number": token + 1, "evidence": cue["text"]}
+        )
+    return timeline, checkpoints
+
+
+def cue(script_id: int, rep: Reporter) -> None:
+    """Create or refresh the chosen synthetic cue take for a silent micro-Short."""
+    with session_scope() as db:
+        script = db.get(Script, script_id)
+        if script is None:
+            raise RuntimeError(f"Script {script_id} no longer exists")
+        if script.form != "micro_short":
+            raise RuntimeError("Designed silent cues are only available for micro-Short scripts")
+        duration = float(script.target_seconds)
+        if not 12 <= duration <= 18:
+            raise RuntimeError("A micro-Short concept test must be 12 to 18 seconds")
+        script_hash = script_mod.text_hash(script.sections)
+        timeline, checkpoints = _designed_timeline(script, duration)
+        take = next(
+            (item for item in reversed(script.takes) if item.source == "silent" and item.script_hash == script_hash),
+            None,
+        )
+        if take is None:
+            take = VoiceTake(
+                script_id=script.id,
+                source="silent",
+                voice="Designed visual cues",
+                speed=None,
+                pauses=None,
+                script_hash=script_hash,
+            )
+            db.add(take)
+            db.flush()
+        for other in script.takes:
+            other.chosen = other.id == take.id
+        folder = take_dir(script.id, take.id)
+        folder.mkdir(parents=True, exist_ok=True)
+        out = folder / "voice.wav"
+        _write_wav(out, np.zeros(round(SAMPLE_RATE * duration), dtype=np.float32), SAMPLE_RATE)
+        timeline_path(take).write_text(json.dumps(timeline), encoding="utf-8")
+        alignment = {
+            "mode": "designed_cues",
+            "coverage": 1.0,
+            "sections": [
+                {
+                    "key": script.sections[0]["key"],
+                    "heading": script.sections[0]["heading"],
+                    "start": 0.0,
+                    "end": duration,
+                }
+            ],
+            "missing": [],
+            "extra": [],
+            "spoken_words": 0,
+            "cue_tokens": len(timeline),
+            "checkpoints": checkpoints,
+            "script_hash": script_hash,
+            "wpm": None,
+        }
+        take.path, take.duration, take.alignment, take.script_hash, take.chosen = (
+            str(out),
+            duration,
+            alignment,
+            script_hash,
+            True,
+        )
+    rep.info(f"Designed five silent visual cues across {duration:g} seconds; no voice or transcription used")
 
 
 def _chunks(text: str, limit: int = 400) -> list[str]:
@@ -152,6 +278,7 @@ def _chunks(text: str, limit: int = 400) -> list[str]:
 
 
 # --- AI voices -----------------------------------------------------------------------
+
 
 def kokoro_dir() -> Path:
     return config.data_dir() / "cache" / "kokoro"
@@ -233,8 +360,9 @@ def delivery(sentence: str, last_in_paragraph: bool, rng: np.random.Generator) -
     return speed, pause * rng.uniform(0.85, 1.15)
 
 
-def speak_kokoro(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter,
-                 pauses: str = "natural") -> None:
+def speak_kokoro(
+    sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter, pauses: str = "natural"
+) -> None:
     """Read the sections one sentence at a time, with a narrator's pauses and pace, over quiet room tone."""
     if voice not in KOKORO_VOICES:
         raise ValueError(f"Unknown Kokoro voice: {voice}")
@@ -267,8 +395,13 @@ def _lines(sections: list[dict]) -> list[tuple[str, bool, bool]]:
         for pi, paragraph in enumerate(paragraphs):
             parts = sentences(paragraph)
             for si, sentence in enumerate(parts):
-                lines.append((sentence, si == len(parts) - 1, si == len(parts) - 1 and pi == len(paragraphs) - 1
-                              and i < len(sections) - 1))
+                lines.append(
+                    (
+                        sentence,
+                        si == len(parts) - 1,
+                        si == len(parts) - 1 and pi == len(paragraphs) - 1 and i < len(sections) - 1,
+                    )
+                )
     return lines
 
 
@@ -278,28 +411,43 @@ def _room_tone(track: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     return track + noise * (10 ** (ROOM_TONE_DB / 20)) / (noise.std() + 1e-9)
 
 
-CHATTERBOX_REFERENCE = ("Picture a hand made of rubber, lying on the table in front of you. Now watch what happens "
-                        "when someone strokes it, slowly, at the very same moment as your own hidden hand.")
+CHATTERBOX_REFERENCE = (
+    "Picture a hand made of rubber, lying on the table in front of you. Now watch what happens "
+    "when someone strokes it, slowly, at the very same moment as your own hidden hand."
+)
 
 
 def chatterbox_voices() -> list[dict]:
     """Chatterbox's own voice, then the timbre of each Kokoro voice (a Kokoro clip is the reference it copies)."""
-    return [{"id": "default", "label": "Chatterbox · its own voice, American woman"},
-            *({"id": k, "label": f"{v} (as Chatterbox)"} for k, v in KOKORO_VOICES.items())]
+    return [
+        {"id": "default", "label": "Chatterbox · its own voice, American woman"},
+        *({"id": k, "label": f"{v} (as Chatterbox)"} for k, v in KOKORO_VOICES.items()),
+    ]
 
 
 def lifted(lines: list[str], rehooks: list[str]) -> frozenset[int]:
     """The numbers of the spoken sentences that hold a rehook sentence of the hold check (the two split text
     differently, so they are matched by content)."""
+
     def norm(text: str) -> str:
         return " ".join(re.findall(r"[a-z0-9']+", text.lower()))
+
     wanted = [norm(t) for t in rehooks if norm(t)]
-    return frozenset(n for n, line in enumerate(lines)
-                     if any(w in norm(line) or norm(line) in w for w in wanted if norm(line)))
+    return frozenset(
+        n for n, line in enumerate(lines) if any(w in norm(line) or norm(line) in w for w in wanted if norm(line))
+    )
 
 
-def speak_chatterbox(sections: list[dict], voice: str, speed: float, out: Path, rep: Reporter,
-                     pauses: str = "natural", short: bool = False, rehooks: list[str] | None = None) -> None:
+def speak_chatterbox(
+    sections: list[dict],
+    voice: str,
+    speed: float,
+    out: Path,
+    rep: Reporter,
+    pauses: str = "natural",
+    short: bool = False,
+    rehooks: list[str] | None = None,
+) -> None:
     """Claude directs each sentence (a mood, now and then a sound); Chatterbox speaks it; pauses as for Kokoro."""
     from . import chatterbox
 
@@ -330,11 +478,22 @@ def speak_chatterbox(sections: list[dict], voice: str, speed: float, out: Path, 
         if n + 1 < len(lines):
             audio.append(np.zeros(int(rate * pause * scale), dtype=np.float32))
     track = _room_tone(np.concatenate(audio), rng)
-    if abs(speed - 1.0) > 0.01:      # Chatterbox has no speed control: stretch the whole take, pitch kept
+    if abs(speed - 1.0) > 0.01:  # Chatterbox has no speed control: stretch the whole take, pitch kept
         plain = out.with_suffix(".plain.wav")
         _write_wav(plain, track, rate)
-        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(plain), "-af", f"atempo={max(0.5, min(2.0, speed))}",
-             str(out)])
+        run(
+            [
+                require("ffmpeg"),
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                str(plain),
+                "-af",
+                f"atempo={max(0.5, min(2.0, speed))}",
+                str(out),
+            ]
+        )
         plain.unlink(missing_ok=True)
     else:
         _write_wav(out, track, rate)
@@ -360,7 +519,7 @@ def _trim(samples: np.ndarray, rate: int, floor_db: float = -45) -> np.ndarray:
     if not len(loud):
         return samples
     pad = int(rate * 0.03)
-    return samples[max(0, loud[0] - pad):loud[-1] + pad + 1]
+    return samples[max(0, loud[0] - pad) : loud[-1] + pad + 1]
 
 
 def _compact_silence(samples: np.ndarray, rate: int, floor_db: float = -45) -> np.ndarray:
@@ -383,22 +542,31 @@ def _compact_silence(samples: np.ndarray, rate: int, floor_db: float = -45) -> n
         if i and end < frame_count and run_end - run_start >= int(rate * LONG_SILENCE):
             keep = min(int(rate * KEPT_SILENCE), run_end - run_start)
             left = keep // 2
-            pieces.append(samples[copied_to:run_start + left])
+            pieces.append(samples[copied_to : run_start + left])
             copied_to = run_end - (keep - left)
         i = end
     pieces.append(samples[copied_to:])
     return np.concatenate(pieces)
 
 
-def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = "application/json",
-                timeout: float = 180, meta: dict | None = None) -> bytes:
+def _elevenlabs(
+    method: str,
+    path: str,
+    body: dict | None = None,
+    accept: str = "application/json",
+    timeout: float = 180,
+    meta: dict | None = None,
+) -> bytes:
     """One ElevenLabs call. `meta`, when given, receives the response's request id (for stitching)."""
     key = config.elevenlabs_api_key()
     if not key:
         raise RuntimeError("No ElevenLabs key. Put ELEVENLABS_API_KEY in .env and restart, or use Kokoro.")
-    request = urllib.request.Request(ELEVENLABS + path, method=method,
-                                     data=json.dumps(body).encode() if body is not None else None,
-                                     headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": accept})
+    request = urllib.request.Request(
+        ELEVENLABS + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": accept},
+    )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             if meta is not None:
@@ -421,9 +589,9 @@ def _elevenlabs(method: str, path: str, body: dict | None = None, accept: str = 
         raise RuntimeError("Could not reach ElevenLabs. Check your connection.") from err
 
 
-VOICE_LIST_TIMEOUT = 10     # seconds: the voice panel waits for this list
-VOICE_LIST_KEEP = 600       # seconds a fetched list is reused
-VOICE_LIST_RETRY = 120      # seconds before asking again after a failure
+VOICE_LIST_TIMEOUT = 10  # seconds: the voice panel waits for this list
+VOICE_LIST_KEEP = 600  # seconds a fetched list is reused
+VOICE_LIST_RETRY = 120  # seconds before asking again after a failure
 _voice_list: dict = {"at": 0.0, "voices": None, "error": None}
 _voice_list_lock = threading.Lock()
 
@@ -447,13 +615,19 @@ def elevenlabs_voices() -> list[dict]:
 
 
 def _fetch_elevenlabs_voices() -> list[dict]:
-    data = json.loads(_elevenlabs("GET", "/v2/voices?page_size=100&sort=name&sort_direction=asc",
-                                  timeout=VOICE_LIST_TIMEOUT))
+    data = json.loads(
+        _elevenlabs("GET", "/v2/voices?page_size=100&sort=name&sort_direction=asc", timeout=VOICE_LIST_TIMEOUT)
+    )
     voices = []
     for v in data.get("voices", []):
         labels = ", ".join(str(x) for x in (v.get("labels") or {}).values() if x)
-        voices.append({"id": v["voice_id"], "label": v.get("name", v["voice_id"]) + (f" · {labels}" if labels else ""),
-                       "preview": v.get("preview_url")})   # ElevenLabs' own sample: free to play
+        voices.append(
+            {
+                "id": v["voice_id"],
+                "label": v.get("name", v["voice_id"]) + (f" · {labels}" if labels else ""),
+                "preview": v.get("preview_url"),
+            }
+        )  # ElevenLabs' own sample: free to play
     return voices
 
 
@@ -473,10 +647,10 @@ def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") 
     if out.is_file():
         return out
     folder.mkdir(parents=True, exist_ok=True)
-    with _sample_lock:   # one sample at a time keeps memory flat
+    with _sample_lock:  # one sample at a time keeps memory flat
         if not out.is_file():
             partial = out.with_suffix(".partial.wav")
-            speak_kokoro([{"text": text}], voice, speed, partial, Reporter(), pauses)   # the base reporter is silent
+            speak_kokoro([{"text": text}], voice, speed, partial, Reporter(), pauses)  # the base reporter is silent
             partial.replace(out)
     return out
 
@@ -485,18 +659,30 @@ def sample_kokoro(voice: str, speed: float, text: str, pauses: str = "natural") 
 # of the ones before it (at most 3) rather than by their text.
 V4_MODELS = frozenset({"eleven_v4"})
 # Claude's direction (chatterbox.MOODS and SOUNDS) as v4 audio tags. Narration stays untagged.
-V4_TAGS = {"dramatic": "dramatic", "surprised": "surprised", "sarcastic": "sarcastic", "whispering": "whispers",
-           "happy": "cheerfully", "fear": "nervously", "angry": "angrily", "sigh": "sighs", "gasp": "gasps",
-           "clear throat": "clears throat", "chuckle": "chuckles", "laugh": "laughs"}
+V4_TAGS = {
+    "dramatic": "dramatic",
+    "surprised": "surprised",
+    "sarcastic": "sarcastic",
+    "whispering": "whispers",
+    "happy": "cheerfully",
+    "fear": "nervously",
+    "angry": "angrily",
+    "sigh": "sighs",
+    "gasp": "gasps",
+    "clear throat": "clears throat",
+    "chuckle": "chuckles",
+    "laugh": "laughs",
+}
 
 
-def directed_sections(sections: list[dict], rep: Reporter, short: bool = False,
-                      rehooks: list[str] | None = None) -> list[dict]:
+def directed_sections(
+    sections: list[dict], rep: Reporter, short: bool = False, rehooks: list[str] | None = None
+) -> list[dict]:
     """The sections with Claude's direction written in as v4 audio tags, sentence by sentence (paragraphs kept).
     The tags are not spoken, so the alignment against the script is unchanged. Plain text if the AI fails."""
     from . import chatterbox
 
-    layout = []          # per section, per paragraph, its sentences
+    layout = []  # per section, per paragraph, its sentences
     for section in sections:
         paragraphs = [p for p in re.split(r"\n\s*\n", section["text"]) if p.strip()] or [section["text"]]
         layout.append([sentences(p) for p in paragraphs])
@@ -505,8 +691,10 @@ def directed_sections(sections: list[dict], rep: Reporter, short: bool = False,
     if rehooks is None:
         rep.info("Rehooks get no lift: the script's hold check is missing or out of date")
     directed = iter(chatterbox.direct(said, rep, short=short, lifts=lifts, tags=V4_TAGS))
-    return [{**section, "text": "\n\n".join(" ".join(next(directed) for _ in paragraph) for paragraph in parts)}
-            for section, parts in zip(sections, layout, strict=True)]
+    return [
+        {**section, "text": "\n\n".join(" ".join(next(directed) for _ in paragraph) for paragraph in parts)}
+        for section, parts in zip(sections, layout, strict=True)
+    ]
 
 
 def elevenlabs_body(model: str, sections: list[dict], i: int, speed: float, previous_ids: list[str]) -> dict:
@@ -523,9 +711,17 @@ def elevenlabs_body(model: str, sections: list[dict], i: int, speed: float, prev
     return body
 
 
-def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: float, out: Path,
-                     rep: Reporter, direct: bool = False, short: bool = False,
-                     rehooks: list[str] | None = None) -> None:
+def speak_elevenlabs(
+    sections: list[dict],
+    voice_id: str,
+    model: str,
+    speed: float,
+    out: Path,
+    rep: Reporter,
+    direct: bool = False,
+    short: bool = False,
+    rehooks: list[str] | None = None,
+) -> None:
     """One request per section, joined with a pause. Neighbouring text keeps the delivery continuous.
     `direct` (v4 only): Claude chooses a mood per sentence, written in as audio tags."""
     if not voice_id:
@@ -538,8 +734,9 @@ def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: flo
     for i in range(len(sections)):
         body = elevenlabs_body(model, sections, i, speed, request_ids)
         meta: dict = {}
-        audio = _elevenlabs("POST", f"/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", body,
-                            accept="audio/mpeg", meta=meta)
+        audio = _elevenlabs(
+            "POST", f"/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128", body, accept="audio/mpeg", meta=meta
+        )
         if meta.get("request_id"):
             request_ids.append(meta["request_id"])
         part = folder / f"{i:03d}.mp3"
@@ -555,8 +752,25 @@ def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: flo
     cleaned = []
     for i, part in enumerate(parts):
         decoded = folder / f"clean-{i:03d}.wav"
-        run([require("ffmpeg"), "-y", "-v", "error", "-i", str(part), "-vn", *tempo, "-ac", "1", "-ar",
-             str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(decoded)])
+        run(
+            [
+                require("ffmpeg"),
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                str(part),
+                "-vn",
+                *tempo,
+                "-ac",
+                "1",
+                "-ar",
+                str(SAMPLE_RATE),
+                "-c:a",
+                "pcm_s16le",
+                str(decoded),
+            ]
+        )
         samples, rate = _read_wav(decoded)
         samples = _compact_silence(samples, rate)
         if i + 1 < len(parts):
@@ -571,6 +785,7 @@ def speak_elevenlabs(sections: list[dict], voice_id: str, model: str, speed: flo
 
 # --- job stages ------------------------------------------------------------------------
 
+
 def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     take, script = _take(take_id)
     folder = take_dir(take.script_id, take.id)
@@ -579,23 +794,40 @@ def speak(take_id: int, settings: Settings, rep: Reporter) -> None:
     sections = [s for s in script.sections if s["text"].strip()]
     if not sections:
         raise RuntimeError("The script has no text to speak")
-    rep.info(f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}"
-             + (f", {take.pauses} pauses" if take.source in ("kokoro", "chatterbox") else "")
-             + (f", model {settings.elevenlabs_model}" if take.source == "elevenlabs" else ""))
+    rep.info(
+        f"Voice: {take.voice} ({take.source}), speed {take.speed or 1.0:g}"
+        + (f", {take.pauses} pauses" if take.source in ("kokoro", "chatterbox") else "")
+        + (f", model {settings.elevenlabs_model}" if take.source == "elevenlabs" else "")
+    )
     if take.source == "kokoro":
         speak_kokoro(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural")
     elif take.source == "chatterbox":
         from . import hold
 
-        speak_chatterbox(sections, take.voice, take.speed or 1.0, raw, rep, take.pauses or "natural",
-                         short=script.video == "short",
-                         rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)))
+        speak_chatterbox(
+            sections,
+            take.voice,
+            take.speed or 1.0,
+            raw,
+            rep,
+            take.pauses or "natural",
+            short=script.video == "short",
+            rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)),
+        )
     elif take.source == "elevenlabs":
         from . import hold
 
-        speak_elevenlabs(sections, take.voice, settings.elevenlabs_model, take.speed or 1.0, raw, rep,
-                         direct=settings.elevenlabs_direction, short=script.video == "short",
-                         rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)))
+        speak_elevenlabs(
+            sections,
+            take.voice,
+            settings.elevenlabs_model,
+            take.speed or 1.0,
+            raw,
+            rep,
+            direct=settings.elevenlabs_direction,
+            short=script.video == "short",
+            rehooks=hold.texts_with(script.sections, script.hold, ("rehook",)),
+        )
     else:
         raise RuntimeError(f"Not an AI take: {take.source}")
     out = folder / "voice.wav"
@@ -630,18 +862,28 @@ def align(take_id: int, settings: Settings, rep: Reporter) -> None:
     folder = take_dir(take.script_id, take.id)
     engine = resolve_whisper_engine(settings)
     rep.info(f"Transcribing the take ({engine}, {settings.voice_align_model})")
-    transcript = transcribe_mod.transcribe_isolated(folder, settings.language, engine, settings.voice_align_model,
-                                                    force=True, progress=rep.progress, media=Path(take.path))
+    transcript = transcribe_mod.transcribe_isolated(
+        folder,
+        settings.language,
+        engine,
+        settings.voice_align_model,
+        force=True,
+        progress=rep.progress,
+        media=Path(take.path),
+    )
     result = match(script.sections, transcript["words"])
     timeline = result.pop("timeline")
     timeline_path(take).write_text(json.dumps(timeline))
+    result["mode"] = "spoken"
     result["script_hash"] = script_mod.text_hash(script.sections)
     result["wpm"] = pace(timeline)
     _update(take_id, alignment=result)
     rep.info(f"{result['coverage']:.0%} of the script was found in the take")
     if result["wpm"]:
-        rep.info(f"Pace: {result['wpm']} words a minute, pauses included "
-                 f"(scripts are written for {script_mod.WORDS_PER_MINUTE})")
+        rep.info(
+            f"Pace: {result['wpm']} words a minute, pauses included "
+            f"(scripts are written for {script_mod.WORDS_PER_MINUTE})"
+        )
     if result["missing"]:
         rep.warn(f"{len(result['missing'])} passages of the script were not spoken or were said differently")
     if result["extra"]:
@@ -659,11 +901,12 @@ def pace(timeline: list[dict]) -> int | None:
 
 # --- matching speech to the script ---------------------------------------------------------
 
+
 def _norm(word: str) -> str:
     return re.sub(r"[^a-z0-9]", "", word.lower().replace("’", "'"))
 
 
-MIN_RUN = 3    # shorter mismatches are usually transcription noise, not real differences
+MIN_RUN = 3  # shorter mismatches are usually transcription noise, not real differences
 
 
 def match(sections: list[dict], spoken: list[dict]) -> dict:
@@ -686,14 +929,19 @@ def match(sections: list[dict], spoken: list[dict]) -> dict:
             for k in range(a1 - a0):
                 times[a0 + k] = (spoken[b0 + k]["s"], spoken[b0 + k]["e"])
             continue
-        if op == "replace" and a1 - a0 == b1 - b0:   # same length: misheard words, still timed in place
+        if op == "replace" and a1 - a0 == b1 - b0:  # same length: misheard words, still timed in place
             for k in range(a1 - a0):
                 times[a0 + k] = (spoken[b0 + k]["s"], spoken[b0 + k]["e"])
         if op in ("delete", "replace") and a1 - a0 >= MIN_RUN:
             section = sections[script_words[a0][0]]
-            missing.append({"section": section["key"], "heading": section["heading"],
-                            "text": " ".join(w for _, w in script_words[a0:a1]),
-                            "heard": " ".join(w["w"] for w in spoken[b0:b1])})
+            missing.append(
+                {
+                    "section": section["key"],
+                    "heading": section["heading"],
+                    "text": " ".join(w for _, w in script_words[a0:a1]),
+                    "heard": " ".join(w["w"] for w in spoken[b0:b1]),
+                }
+            )
         if op in ("insert", "replace") and b1 - b0 >= MIN_RUN and b1 - b0 > a1 - a0:
             extra.append({"at": spoken[b0]["s"], "text": " ".join(w["w"] for w in spoken[b0:b1])})
 
@@ -711,15 +959,33 @@ def match(sections: list[dict], spoken: list[dict]) -> dict:
         last = after - 1 if after is not None else len(a) - 1
         step = (end - start) / (last - first + 1)
         filled[k] = (round(start + step * (k - first), 3), round(start + step * (k - first + 1), 3))
-    timeline = [{"section": sections[i]["key"], "w": word, "s": filled[k][0] if filled[k] else 0.0,
-                 "e": filled[k][1] if filled[k] else 0.0}
-                for k, (i, word) in enumerate(script_words)]
+    timeline = [
+        {
+            "section": sections[i]["key"],
+            "w": word,
+            "s": filled[k][0] if filled[k] else 0.0,
+            "e": filled[k][1] if filled[k] else 0.0,
+        }
+        for k, (i, word) in enumerate(script_words)
+    ]
 
     ranges = []
     for section in sections:
         entries = [t for t in timeline if t["section"] == section["key"]]
         if entries:
-            ranges.append({"key": section["key"], "heading": section["heading"],
-                           "start": entries[0]["s"], "end": entries[-1]["e"]})
-    return {"coverage": round(found / len(a), 3) if a else 0.0, "sections": ranges,
-            "missing": missing, "extra": extra, "spoken_words": len(spoken), "timeline": timeline}
+            ranges.append(
+                {
+                    "key": section["key"],
+                    "heading": section["heading"],
+                    "start": entries[0]["s"],
+                    "end": entries[-1]["e"],
+                }
+            )
+    return {
+        "coverage": round(found / len(a), 3) if a else 0.0,
+        "sections": ranges,
+        "missing": missing,
+        "extra": extra,
+        "spoken_words": len(spoken),
+        "timeline": timeline,
+    }

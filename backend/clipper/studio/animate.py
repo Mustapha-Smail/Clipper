@@ -889,9 +889,11 @@ def render_snapshot(
     script, take = board.script, board.take
     alignment = take.alignment if take is not None else None
     wpm = alignment.get("wpm") if alignment else None
+    is_micro = board.form == "micro_short"
     hold_result = None
     if (
-        board.format == script.video
+        not is_micro
+        and board.format == script.video
         and script.hold
         and take is not None
         and take.script_hash == script.hold.get("hash")
@@ -912,6 +914,12 @@ def render_snapshot(
     )
     stats = hold_result.get("stats", {}) if hold_result else {}
     hold_checkpoints = hold.checkpoints(script.sections or [], script.hold, board.words) if hold_result else []
+    micro_checkpoints = []
+    if is_micro and alignment and alignment.get("mode") == "designed_cues":
+        for item in alignment.get("checkpoints", []):
+            at = item.get("time_s")
+            if isinstance(at, int | float) and board.start <= at <= board.end:
+                micro_checkpoints.append({**item, "time_s": round(float(at) - board.start, 3)})
     return {
         "version": 1,
         "at": utcnow().isoformat(),
@@ -927,12 +935,14 @@ def render_snapshot(
         "effects": bool(board.effects),
         "sound_effects": sound_effects or {"licensed_ids": [], "missing_ids": []},
         "wpm": round(wpm) if wpm else None,
+        "timing_mode": alignment.get("mode", "spoken") if alignment else None,
         "hold_hash": script.hold.get("hash") if hold_result else None,
         "hold_score": hold_result.get("score") if hold_result else None,
         "hold_verdict": hold_result.get("verdict") if hold_result else None,
         # These are copied into the successful render's JSON snapshot. They are
         # intentionally not references into the mutable script or storyboard.
         "hold_checkpoints": hold_checkpoints,
+        "micro_checkpoints": micro_checkpoints,
         "first_twist_s": stats.get("first_twist"),
         "longest_gap_s": stats.get("longest_gap"),
         "first_visual_event_s": (visual_qa or {}).get("first_visual_event_s"),
@@ -956,7 +966,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     tail = getattr(composer, "tail", 0.0)  # the film style holds a closing shot after the voice ends
     duration = voiced + tail
     total = math.ceil(duration * FPS)
-    observer = visual_qa.Observer(board.get("words", []), voiced)
+    observer = visual_qa.Observer(board.get("words", []), voiced, loop=board.get("form") == "micro_short")
     out = video_path(board)
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_suffix(".partial.mp4")
@@ -1035,6 +1045,8 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         raise
     partial.replace(out)
     qa_result = observer.finish()
+    for warning in qa_result.get("warnings", []):
+        rep.warn(warning)
     with session_scope() as db:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"

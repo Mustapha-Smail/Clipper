@@ -83,14 +83,24 @@ def _keep_days() -> int:
 
 
 def _computed(board: Storyboard, job: Job | None, keep_days: int) -> dict:
-    return {"duration": round(board.end - board.start, 2), "scene_count": len(board.scenes),
-            "has_video": bool(board.video_path), "job": s.JobOut.model_validate(job) if job else None,
-            "publish_ready": publish.ready(board.youtube),
-            "expires_at": retention.deadline(board, keep_days)}
+    return {
+        "duration": round(board.end - board.start, 2),
+        "scene_count": len(board.scenes),
+        "has_video": bool(board.video_path),
+        "job": s.JobOut.model_validate(job) if job else None,
+        "publish_ready": publish.ready(board.youtube),
+        "expires_at": retention.deadline(board, keep_days),
+    }
 
 
 SUMMARY_FIELDS = set(s.StoryboardSummary.model_fields) - {
-    "duration", "scene_count", "has_video", "publish_ready", "job", "expires_at"}
+    "duration",
+    "scene_count",
+    "has_video",
+    "publish_ready",
+    "job",
+    "expires_at",
+}
 
 
 def summary_out(board: Storyboard, job: Job | None, keep_days: int) -> s.StoryboardSummary:
@@ -107,35 +117,50 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
     music = board.music
     credit = (music.attribution or f"Music: {music.name}") if music and music.license else ""
     queries = film.photo_searches(board.style, board.scenes)
-    found = {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} \
-        if queries else {}
+    found = (
+        {p.query: p for p in db.scalars(select(StudioPhoto).where(StudioPhoto.query.in_(queries)))} if queries else {}
+    )
     used = [found[q] for q in queries if q in found]
     credits = publish.credits(db, board)
     score = None
     if board.style == "ink" and board.scenes and board.words:
         words = board.words
-        score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"],
-                            board.end - board.start)
+        score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"], board.end - board.start)
     map_value = board.script.story_map if board.script.story_map and story_map_mod.status(board.script)[0] else None
     cards = data_graphics.stored(map_value)
-    continuity_lines = continuity.check(board.style, board.scenes, board.words, board.script.sections,
-                                        board.script.hold, map_value)
+    continuity_lines = continuity.check(
+        board.style, board.scenes, board.words, board.script.sections, board.script.hold, map_value
+    )
     settings = settings_mod.load()
-    return s.StoryboardOut(**{f: getattr(board, f) for f in SUMMARY_FIELDS}, **_computed(board, job, _keep_days()),
-                           export=export_out(board), words=board.words, scenes=board.scenes,
-                           missing_props=sorted(names - drawn),
-                           music_credit=credit, score=score, photos=used,
-                           photo_searches_missing=[q for q in queries if q not in found], credits=credits,
-                           youtube=board.youtube, director=director_mod.public(board.director),
-                           director_undoable=director_mod.undoable(board),
-                           thumbnails=thumbnail_mod.public(board.thumbnails), render_meta=board.render_meta,
-                           sound_starter_default=settings.sound_starter,
-                           sound_riser_default=settings.sound_riser, continuity=continuity_lines,
-                           data_cards=list(cards.values()))
+    return s.StoryboardOut(
+        **{f: getattr(board, f) for f in SUMMARY_FIELDS},
+        **_computed(board, job, _keep_days()),
+        export=export_out(board),
+        words=board.words,
+        scenes=board.scenes,
+        missing_props=sorted(names - drawn),
+        music_credit=credit,
+        score=score,
+        photos=used,
+        photo_searches_missing=[q for q in queries if q not in found],
+        credits=credits,
+        youtube=board.youtube,
+        director=director_mod.public(board.director),
+        director_undoable=director_mod.undoable(board),
+        thumbnails=thumbnail_mod.public(board.thumbnails),
+        render_meta=board.render_meta,
+        sound_starter_default=settings.sound_starter,
+        sound_riser_default=settings.sound_riser,
+        continuity=continuity_lines,
+        data_cards=list(cards.values()),
+    )
 
 
-LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow"),
-         "film": ("wall", "studio"), "flat": ("ink",)}
+LOOKS = {
+    "ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow"),
+    "film": ("wall", "studio"),
+    "flat": ("ink",),
+}
 
 
 def _look_for(style: str, look: str | None) -> str:
@@ -153,12 +178,12 @@ def _enqueue(db: Session, board: Storyboard, kind: str) -> Job:
     _idle(db, board)
     stages = None
     if kind == "storyboard" and board.style in director_mod.KITS and settings_mod.load().director_pass:
-        stages = [*jobs.STAGES["storyboard"], "direct"]       # Settings: the director looks after every plan
-    return jobs.enqueue(db, kind, board.title, {"script_id": board.script_id, "storyboard_id": board.id},
-                        stages=stages)
+        stages = [*jobs.STAGES["storyboard"], "direct"]  # Settings: the director looks after every plan
+    return jobs.enqueue(db, kind, board.title, {"script_id": board.script_id, "storyboard_id": board.id}, stages=stages)
 
 
 # --- storyboards ----------------------------------------------------------------------------
+
 
 @router.post("/scripts/{script_id}/storyboards", response_model=s.StoryboardOut, status_code=202)
 def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_script), db: Session = Depends(get_db)):
@@ -168,30 +193,65 @@ def create_storyboard(body: s.StoryboardCreate, script: Script = Depends(get_scr
         raise HTTPException(409, "Choose a voice take for the video first (Voice, then 'Use for the video')")
     if not take.alignment:
         raise HTTPException(409, "That take has not been timed yet")
-    if body.format == "short" and not body.section_key:
+    micro = script.form == "micro_short"
+    if micro and body.format != "short":
+        raise HTTPException(400, "A micro concept test is always a vertical Short")
+    legacy_micro_take = micro and "mode" not in take.alignment
+    if micro and not legacy_micro_take and (take.source != "silent" or take.alignment.get("mode") != "designed_cues"):
+        raise HTTPException(409, "A micro concept test needs its designed silent cue track")
+    if micro and body.caption_mode == "on":
+        raise HTTPException(400, "A silent micro-Short uses planned on-screen text, not normal word captions")
+    section_key = body.section_key or (script.sections[0]["key"] if micro and script.sections else None)
+    if body.format == "short" and not section_key:
         raise HTTPException(400, "A Short tells one section: pick which")
-    section = next((x for x in script.sections if x["key"] == body.section_key), None)
-    if body.section_key and section is None:
+    section = next((x for x in script.sections if x["key"] == section_key), None)
+    if section_key and section is None:
         raise HTTPException(404, "Section not found")
     try:
-        words, start, end = storyboard_mod.words_for(take, body.section_key)
+        words, start, end = storyboard_mod.words_for(take, section_key)
     except (ValueError, FileNotFoundError) as err:
         raise HTTPException(409, f"{err}. Time the take against the current script first.") from err
-    if body.format == "long" and body.section_key:
+    if body.format == "long" and section_key:
         raise HTTPException(400, "A long video tells the whole script: leave the section out")
     if body.format == "long" and take.script_hash != script_mod.text_hash(script.sections):
-        raise HTTPException(409, "The script changed since this take was made. Time it against the current "
-                                 "script, or make a new take, so the video matches the words.")
+        raise HTTPException(
+            409,
+            "The script changed since this take was made. Time it against the current "
+            "script, or make a new take, so the video matches the words.",
+        )
     title = f"{script.title} · {section['heading']}" if section else script.title
     look = _look_for(body.style, body.look)
-    board = Storyboard(script_id=script.id, take_id=take.id, format=body.format, form=script.form,
-                       story_shape=script.story_shape, caption_mode=body.caption_mode, style=body.style, look=look,
-                       section_key=body.section_key, title=title, start=start, end=end, words=words, scenes=[])
+    caption_mode = "off" if micro else body.caption_mode
+    board = Storyboard(
+        script_id=script.id,
+        take_id=take.id,
+        format=body.format,
+        form=script.form,
+        story_shape=script.story_shape,
+        caption_mode=caption_mode,
+        style=body.style,
+        look=look,
+        section_key=section_key,
+        title=title,
+        start=start,
+        end=end,
+        words=words,
+        scenes=[],
+        effects=not micro,
+        starter_mode="off" if micro else "default",
+        riser_mode="off" if micro else "default",
+    )
     db.add(board)
     db.flush()
-    compliance.record(db, script.id, "start", "you", f"Started a {'Short' if body.format == 'short' else 'long video'}"
-                      + (f" in the {board.look} look" if body.style in ("ink", "film") else ""),
-                      storyboard_id=board.id)
+    compliance.record(
+        db,
+        script.id,
+        "start",
+        "you",
+        f"Started a {'Short' if body.format == 'short' else 'long video'}"
+        + (f" in the {board.look} look" if body.style in ("ink", "film") else ""),
+        storyboard_id=board.id,
+    )
     job = _enqueue(db, board, "storyboard")
     log.info("storyboard queued", extra={"storyboard_id": board.id, "format": body.format})
     return board_out(board, job, db)
@@ -213,8 +273,10 @@ def all_storyboards(theme_id: int | None = None, db: Session = Depends(get_db)):
         query = query.join(Script, Storyboard.script_id == Script.id).where(Script.theme_id == theme_id)
     boards = db.scalars(query).all()
     keep = _keep_days()
-    return [s.StoryboardListItem(**summary_out(b, running.get(b.id), keep).model_dump(), script_title=b.script.title)
-            for b in boards]
+    return [
+        s.StoryboardListItem(**summary_out(b, running.get(b.id), keep).model_dump(), script_title=b.script.title)
+        for b in boards
+    ]
 
 
 @router.get("/storyboards/{storyboard_id}", response_model=s.StoryboardOut)
@@ -230,12 +292,21 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
     if board.style == "ink":
         shots, dropped = beats.clean(body.scenes, len(board.words), card_ids)
         if dropped:
-            raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
-                                     + "; ".join(dropped[:3]))
+            raise HTTPException(
+                400,
+                f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: " + "; ".join(dropped[:3]),
+            )
         changed = compliance.lines_changed(board.scenes or [], shots)
         if changed:
-            compliance.record(db, board.script_id, "beats_edit", "you",
-                              f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})", changed, board.id)
+            compliance.record(
+                db,
+                board.script_id,
+                "beats_edit",
+                "you",
+                f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})",
+                changed,
+                board.id,
+            )
         board.scenes = shots
         for name in beats.place_names(shots):
             if name not in cartoon.PLACES and db.get(StudioPlace, name) is None:
@@ -243,12 +314,21 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
     elif board.style == "film":
         shots, dropped = film.clean(body.scenes, len(board.words), card_ids)
         if dropped:
-            raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
-                                     + "; ".join(dropped[:3]))
+            raise HTTPException(
+                400,
+                f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: " + "; ".join(dropped[:3]),
+            )
         changed = compliance.lines_changed(board.scenes or [], shots)
         if changed:
-            compliance.record(db, board.script_id, "beats_edit", "you",
-                              f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})", changed, board.id)
+            compliance.record(
+                db,
+                board.script_id,
+                "beats_edit",
+                "you",
+                f"Edited the scenes ({changed} line{'s' if changed != 1 else ''})",
+                changed,
+                board.id,
+            )
         board.scenes = shots
     else:
         try:
@@ -293,8 +373,9 @@ def undo_director(board: Storyboard = Depends(get_board), db: Session = Depends(
     _idle(db, board)
     if not director_mod.undo(board):
         raise HTTPException(409, "Nothing to undo: the director changed nothing, or the shots were edited since")
-    compliance.record(db, board.script_id, "beats_edit", "you", "Undid the AI director's changes",
-                      storyboard_id=board.id)
+    compliance.record(
+        db, board.script_id, "beats_edit", "you", "Undid the AI director's changes", storyboard_id=board.id
+    )
     db.flush()
     return board_out(board, None, db)
 
@@ -307,8 +388,9 @@ def render(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
 
 
 @router.get("/storyboards/{storyboard_id}/still")
-def still(t: float = Query(0.0, ge=0), width: int = Query(540, ge=120, le=1080),
-          board: Storyboard = Depends(get_board)):
+def still(
+    t: float = Query(0.0, ge=0), width: int = Query(540, ge=120, le=1080), board: Storyboard = Depends(get_board)
+):
     """One frame, for previews in the editor."""
     png = animate.still(board.id, t, settings_mod.load(), width)
     return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
@@ -318,8 +400,9 @@ def still(t: float = Query(0.0, ge=0), width: int = Query(540, ge=120, le=1080),
 def video(board: Storyboard = Depends(get_board)):
     if not board.video_path:
         raise HTTPException(404, "Not rendered yet")
-    return FileResponse(board.video_path, media_type="video/mp4",
-                        filename=f"{board.format}-{board.script_id}-{board.id}.mp4")
+    return FileResponse(
+        board.video_path, media_type="video/mp4", filename=f"{board.format}-{board.script_id}-{board.id}.mp4"
+    )
 
 
 @router.patch("/storyboards/{storyboard_id}", response_model=s.StoryboardOut)
@@ -331,14 +414,25 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
         if body.review != "approved" and board.published_at:
             raise HTTPException(409, "This long video is marked as published. Move it back to Approved first.")
         if body.review != "approved" and posting.has_live(db, "storyboard", board.id):
-            raise HTTPException(409, "A post of this video is waiting on Buffer. "
-                                     "Undo it (Animations, Published) before taking back the approval.")
+            raise HTTPException(
+                409,
+                "A post of this video is waiting on Buffer. "
+                "Undo it (Animations, Published) before taking back the approval.",
+            )
         if body.review != board.review:
-            compliance.record(db, board.script_id, "review", "you",
-                              {"approved": "Watched and approved the video",
-                               "rejected": "Watched and rejected the video",
-                               "pending": "Took back the review"}[body.review], storyboard_id=board.id)
-            board.review_at = utcnow()      # an unapproved render gets a full grace period from here
+            compliance.record(
+                db,
+                board.script_id,
+                "review",
+                "you",
+                {
+                    "approved": "Watched and approved the video",
+                    "rejected": "Watched and rejected the video",
+                    "pending": "Took back the review",
+                }[body.review],
+                storyboard_id=board.id,
+            )
+            board.review_at = utcnow()  # an unapproved render gets a full grace period from here
         board.review = body.review
     if body.published is not None:
         if board.format != "long":
@@ -350,12 +444,19 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                 raise HTTPException(409, "Finish and save the YouTube title and description first")
             if not board.published_at:
                 board.published_at = utcnow()
-                compliance.record(db, board.script_id, "publish", "you", "Marked the long video as published manually",
-                                  storyboard_id=board.id)
+                compliance.record(
+                    db,
+                    board.script_id,
+                    "publish",
+                    "you",
+                    "Marked the long video as published manually",
+                    storyboard_id=board.id,
+                )
         elif board.published_at:
             board.published_at = None
-            compliance.record(db, board.script_id, "publish", "you", "Moved the long video back to Approved",
-                              storyboard_id=board.id)
+            compliance.record(
+                db, board.script_id, "publish", "you", "Moved the long video back to Approved", storyboard_id=board.id
+            )
     if body.published_url is not None:
         url = body.published_url.strip()
         if url and not youtube.video_id(url):
@@ -369,8 +470,7 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                     log.info("statistics not read", extra={"error": str(err)[:200]})
                 else:
                     if found:
-                        board.stats = {**next(iter(found.values())), "at": utcnow().isoformat(),
-                                       "source": "youtube"}
+                        board.stats = {**next(iter(found.values())), "at": utcnow().isoformat(), "source": "youtube"}
     if body.look is not None and body.look != board.look:
         if body.look not in LOOKS.get(board.style, ()) or board.style == "flat":
             raise HTTPException(400, f"The {board.style} style has no {body.look} look")
@@ -384,9 +484,14 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
             track = db.get(StudioMusic, body.music_id) if body.music_id else None
             by = "ai" if body.music_suggested else "you"
             what = f"'{track.name}'" if track else "no music"
-            compliance.record(db, board.script_id, "music", by,
-                              f"{'Took the suggested' if by == 'ai' else 'Chose'} music: {what}",
-                              storyboard_id=board.id)
+            compliance.record(
+                db,
+                board.script_id,
+                "music",
+                by,
+                f"{'Took the suggested' if by == 'ai' else 'Chose'} music: {what}",
+                storyboard_id=board.id,
+            )
         board.music_id = body.music_id
     if body.music_db is not None:
         board.music_db = body.music_db
@@ -403,10 +508,18 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
             compliance.record(db, board.script_id, "sound", "you", summary, storyboard_id=board.id)
             setattr(board, field, value)
     if body.caption_mode is not None and body.caption_mode != board.caption_mode:
+        if board.form == "micro_short" and body.caption_mode != "off":
+            raise HTTPException(400, "A silent micro-Short uses planned on-screen text, not normal word captions")
         _idle(db, board)
         board.caption_mode = body.caption_mode
-        compliance.record(db, board.script_id, "captions", "you",
-                          f"Set burned captions to {body.caption_mode}", storyboard_id=board.id)
+        compliance.record(
+            db,
+            board.script_id,
+            "captions",
+            "you",
+            f"Set burned captions to {body.caption_mode}",
+            storyboard_id=board.id,
+        )
     db.flush()
     return board_out(board, _board_jobs(db).get(board.id), db)
 
@@ -420,8 +533,9 @@ def _measure(db: Session, tracks: list[StudioMusic]) -> None:
 
 
 @router.post("/storyboards/{storyboard_id}/suggest-music", response_model=s.MusicSuggestion)
-def suggest_music(body: s.SuggestMusic | None = None, board: Storyboard = Depends(get_board),
-                  db: Session = Depends(get_db)):
+def suggest_music(
+    body: s.SuggestMusic | None = None, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
+):
     """Which track suits this video, from your library and (by default) online, or none at all.
 
     Two small calls on the quick tier: search words, then the ranking. Online
@@ -440,44 +554,83 @@ def suggest_music(body: s.SuggestMusic | None = None, board: Storyboard = Depend
                 with llm.attribute(f"storyboard:{board.id}"):
                     searches = music_pick.searches(*args)
             except RuntimeError:
-                searches = []    # the fallback genres still find something
+                searches = []  # the fallback genres still find something
             found = music_search.candidates(searches, {t.source_url for t in tracks if t.source_url})
         if not tracks and not found:
-            return {"choice": None, "level_db": -18, "searches": searches, "ranking": [],
-                    "reason": "No music to choose from: the library is empty and nothing was found online."}
+            return {
+                "choice": None,
+                "level_db": -18,
+                "searches": searches,
+                "ranking": [],
+                "reason": "No music to choose from: the library is empty and nothing was found online.",
+            }
         with llm.attribute(f"storyboard:{board.id}"):
             pick = music_pick.suggest(*args, tracks, found)
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
 
-    details = {f"lib-{t.id}": {"source": "library", "track_id": t.id, "openverse_id": None, "title": t.name,
-                               "creator": t.creator, "license": t.license, "duration": t.duration,
-                               "words": (t.features or {}).get("words", []), "landing_url": t.source_url}
-               for t in tracks}
-    details.update({f"web-{i['id'][:8]}": {"source": "online", "track_id": None, "openverse_id": i["id"],
-                                          "title": i["title"], "creator": i["creator"], "license": i["license"],
-                                          "duration": i["duration"],
-                                          "words": (i.get("features") or {}).get("words", []),
-                                          "landing_url": i["landing_url"]}
-                    for i in found})
-    ranking = [{"ref": r.ref, "fit": max(0, min(10, r.fit)), "reason": r.reason, **details[r.ref]}
-               for r in pick.ranking if r.ref in details]
-    return {"choice": pick.choice if pick.choice in details else None, "reason": pick.reason,
-            "level_db": max(-34, min(-10, pick.level_db)), "searches": searches, "ranking": ranking[:8]}
+    details = {
+        f"lib-{t.id}": {
+            "source": "library",
+            "track_id": t.id,
+            "openverse_id": None,
+            "title": t.name,
+            "creator": t.creator,
+            "license": t.license,
+            "duration": t.duration,
+            "words": (t.features or {}).get("words", []),
+            "landing_url": t.source_url,
+        }
+        for t in tracks
+    }
+    details.update(
+        {
+            f"web-{i['id'][:8]}": {
+                "source": "online",
+                "track_id": None,
+                "openverse_id": i["id"],
+                "title": i["title"],
+                "creator": i["creator"],
+                "license": i["license"],
+                "duration": i["duration"],
+                "words": (i.get("features") or {}).get("words", []),
+                "landing_url": i["landing_url"],
+            }
+            for i in found
+        }
+    )
+    ranking = [
+        {"ref": r.ref, "fit": max(0, min(10, r.fit)), "reason": r.reason, **details[r.ref]}
+        for r in pick.ranking
+        if r.ref in details
+    ]
+    return {
+        "choice": pick.choice if pick.choice in details else None,
+        "reason": pick.reason,
+        "level_db": max(-34, min(-10, pick.level_db)),
+        "searches": searches,
+        "ranking": ranking[:8],
+    }
 
 
 @router.get("/storyboards/{storyboard_id}/sound-preview")
-def sound_preview(music_id: int | None = None, openverse_id: str | None = None,
-                  music_db: float = Query(-18, ge=-40, le=-6), effects: bool = True,
-                  start: float = Query(0, ge=0), seconds: float = Query(25, ge=5, le=60),
-                  board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
+def sound_preview(
+    music_id: int | None = None,
+    openverse_id: str | None = None,
+    music_db: float = Query(-18, ge=-40, le=-6),
+    effects: bool = True,
+    start: float = Query(0, ge=0),
+    seconds: float = Query(25, ge=5, le=60),
+    board: Storyboard = Depends(get_board),
+    db: Session = Depends(get_db),
+):
     """The voice, effects and a music track mixed for a stretch of the video, without rendering any frames."""
     take = board.take
     if take is None or not take.path or not Path(take.path).is_file():
         raise HTTPException(409, "The voice take of this storyboard is missing")
     track = db.get(StudioMusic, music_id) if music_id else None
     music = track.path if track else None
-    if openverse_id and not music:   # an online track, heard before adding it: streamed from its source
+    if openverse_id and not music:  # an online track, heard before adding it: streamed from its source
         try:
             music = music_search.track(openverse_id)["audio_url"]
         except (ValueError, RuntimeError) as err:
@@ -493,8 +646,11 @@ def sound_preview(music_id: int | None = None, openverse_id: str | None = None,
 def subtitles(board: Storyboard = Depends(get_board)):
     """Subtitles for YouTube, from the script's own words with the take's timing."""
     name = f"{board.format}-{board.script_id}-{board.id}.srt"
-    return Response(sound.srt(board.words), media_type="application/x-subrip",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return Response(
+        sound.srt(board.words),
+        media_type="application/x-subrip",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/storyboards/{storyboard_id}/chapters", response_model=s.Chapters)
@@ -515,6 +671,7 @@ def delete_storyboard(board: Storyboard = Depends(get_board), db: Session = Depe
 
 
 # --- archive photos ---------------------------------------------------------------------------
+
 
 @router.get("/photos/{photo_id}/image")
 def photo_image(photo_id: int, size: int = Query(320, ge=64, le=1200), db: Session = Depends(get_db)):
@@ -540,9 +697,10 @@ def next_photo(photo_id: int, storyboard_id: int | None = None, db: Session = De
     query, rank = photo.query, photo.rank
     board = db.get(Storyboard, storyboard_id) if storyboard_id else None
     if board is not None:
-        compliance.record(db, board.script_id, "photo", "you", f"Asked for another picture for '{query}'",
-                          storyboard_id=board.id)
-    db.commit()       # release the row: find() writes it in its own session
+        compliance.record(
+            db, board.script_id, "photo", "you", f"Asked for another picture for '{query}'", storyboard_id=board.id
+        )
+    db.commit()  # release the row: find() writes it in its own session
     try:
         found = photos_mod.find(query, rank + 1) or photos_mod.find(query, 0)
     except RuntimeError as err:
@@ -554,6 +712,7 @@ def next_photo(photo_id: int, storyboard_id: int | None = None, db: Session = De
 
 # --- before you publish ----------------------------------------------------------------------
 
+
 @router.get("/storyboards/{storyboard_id}/publish-check", response_model=s.PublishCheck)
 def publish_check(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Advice before uploading: your input on record, likeness to recent videos, kids and AI labels. Advises only."""
@@ -563,8 +722,10 @@ def publish_check(board: Storyboard = Depends(get_board), db: Session = Depends(
 @router.get("/storyboards/{storyboard_id}/authorship.txt", response_class=PlainTextResponse)
 def authorship_log(board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Who did what, as text to keep with the video."""
-    return PlainTextResponse(compliance.authorship_text(db, board), headers={
-        "Content-Disposition": f'attachment; filename="authorship-{board.id}.txt"'})
+    return PlainTextResponse(
+        compliance.authorship_text(db, board),
+        headers={"Content-Disposition": f'attachment; filename="authorship-{board.id}.txt"'},
+    )
 
 
 @router.post("/storyboards/{storyboard_id}/youtube", response_model=s.YoutubeText)
@@ -577,8 +738,9 @@ def write_youtube_text(board: Storyboard = Depends(get_board), db: Session = Dep
             board.youtube = publish.draft(db, board)
     except RuntimeError as err:
         raise HTTPException(502, str(err)) from err
-    compliance.record(db, board.script_id, "description", "ai", "Drafted the YouTube title and description",
-                      storyboard_id=board.id)
+    compliance.record(
+        db, board.script_id, "description", "ai", "Drafted the YouTube title and description", storyboard_id=board.id
+    )
     db.flush()
     return board.youtube
 
@@ -588,11 +750,20 @@ def save_youtube_text(body: s.YoutubeEdit, board: Storyboard = Depends(get_board
     """Your edited title, description and tags."""
     before = board.youtube or {}
     board.youtube = publish.edit(before, body.title, body.description, body.tags)
-    changed = compliance.words_changed(f"{before.get('title', '')} {before.get('description', '')}",
-                                       f"{board.youtube['title']} {board.youtube['description']}")
+    changed = compliance.words_changed(
+        f"{before.get('title', '')} {before.get('description', '')}",
+        f"{board.youtube['title']} {board.youtube['description']}",
+    )
     if changed:
-        compliance.record(db, board.script_id, "description_edit", "you",
-                          f"Edited the YouTube title and description ({changed} words)", changed, board.id)
+        compliance.record(
+            db,
+            board.script_id,
+            "description_edit",
+            "you",
+            f"Edited the YouTube title and description ({changed} words)",
+            changed,
+            board.id,
+        )
     db.flush()
     return board.youtube
 
@@ -607,17 +778,20 @@ def export_video(board: Storyboard = Depends(get_board), db: Session = Depends(g
         export_mod.run(db, board, settings_mod.load())
     except export_mod.ExportError as err:
         raise HTTPException(409, str(err)) from err
-    compliance.record(db, board.script_id, "export", "you", "Exported the approved video to the output folder",
-                      storyboard_id=board.id)
+    compliance.record(
+        db, board.script_id, "export", "you", "Exported the approved video to the output folder", storyboard_id=board.id
+    )
     db.flush()
     return export_out(board)
 
 
 # --- thumbnails (long videos, YouTube's A/B test) ---------------------------------------------
 
+
 @router.post("/storyboards/{storyboard_id}/thumbnails", response_model=s.JobOut, status_code=202)
-def make_thumbnails(body: s.ThumbnailsMake | None = None, board: Storyboard = Depends(get_board),
-                    db: Session = Depends(get_db)):
+def make_thumbnails(
+    body: s.ThumbnailsMake | None = None, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
+):
     """Plan and draw three thumbnails (or plan one again). A job: a few cents of AI, a few seconds of drawing."""
     body = body or s.ThumbnailsMake()
     if board.format != "long":
@@ -634,14 +808,15 @@ def make_thumbnails(body: s.ThumbnailsMake | None = None, board: Storyboard = De
 
 
 @router.put("/storyboards/{storyboard_id}/thumbnails/{key}", response_model=s.StoryboardOut)
-def edit_thumbnail(key: str, body: s.ThumbnailEdit, board: Storyboard = Depends(get_board),
-                   db: Session = Depends(get_db)):
+def edit_thumbnail(
+    key: str, body: s.ThumbnailEdit, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
+):
     """Your change to one thumbnail: drawn again at once, checked again, no AI."""
     if key not in thumbnail_mod.KEYS or not board.thumbnails:
         raise HTTPException(404, "No such thumbnail")
     _idle(db, board)
     board_id, script_id = board.id, board.script_id
-    db.commit()           # release the row: the drawing writes it in its own session
+    db.commit()  # release the row: the drawing writes it in its own session
     try:
         thumbnail_mod.edit(board_id, key, body.model_dump(exclude_none=True), settings_mod.load())
     except KeyError as err:
@@ -655,8 +830,7 @@ def edit_thumbnail(key: str, body: s.ThumbnailEdit, board: Storyboard = Depends(
 
 @router.patch("/storyboards/{storyboard_id}/thumbnails/result", response_model=s.StoryboardOut)
 @router.post("/storyboards/{storyboard_id}/thumbnails/result", response_model=s.StoryboardOut)
-def thumbnail_result(body: s.ThumbnailResult, board: Storyboard = Depends(get_board),
-                     db: Session = Depends(get_db)):
+def thumbnail_result(body: s.ThumbnailResult, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Save the creator's selected thumbnail and/or manually observed test winner."""
     if not board.thumbnails:
         raise HTTPException(409, "Make the three thumbnails first")
@@ -667,8 +841,9 @@ def thumbnail_result(body: s.ThumbnailResult, board: Storyboard = Depends(get_bo
         thumbnail_mod.record_result(board_id, **body.model_dump(exclude_unset=True))
     except KeyError as err:
         raise HTTPException(400, f"Unknown thumbnail: {err.args[0]}") from err
-    compliance.record(db, script_id, "thumbnail_result", "you", "Recorded thumbnail selection/test result",
-                      storyboard_id=board_id)
+    compliance.record(
+        db, script_id, "thumbnail_result", "you", "Recorded thumbnail selection/test result", storyboard_id=board_id
+    )
     db.flush()
     db.expire_all()
     return board_out(db.get(Storyboard, board_id), _board_jobs(db).get(board_id), db)
@@ -679,11 +854,17 @@ def thumbnail_image(key: str, board: Storyboard = Depends(get_board)):
     path = thumbnail_mod.path_of(board, key)
     if path is None or not path.is_file():
         raise HTTPException(404, "Thumbnail not found")
-    return FileResponse(path, media_type="image/jpeg", filename=f"thumbnail-{key}.jpg",
-                        content_disposition_type="inline", headers={"Cache-Control": "max-age=86400"})
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename=f"thumbnail-{key}.jpg",
+        content_disposition_type="inline",
+        headers={"Cache-Control": "max-age=86400"},
+    )
 
 
 # --- the library ------------------------------------------------------------------------------
+
 
 def _usage(db: Session) -> dict[str, int]:
     counts: dict[str, int] = {}
@@ -694,9 +875,15 @@ def _usage(db: Session) -> dict[str, int]:
 
 
 def asset_out(asset: StudioAsset, used: int) -> s.AssetOut:
-    return s.AssetOut(name=asset.name, description=asset.description, drawn=asset.svg is not None,
-                      origin=asset.origin, created_at=asset.created_at, updated_at=asset.updated_at,
-                      used_in=used)
+    return s.AssetOut(
+        name=asset.name,
+        description=asset.description,
+        drawn=asset.svg is not None,
+        origin=asset.origin,
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+        used_in=used,
+    )
 
 
 @router.get("/assets", response_model=list[s.AssetOut])
@@ -706,8 +893,9 @@ def list_assets(db: Session = Depends(get_db)):
 
 
 @router.get("/assets/cast.png")
-def cast_image(variant: str = "narrator", pose: str = "stand", expression: str = "neutral",
-               height: int = Query(260, ge=60, le=900)):
+def cast_image(
+    variant: str = "narrator", pose: str = "stand", expression: str = "neutral", height: int = Query(260, ge=60, le=900)
+):
     """A cast member, for the editor's pickers."""
     svg = art.character_svg(variant, pose, expression)
     out = io.BytesIO()
@@ -727,6 +915,7 @@ def asset_image(name: str, size: int = Query(256, ge=32, le=1024), db: Session =
 
 # --- places (the cartoon look's backgrounds) ------------------------------------------------------
 
+
 def _place_usage(db: Session) -> dict[str, int]:
     counts: dict[str, int] = {}
     for style, scenes in db.execute(select(Storyboard.style, Storyboard.scenes)):
@@ -739,11 +928,26 @@ def _place_usage(db: Session) -> dict[str, int]:
 def _place_out(name: str, row: StudioPlace | None, used: dict[str, int]) -> s.PlaceOut:
     """A place for the library. A code place without a row is drawn by code; with one, by Claude."""
     if row is None:
-        return s.PlaceOut(name=name, description=cartoon.BUILT_IN[name], built_in=True, wide=True, tall=True,
-                          origin="code", used_in=used.get(name, 0), by_code=True)
-    return s.PlaceOut(name=row.name, description=row.description, built_in=name in cartoon.PLACES,
-                      wide=row.svg is not None, tall=row.svg_tall is not None, origin=row.origin,
-                      updated_at=row.updated_at, used_in=used.get(name, 0))
+        return s.PlaceOut(
+            name=name,
+            description=cartoon.BUILT_IN[name],
+            built_in=True,
+            wide=True,
+            tall=True,
+            origin="code",
+            used_in=used.get(name, 0),
+            by_code=True,
+        )
+    return s.PlaceOut(
+        name=row.name,
+        description=row.description,
+        built_in=name in cartoon.PLACES,
+        wide=row.svg is not None,
+        tall=row.svg_tall is not None,
+        origin=row.origin,
+        updated_at=row.updated_at,
+        used_in=used.get(name, 0),
+    )
 
 
 @router.get("/places", response_model=list[s.PlaceOut])
@@ -756,8 +960,12 @@ def list_places(db: Session = Depends(get_db)):
 
 
 @router.get("/places/{name}/image")
-def place_image(name: str, shape: str = Query("wide", pattern="^(wide|tall)$"), size: int = Query(480, ge=96, le=1920),
-                db: Session = Depends(get_db)):
+def place_image(
+    name: str,
+    shape: str = Query("wide", pattern="^(wide|tall)$"),
+    size: int = Query(480, ge=96, le=1920),
+    db: Session = Depends(get_db),
+):
     """What the camera sees of the place when it rests in the middle, as PNG."""
     tall = shape == "tall"
     row = db.get(StudioPlace, name)
@@ -766,8 +974,9 @@ def place_image(name: str, shape: str = Query("wide", pattern="^(wide|tall)$"), 
     svg = places_mod.stored(row, tall) if row else None
     if row is not None and svg is None:
         raise HTTPException(404, "Not drawn yet: it is drawn when a cartoon video first needs it")
-    return Response(cartoon.preview(name, tall, size, svg), media_type="image/png",
-                    headers={"Cache-Control": "no-store"})
+    return Response(
+        cartoon.preview(name, tall, size, svg), media_type="image/png", headers={"Cache-Control": "no-store"}
+    )
 
 
 @router.post("/places/{name}/redraw", response_model=s.PlaceOut)
@@ -864,7 +1073,7 @@ async def upload_music(file: UploadFile, db: Session = Depends(get_db)):
             out.write(chunk)
     target = folder / f"{track.id}.m4a"
     try:
-        sound.normalise_music(original, target)    # same loudness for every track
+        sound.normalise_music(original, target)  # same loudness for every track
         track.duration = voice_mod.duration_of(target)
         track.features = sound.describe_track(target)
     except Exception as err:  # noqa: BLE001 - anything ffmpeg cannot read is not music
@@ -898,9 +1107,15 @@ def import_music(body: s.MusicImport, db: Session = Depends(get_db)):
     existing = db.scalar(select(StudioMusic).where(StudioMusic.source_url == item["landing_url"]))
     if existing is not None and item["landing_url"]:
         return existing
-    track = StudioMusic(name=item["title"][:200], path="", creator=item["creator"], license=item["license"],
-                        source_url=item["landing_url"], attribution=music_search.credit(item),
-                        genres=item["genres"][:6])
+    track = StudioMusic(
+        name=item["title"][:200],
+        path="",
+        creator=item["creator"],
+        license=item["license"],
+        source_url=item["landing_url"],
+        attribution=music_search.credit(item),
+        genres=item["genres"][:6],
+    )
     db.add(track)
     db.flush()
     folder = config.studio_dir() / "music"
@@ -914,8 +1129,7 @@ def import_music(body: s.MusicImport, db: Session = Depends(get_db)):
     except Exception as err:  # noqa: BLE001 - a bad download is the source's fault, not a crash
         target.unlink(missing_ok=True)
         db.delete(track)
-        raise HTTPException(502, str(err) if isinstance(err, RuntimeError) else "That track could not be read") \
-            from err
+        raise HTTPException(502, str(err) if isinstance(err, RuntimeError) else "That track could not be read") from err
     finally:
         original.unlink(missing_ok=True)
     track.path = str(target)
@@ -943,11 +1157,34 @@ def delete_music(music_id: int, db: Session = Depends(get_db)):
 
 # --- licensed sound effects ---------------------------------------------------------------
 
+
 def _sound_view(row: StudioSound) -> dict:
-    value = {name: getattr(row, name) for name in (
-        "id", "kind", "name", "duration", "gain", "enabled", "provider", "provider_id",
-        "upstream_id", "creator", "creator_url", "landing_url", "license", "license_version", "license_url",
-        "attribution", "checksum", "acquired_at", "approved_at", "rejected_at", "rejection_note")}
+    value = {
+        name: getattr(row, name)
+        for name in (
+            "id",
+            "kind",
+            "name",
+            "duration",
+            "gain",
+            "enabled",
+            "provider",
+            "provider_id",
+            "upstream_id",
+            "creator",
+            "creator_url",
+            "landing_url",
+            "license",
+            "license_version",
+            "license_url",
+            "attribution",
+            "checksum",
+            "acquired_at",
+            "approved_at",
+            "rejected_at",
+            "rejection_note",
+        )
+    }
     return {**value, "cached": bool(row.path and Path(row.path).is_file())}
 
 
@@ -963,14 +1200,17 @@ def sound_audio(sound_id: int, db: Session = Depends(get_db)):
     path = Path(row.path) if row is not None and row.path else None
     if path is None or not path.is_file():
         raise HTTPException(404, "The cached sound file is missing")
-    return FileResponse(path, media_type="audio/wav", filename=f"sound-{row.id}.wav",
-                        headers={"Cache-Control": "private, max-age=3600"})
+    return FileResponse(
+        path, media_type="audio/wav", filename=f"sound-{row.id}.wav", headers={"Cache-Control": "private, max-age=3600"}
+    )
 
 
 @router.get("/sounds/search", response_model=s.SoundSearch)
-def search_sounds(q: str = Query(min_length=2, max_length=200),
-                  provider: Literal["openverse", "wikimedia"] = "openverse",
-                  page: int = Query(1, ge=1, le=50)):
+def search_sounds(
+    q: str = Query(min_length=2, max_length=200),
+    provider: Literal["openverse", "wikimedia"] = "openverse",
+    page: int = Query(1, ge=1, le=50),
+):
     try:
         if provider == "openverse":
             return sfx.search_openverse(q, page)
@@ -1016,8 +1256,16 @@ def reject_sound(sound_id: int, body: s.SoundApproval | None = None, db: Session
 
 
 def _storyboard_sound_view(row: StoryboardSound) -> dict:
-    return {"id": row.id, "storyboard_id": row.storyboard_id, "sound_id": row.sound_id, "rule": row.rule,
-            "at": row.at, "gain": row.gain, "created_at": row.created_at, "sound": _sound_view(row.sound)}
+    return {
+        "id": row.id,
+        "storyboard_id": row.storyboard_id,
+        "sound_id": row.sound_id,
+        "rule": row.rule,
+        "at": row.at,
+        "gain": row.gain,
+        "created_at": row.created_at,
+        "sound": _sound_view(row.sound),
+    }
 
 
 @router.get("/storyboards/{storyboard_id}/sounds", response_model=list[s.StoryboardSoundOut])
@@ -1026,8 +1274,9 @@ def list_storyboard_sounds(board: Storyboard = Depends(get_board)):
 
 
 @router.post("/storyboards/{storyboard_id}/sounds", response_model=s.StoryboardSoundOut, status_code=201)
-def assign_storyboard_sound(body: s.StoryboardSoundAssign, board: Storyboard = Depends(get_board),
-                            db: Session = Depends(get_db)):
+def assign_storyboard_sound(
+    body: s.StoryboardSoundAssign, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)
+):
     _idle(db, board)
     row = db.get(StudioSound, body.sound_id)
     if row is None:
@@ -1048,11 +1297,11 @@ def assign_storyboard_sound(body: s.StoryboardSoundAssign, board: Storyboard = D
 
 
 @router.delete("/storyboards/{storyboard_id}/sounds/{assignment_id}", status_code=204)
-def delete_storyboard_sound(assignment_id: int, board: Storyboard = Depends(get_board),
-                            db: Session = Depends(get_db)):
+def delete_storyboard_sound(assignment_id: int, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     _idle(db, board)
-    cue = db.scalar(select(StoryboardSound).where(StoryboardSound.id == assignment_id,
-                                                  StoryboardSound.storyboard_id == board.id))
+    cue = db.scalar(
+        select(StoryboardSound).where(StoryboardSound.id == assignment_id, StoryboardSound.storyboard_id == board.id)
+    )
     if cue is None:
         raise HTTPException(404, "No such sound cue")
     db.delete(cue)

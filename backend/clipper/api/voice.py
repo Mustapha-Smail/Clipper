@@ -40,8 +40,12 @@ def _take_jobs(db: Session) -> dict[int, Job]:
 
 def _failures(db: Session) -> dict[int, str]:
     """The error of the latest failed voice job of each take."""
-    failed = db.scalars(select(Job).where(Job.state == "failed", Job.kind.in_(("voice_ai", "voice_rec", "align")))
-                        .order_by(Job.id.desc()).limit(200)).all()
+    failed = db.scalars(
+        select(Job)
+        .where(Job.state == "failed", Job.kind.in_(("voice_ai", "voice_rec", "align")))
+        .order_by(Job.id.desc())
+        .limit(200)
+    ).all()
     out: dict[int, str] = {}
     for job in failed:
         if job.take_id and job.take_id not in out:
@@ -52,9 +56,16 @@ def _failures(db: Session) -> dict[int, str]:
 def take_out(take: VoiceTake, script: Script, job: Job | None, failure: str | None = None) -> s.TakeOut:
     alignment = take.alignment
     return s.TakeOut(
-        id=take.id, script_id=take.script_id, source=take.source, voice=take.voice, speed=take.speed,
+        id=take.id,
+        script_id=take.script_id,
+        source=take.source,
+        voice=take.voice,
+        speed=take.speed,
         pauses=take.pauses,
-        duration=take.duration, chosen=take.chosen, created_at=take.created_at, alignment=alignment,
+        duration=take.duration,
+        chosen=take.chosen,
+        created_at=take.created_at,
+        alignment=alignment,
         ready=bool(take.path and alignment and job is None),
         current=take.script_hash == script_mod.text_hash(script.sections),
         job=s.JobOut.model_validate(job) if job else None,
@@ -71,8 +82,9 @@ def _busy(db: Session, script: Script) -> None:
 def _new_take(db: Session, script: Script, source: str, voice: str, speed: float | None) -> VoiceTake:
     if not any(sec["text"].strip() for sec in script.sections):
         raise HTTPException(409, "The script has no text yet")
-    take = VoiceTake(script_id=script.id, source=source, voice=voice, speed=speed,
-                     script_hash=script_mod.text_hash(script.sections))
+    take = VoiceTake(
+        script_id=script.id, source=source, voice=voice, speed=speed, script_hash=script_mod.text_hash(script.sections)
+    )
     db.add(take)
     db.flush()
     return take
@@ -92,12 +104,19 @@ def voice_options():
     return {
         "kokoro": [{"id": k, "label": v} for k, v in voice_mod.KOKORO_VOICES.items()],
         "kokoro_downloaded": voice_mod.kokoro_ready(),
-        "chatterbox": voice_mod.chatterbox_voices(), "chatterbox_ready": chatterbox_mod.ready(),
-        "elevenlabs": eleven, "elevenlabs_available": available, "elevenlabs_error": error,
-        "defaults": {"engine": settings.voice_engine, "kokoro_voice": settings.kokoro_voice,
-                     "chatterbox_voice": settings.chatterbox_voice,
-                     "elevenlabs_voice": settings.elevenlabs_voice, "speed": settings.voice_speed,
-                     "pauses": settings.voice_pauses},
+        "chatterbox": voice_mod.chatterbox_voices(),
+        "chatterbox_ready": chatterbox_mod.ready(),
+        "elevenlabs": eleven,
+        "elevenlabs_available": available,
+        "elevenlabs_error": error,
+        "defaults": {
+            "engine": settings.voice_engine,
+            "kokoro_voice": settings.kokoro_voice,
+            "chatterbox_voice": settings.chatterbox_voice,
+            "elevenlabs_voice": settings.elevenlabs_voice,
+            "speed": settings.voice_speed,
+            "pauses": settings.voice_pauses,
+        },
     }
 
 
@@ -125,6 +144,8 @@ def list_takes(script: Script = Depends(get_script), db: Session = Depends(get_d
 def create_ai_take(body: s.AiTakeCreate, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """Have an AI voice read the script as it is now, then time it."""
     _busy(db, script)
+    if script.form == "micro_short":
+        raise HTTPException(409, "A micro-Short is silent and already has a designed cue track; no TTS is needed")
     if body.engine == "kokoro" and body.voice not in voice_mod.KOKORO_VOICES:
         raise HTTPException(400, f"Unknown Kokoro voice: {body.voice}")
     if body.engine == "chatterbox" and body.voice not in {v["id"] for v in voice_mod.chatterbox_voices()}:
@@ -140,6 +161,8 @@ def create_ai_take(body: s.AiTakeCreate, script: Script = Depends(get_script), d
 async def upload_recording(file: UploadFile, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """Your own recording of the script: any audio file, or a video with sound."""
     _busy(db, script)
+    if script.form == "micro_short":
+        raise HTTPException(409, "A micro-Short is silent and uses its designed cue track, not a recording")
     suffix = Path(file.filename or "recording.webm").suffix.lower()
     if suffix not in AUDIO_SUFFIXES:
         raise HTTPException(400, "Unsupported file type. Use wav, mp3, m4a, flac, ogg, webm or a video file.")
@@ -162,7 +185,7 @@ def take_audio(take: VoiceTake = Depends(get_take)):
 
 @router.get("/takes/{take_id}/timeline")
 def take_timeline(take: VoiceTake = Depends(get_take)):
-    """Every script word with the time it is spoken."""
+    """Every spoken word or designed silent cue token with its render time."""
     path = voice_mod.timeline_path(take)
     if not path.is_file():
         raise HTTPException(404, "This take has not been timed yet")
@@ -174,7 +197,8 @@ def realign(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
     """Time the take again, against the script as it is now. Use it after editing the script to match."""
     _busy(db, take.script)
     take.script_hash = script_mod.text_hash(take.script.sections)
-    job = jobs.enqueue(db, "align", take.script.title, {"script_id": take.script_id, "take_id": take.id})
+    stages = ["cue"] if take.source == "silent" else None
+    job = jobs.enqueue(db, "align", take.script.title, {"script_id": take.script_id, "take_id": take.id}, stages=stages)
     return take_out(take, take.script, job)
 
 
@@ -182,7 +206,13 @@ def realign(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
 def choose_take(take: VoiceTake = Depends(get_take), db: Session = Depends(get_db)):
     """Make this the take the video will use."""
     if not take.chosen:
-        what = "your recording" if take.source == "recording" else f"the {take.voice} AI voice"
+        what = (
+            "your recording"
+            if take.source == "recording"
+            else "the designed silent cue track"
+            if take.source == "silent"
+            else f"the {take.voice} AI voice"
+        )
         compliance.record(db, take.script_id, "take", "you", f"Chose {what} (take {take.id}) for the video")
     for other in take.script.takes:
         other.chosen = other.id == take.id

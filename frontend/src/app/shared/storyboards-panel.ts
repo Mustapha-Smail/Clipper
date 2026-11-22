@@ -15,7 +15,7 @@ import { Toasts } from '../core/toast';
     <section class="card videos">
       <div>
         <h3>Videos</h3>
-        <p class="small muted">Animated from the take marked for the video. Claude plans the scenes and draws any prop the
+        <p class="small muted">Animated from the {{ script().form === 'micro_short' ? 'designed silent cue track' : 'take marked for the video' }}. Claude plans the scenes and draws any prop the
           library lacks; you edit, render and review. The long video is horizontal (16:9, 1920×1080) and tells the
           whole script; a Short is vertical (9:16, 1080×1920) and tells one section.</p>
       </div>
@@ -42,6 +42,9 @@ import { Toasts } from '../core/toast';
           </select>
           <small>{{ lookHint() }}</small>
         </label>
+        @if (script().form === 'micro_short') {
+          <div class="notice small"><span>Silent loop: normal captions, music and sound effects start off. Put only essential words into planned visual events; opt into sound later if it helps.</span></div>
+        } @else {
         <label class="field look"><span>Captions</span>
           <select [ngModel]="captionMode()" (ngModelChange)="captionMode.set($event)">
             <option value="default">Default for this form</option>
@@ -50,13 +53,14 @@ import { Toasts } from '../core/toast';
           </select>
           <small>Shorts default to captions; long videos default to none. Choose explicitly when needed.</small>
         </label>
+        }
         <p class="small muted strategy">Strategy: {{ formLabel(script().form) }} · {{ shapeLabel(script().story_shape) }}</p>
         @if (script().video === 'short') {
           <div class="row">
             <button class="primary" (click)="make(script().sections[0].key!)"
                     [disabled]="busy() || !script().sections.length || starting() !== null">
-              {{ starting() ? 'Starting…' : 'Make the Short (9:16)' }}</button>
-            <span class="small muted">This idea is Shorts only: no long video.</span>
+              {{ starting() ? 'Starting…' : (script().form === 'micro_short' ? 'Make the silent loop (9:16)' : 'Make the Short (9:16)') }}</button>
+            <span class="small muted">{{ script().form === 'micro_short' ? '12–18 seconds, designed to replay cleanly.' : 'This idea is Shorts only: no long video.' }}</span>
           </div>
         } @else {
         <div class="row">

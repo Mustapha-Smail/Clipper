@@ -44,6 +44,7 @@ STAGES = {
     "voice_ai": ["speak", "align"],
     "voice_rec": ["prepare", "align"],
     "align": ["align"],
+    "cue": ["cue"],
     "storyboard": ["plan", "draw"],
     "direct": ["draw", "direct"],
     "thumbnails": ["thumbnails"],
@@ -73,6 +74,7 @@ STAGE_LABELS = {
     "speak": "Generating the AI voice",
     "prepare": "Preparing the recording",
     "align": "Timing every word against the script",
+    "cue": "Designing the silent visual timing",
     "plan": "Planning the scenes",
     "draw": "Drawing new props and finding photos",
     "animate": "Animating the video",
@@ -87,11 +89,20 @@ class JobCancelled(Exception):
 
 # --- queue operations ------------------------------------------------------------
 
-def enqueue(db: Session, kind: str, label: str, params: dict, video_id: str | None = None,
-            stages: list[str] | None = None) -> Job:
+
+def enqueue(
+    db: Session, kind: str, label: str, params: dict, video_id: str | None = None, stages: list[str] | None = None
+) -> Job:
     """Queue a job. `stages` replaces the kind's usual ones (a storyboard plan with the director pass)."""
-    job = Job(kind=kind, label=label, params=params, video_id=video_id,
-              stages=stages or STAGES[kind], state="queued", message="Waiting")
+    job = Job(
+        kind=kind,
+        label=label,
+        params=params,
+        video_id=video_id,
+        stages=stages or STAGES[kind],
+        state="queued",
+        message="Waiting",
+    )
     db.add(job)
     db.flush()
     db.add(JobEvent(job_id=job.id, message="Queued"))
@@ -111,7 +122,8 @@ def claim_next(worker_id: str) -> int | None:
             return None
         # The WHERE on state makes the claim safe if two workers race for the same row.
         claimed = db.execute(
-            update(Job).where(Job.id == job_id, Job.state == "queued")
+            update(Job)
+            .where(Job.id == job_id, Job.state == "queued")
             .values(state="running", started_at=utcnow(), worker_id=worker_id, message="Starting")
         ).rowcount
         return job_id if claimed else None
@@ -135,8 +147,14 @@ def request_cancel(db: Session, job: Job) -> None:
         db.add(JobEvent(job_id=job.id, level="warning", message="Cancelled before it started"))
     elif job.state == "running":
         job.cancel_requested = True
-        db.add(JobEvent(job_id=job.id, level="warning", stage=job.stage,
-                        message="Cancel requested; stopping at the next safe point"))
+        db.add(
+            JobEvent(
+                job_id=job.id,
+                level="warning",
+                stage=job.stage,
+                message="Cancel requested; stopping at the next safe point",
+            )
+        )
 
 
 def finish(job_id: int, state: str, message: str, error: str | None = None) -> None:
@@ -149,6 +167,7 @@ def finish(job_id: int, state: str, message: str, error: str | None = None) -> N
 
 
 # --- reporters ---------------------------------------------------------------------
+
 
 class Reporter:
     """Progress sink. This base class ignores everything (used by tests)."""
@@ -176,7 +195,7 @@ class ConsoleReporter(Reporter):
 class JobReporter(Reporter):
     """Writes a job's progress and log to the database and the process log."""
 
-    WRITE_EVERY = 0.7   # seconds between progress writes; also how often cancel is checked
+    WRITE_EVERY = 0.7  # seconds between progress writes; also how often cancel is checked
 
     def __init__(self, job_id: int):
         self.job_id = job_id
@@ -186,8 +205,11 @@ class JobReporter(Reporter):
     def _event(self, level: str, message: str) -> None:
         with session_scope() as db:
             db.add(JobEvent(job_id=self.job_id, level=level, stage=self._stage, message=message))
-        log.log(logging.WARNING if level == "warning" else logging.INFO, message,
-                extra={"job_id": self.job_id, "stage": self._stage})
+        log.log(
+            logging.WARNING if level == "warning" else logging.INFO,
+            message,
+            extra={"job_id": self.job_id, "stage": self._stage},
+        )
 
     def stage(self, name: str) -> None:
         self._stage = name
@@ -223,4 +245,4 @@ class JobReporter(Reporter):
             job = db.get(Job, self.job_id)
             job.video_id = video_id
             if title:
-                job.label = title   # nicer than the raw link the job was queued with
+                job.label = title  # nicer than the raw link the job was queued with

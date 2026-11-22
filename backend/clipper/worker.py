@@ -32,11 +32,11 @@ from .studio import thumbnail as thumbnail_mod
 from .studio import voice as voice_mod
 
 HEARTBEAT_SECONDS = 5
-SWEEP_SECONDS = 3600        # how often an idle worker looks for renders past their grace period
-SCOUT_CHECK_SECONDS = 300   # how often an idle worker checks whether a scheduled campaign scout is due
-POSTS_DUE_SECONDS = 600     # how often an idle worker asks Buffer about posts whose time has come
-POSTS_ALL_SECONDS = 86400   # ... and about every waiting post (Buffer counts requests: see posting.py)
-STATS_SECONDS = 86400       # how often an idle worker reads views and reactions (learning.refresh)
+SWEEP_SECONDS = 3600  # how often an idle worker looks for renders past their grace period
+SCOUT_CHECK_SECONDS = 300  # how often an idle worker checks whether a scheduled campaign scout is due
+POSTS_DUE_SECONDS = 600  # how often an idle worker asks Buffer about posts whose time has come
+POSTS_ALL_SECONDS = 86400  # ... and about every waiting post (Buffer counts requests: see posting.py)
+STATS_SECONDS = 86400  # how often an idle worker reads views and reactions (learning.refresh)
 log = logging.getLogger("clipper.worker")
 
 
@@ -47,15 +47,22 @@ def run_job(job_id: int) -> None:
 
     rep = jobs.JobReporter(job_id)
     started = time.monotonic()
-    llm.job_ref = (f"storyboard:{params['storyboard_id']}" if params.get("storyboard_id")
-                   else f"script:{params['script_id']}" if params.get("script_id")
-                   else f"video:{video_id}" if video_id
-                   else f"theme:{params['theme_id']}" if params.get("theme_id") else None)
+    llm.job_ref = (
+        f"storyboard:{params['storyboard_id']}"
+        if params.get("storyboard_id")
+        else f"script:{params['script_id']}"
+        if params.get("script_id")
+        else f"video:{video_id}"
+        if video_id
+        else f"theme:{params['theme_id']}"
+        if params.get("theme_id")
+        else None
+    )
     log.info("job started", extra={"job_id": job_id, "kind": kind, "video_id": video_id})
     try:
         settings = settings_mod.load()
         clip_ids = params.get("clip_ids")
-        done = "Done"          # the final message; a stage may say more (the scout, when it ran without AI)
+        done = "Done"  # the final message; a stage may say more (the scout, when it ran without AI)
         for stage in stages:
             rep.stage(stage)
             if stage == "download":
@@ -63,16 +70,21 @@ def run_job(job_id: int) -> None:
                 if video_id and find_video(source_dir(video_id)):
                     rep.info("The video file is already on disk; skipping the download")
                 else:
-                    video_id = pipeline.ingest(params["src"], settings, rep, move=params.get("move", False),
-                                               brief=params.get("brief"), campaign_id=params.get("campaign_id"),
-                                               clip_format=params.get("clip_format"))
+                    video_id = pipeline.ingest(
+                        params["src"],
+                        settings,
+                        rep,
+                        move=params.get("move", False),
+                        brief=params.get("brief"),
+                        campaign_id=params.get("campaign_id"),
+                        clip_format=params.get("clip_format"),
+                    )
             elif stage == "transcribe":
                 pipeline.transcribe(video_id, settings, rep, isolate=True)
             elif stage == "subtitles":
                 pipeline.detect_subtitles(video_id, rep, force=kind == "subtitles")
             elif stage == "select":
-                pipeline.select(video_id, settings, rep, params.get("n"), params.get("min_len"),
-                                params.get("max_len"))
+                pipeline.select(video_id, settings, rep, params.get("n"), params.get("min_len"), params.get("max_len"))
             elif stage == "render":
                 clip_ids = pipeline.render(video_id, settings, rep, params.get("moment_ids"))
             elif stage == "check":
@@ -111,6 +123,8 @@ def run_job(job_id: int) -> None:
                 voice_mod.prepare(params["take_id"], settings, rep)
             elif stage == "align":
                 voice_mod.align(params["take_id"], settings, rep)
+            elif stage == "cue":
+                voice_mod.cue(params["script_id"], rep)
             elif stage == "plan":
                 storyboard_mod.plan(params["storyboard_id"], rep)
             elif stage == "draw":
@@ -132,8 +146,9 @@ def run_job(job_id: int) -> None:
         log.exception("job failed", extra={"job_id": job_id})
         jobs.finish(job_id, "failed", "Failed", str(err).strip()[:2000] or err.__class__.__name__)
         outcome = "failed"
-    log.info("job finished", extra={"job_id": job_id, "outcome": outcome,
-                                    "duration_s": round(time.monotonic() - started, 1)})
+    log.info(
+        "job finished", extra={"job_id": job_id, "outcome": outcome, "duration_s": round(time.monotonic() - started, 1)}
+    )
     llm.job_ref = None
     release_memory()
 
@@ -152,7 +167,7 @@ def release_memory() -> None:
         import ctypes
 
         ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except OSError:      # not glibc (macOS): nothing to do
+    except OSError:  # not glibc (macOS): nothing to do
         pass
 
 
@@ -177,7 +192,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
 
-    codex_cli.home()   # so `codex login`, run by hand in this container, finds its folder
+    codex_cli.home()  # so `codex login`, run by hand in this container, finds its folder
     interrupted = jobs.recover_interrupted()
     if interrupted:
         log.warning("marked interrupted jobs as failed", extra={"count": interrupted})

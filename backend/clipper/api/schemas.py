@@ -811,12 +811,23 @@ class TakeSection(BaseModel):
     end: float
 
 
+class TakeCueCheckpoint(BaseModel):
+    kind: str
+    time_s: float
+    lane: str | None = None
+    word_number: int
+    evidence: str
+
+
 class TakeAlignment(BaseModel):
+    mode: Literal["spoken", "designed_cues"] = "spoken"
     coverage: float
     sections: list[TakeSection]
     missing: list[TakeMissing]
     extra: list[TakeExtra]
     spoken_words: int
+    cue_tokens: int | None = None
+    checkpoints: list[TakeCueCheckpoint] = Field(default_factory=list)
     script_hash: str
     wpm: int | None = Field(None, description="Measured pace: script words a minute, pauses included")
 
@@ -824,7 +835,7 @@ class TakeAlignment(BaseModel):
 class TakeOut(Model):
     id: int
     script_id: int
-    source: Literal["recording", "kokoro", "chatterbox", "elevenlabs"]
+    source: Literal["recording", "kokoro", "chatterbox", "elevenlabs", "silent"]
     voice: str
     speed: float | None
     pauses: str | None = None

@@ -149,6 +149,7 @@ export class VoicePanel implements OnDestroy {
   }
 
   protected label(take: VoiceTake): string {
+    if (take.source === 'silent') return 'Designed silent cue track';
     if (take.source === 'recording') return `Your recording · ${take.voice}`;
     const options = this.options();
     const list = options?.[take.source];
@@ -222,6 +223,7 @@ export class VoicePanel implements OnDestroy {
   protected realign(take: VoiceTake): void {
     this.api.realignTake(take.id).subscribe({
       next: () => {
+        if (take.source === 'silent') this.toasts.ok('The silent cue timing is being rebuilt from the five visual cues');
         this.store.refresh();
         this.load();
       },

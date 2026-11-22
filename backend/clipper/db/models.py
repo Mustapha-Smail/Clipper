@@ -49,12 +49,14 @@ class Video(Base):
     subtitles: Mapped[dict | None] = mapped_column(JSON)
     # The campaign this video is being clipped for, if any.
     campaign_id: Mapped[int | None] = mapped_column(
-        ForeignKey("campaigns.id", ondelete="SET NULL", name="fk_videos_campaign_id"), index=True)
+        ForeignKey("campaigns.id", ondelete="SET NULL", name="fk_videos_campaign_id"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     moments: Mapped[list["Moment"]] = relationship(
-        back_populates="video", cascade="all, delete-orphan", order_by="Moment.position")
+        back_populates="video", cascade="all, delete-orphan", order_by="Moment.position"
+    )
     clips: Mapped[list["Clip"]] = relationship(back_populates="video", cascade="all, delete-orphan")
     campaign: Mapped["Campaign | None"] = relationship()
 
@@ -68,33 +70,33 @@ class Campaign(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     url: Mapped[str | None] = mapped_column(String(500), unique=True)
-    source: Mapped[str] = mapped_column(String(40), default="")        # marketplace name
+    source: Mapped[str] = mapped_column(String(40), default="")  # marketplace name
     title: Mapped[str] = mapped_column(Text)
     brand: Mapped[str] = mapped_column(Text, default="")
     category: Mapped[str] = mapped_column(Text, default="")
     summary: Mapped[str] = mapped_column(Text, default="")
-    kind: Mapped[str] = mapped_column(String(16), default="clipping")   # clipping|ugc|other
+    kind: Mapped[str] = mapped_column(String(16), default="clipping")  # clipping|ugc|other
     payout_model: Mapped[str] = mapped_column(String(16), default="cpm")  # cpm|per_post|retainer|pool|other
     listing_status: Mapped[str] = mapped_column(String(16), default="unknown")  # open|paused|ended|unknown
     currency: Mapped[str] = mapped_column(String(8), default="USD")
     rate_per_1k: Mapped[float | None] = mapped_column(Float)
     min_payout: Mapped[float | None] = mapped_column(Float)
-    max_payout: Mapped[float | None] = mapped_column(Float)            # per clip
+    max_payout: Mapped[float | None] = mapped_column(Float)  # per clip
     fee_pct: Mapped[float] = mapped_column(Float, default=10.0)
     budget_total: Mapped[float | None] = mapped_column(Float)
     budget_left: Mapped[float | None] = mapped_column(Float)
-    platforms: Mapped[list] = mapped_column(JSON, default=list)        # tiktok, instagram, youtube, x...
+    platforms: Mapped[list] = mapped_column(JSON, default=list)  # tiktok, instagram, youtube, x...
     # Rates often differ per platform: [{platform, rate_per_1k, min_payout, max_payout}].
     # rate_per_1k / min_payout / max_payout above hold the lowest-paying platform's figures.
     platform_rates: Mapped[list] = mapped_column(JSON, default=list)
     source_material: Mapped[str] = mapped_column(String(16), default="unknown")  # provided|own|unknown
-    tier1_min_share: Mapped[int | None] = mapped_column(Integer)       # % of viewers required in US/UK/CA/AU
+    tier1_min_share: Mapped[int | None] = mapped_column(Integer)  # % of viewers required in US/UK/CA/AU
     geo_requirement: Mapped[str] = mapped_column(Text, default="")
     restricted_category: Mapped[str] = mapped_column(String(16), default="none")
-    requirements: Mapped[str] = mapped_column(Text, default="")        # becomes the brief of its videos
-    theme_fit: Mapped[int | None] = mapped_column(Integer)             # 0..10 against the user's theme
+    requirements: Mapped[str] = mapped_column(Text, default="")  # becomes the brief of its videos
+    theme_fit: Mapped[int | None] = mapped_column(Integer)  # 0..10 against the user's theme
     theme_reason: Mapped[str] = mapped_column(Text, default="")
-    raw_text: Mapped[str] = mapped_column(Text, default="")            # the listing as it was read
+    raw_text: Mapped[str] = mapped_column(Text, default="")  # the listing as it was read
     # "ai": Claude read the terms. "page": the scout read them from the page layout because
     # the AI was unavailable; rules, location and theme fit are then unchecked.
     read_by: Mapped[str] = mapped_column(String(8), default="ai", server_default="ai")
@@ -115,10 +117,10 @@ class Theme(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text)
-    description: Mapped[str] = mapped_column(Text, default="")        # what the channel is about, for the AI
+    description: Mapped[str] = mapped_column(Text, default="")  # what the channel is about, for the AI
     color: Mapped[str] = mapped_column(String(16), default="amber")
     status: Mapped[str] = mapped_column(String(12), default="active", index=True)  # active|paused|archived
-    channels: Mapped[list] = mapped_column(JSON, default=list)        # Buffer channel ids; empty = choose each time
+    channels: Mapped[list] = mapped_column(JSON, default=list)  # Buffer channel ids; empty = choose each time
     notes: Mapped[str] = mapped_column(Text, default="")
     # The last lessons drawn from performance: {made_at, by, based_on, summary, works, avoid, try_next}.
     insights: Mapped[dict | None] = mapped_column(JSON)
@@ -139,32 +141,34 @@ class Idea(Base):
     __tablename__ = "ideas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    theme: Mapped[str] = mapped_column(Text, default="")              # the theme's name when it was made
+    theme: Mapped[str] = mapped_column(Text, default="")  # the theme's name when it was made
     theme_id: Mapped[int | None] = mapped_column(
-        ForeignKey("themes.id", ondelete="SET NULL", name="fk_ideas_theme_id"), index=True)
+        ForeignKey("themes.id", ondelete="SET NULL", name="fk_ideas_theme_id"), index=True
+    )
     # Generated from a proven theme: the ideas and videos it builds on, [{id, title, why}].
     inspired_by: Mapped[list | None] = mapped_column(JSON)
     title: Mapped[str] = mapped_column(Text)
-    hook: Mapped[str] = mapped_column(Text, default="")               # the question that opens the video
-    expected: Mapped[str] = mapped_column(Text, default="")           # the viewer's guess the answer overturns
-    answer: Mapped[str] = mapped_column(Text, default="")             # the surprising answer, in one line
-    beats: Mapped[list] = mapped_column(JSON, default=list)           # [{text, short}]
-    angle: Mapped[str] = mapped_column(Text, default="")              # how it differs from what exists
+    hook: Mapped[str] = mapped_column(Text, default="")  # the question that opens the video
+    expected: Mapped[str] = mapped_column(Text, default="")  # the viewer's guess the answer overturns
+    answer: Mapped[str] = mapped_column(Text, default="")  # the surprising answer, in one line
+    beats: Mapped[list] = mapped_column(JSON, default=list)  # [{text, short}]
+    angle: Mapped[str] = mapped_column(Text, default="")  # how it differs from what exists
     format: Mapped[str] = mapped_column(String(16), default="single")  # single|list
-    video: Mapped[str] = mapped_column(String(8), default="long")      # long (with Shorts from it) | short (only)
+    video: Mapped[str] = mapped_column(String(8), default="long")  # long (with Shorts from it) | short (only)
     # Distribution/runtime intent. `video` remains the long|short compatibility field.
-    form: Mapped[str] = mapped_column(String(12), default="long")      # long|short|micro_short
+    form: Mapped[str] = mapped_column(String(12), default="long")  # long|short|micro_short
     # Editorial structure. NULL deliberately means a legacy/unspecified shape, never a guessed one.
-    story_shape: Mapped[str | None] = mapped_column(String(16))         # parallel|explain|scorecard|investigation
+    story_shape: Mapped[str | None] = mapped_column(String(16))  # parallel|explain|scorecard|investigation
     parent_idea_id: Mapped[int | None] = mapped_column(
-        ForeignKey("ideas.id", ondelete="SET NULL", name="fk_ideas_parent_idea_id"), index=True)
+        ForeignKey("ideas.id", ondelete="SET NULL", name="fk_ideas_parent_idea_id"), index=True
+    )
     lineage_kind: Mapped[str] = mapped_column(String(16), default="root")  # root|concept_test|promotion
-    search_query: Mapped[str] = mapped_column(Text, default="")       # what a viewer would search
+    search_query: Mapped[str] = mapped_column(Text, default="")  # what a viewer would search
     origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # inbox|new|approved|parked|skipped
     notes: Mapped[str] = mapped_column(Text, default="")
-    research: Mapped[dict | None] = mapped_column(JSON)               # top YouTube results; NULL = not checked
-    judgement: Mapped[dict | None] = mapped_column(JSON)              # Claude's assessment; NULL = not checked
+    research: Mapped[dict | None] = mapped_column(JSON)  # top YouTube results; NULL = not checked
+    judgement: Mapped[dict | None] = mapped_column(JSON)  # Claude's assessment; NULL = not checked
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -184,26 +188,28 @@ class Script(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     idea_id: Mapped[int | None] = mapped_column(
-        ForeignKey("ideas.id", ondelete="SET NULL", name="fk_scripts_idea_id"), index=True)
+        ForeignKey("ideas.id", ondelete="SET NULL", name="fk_scripts_idea_id"), index=True
+    )
     title: Mapped[str] = mapped_column(Text)
     theme: Mapped[str] = mapped_column(Text, default="")
     theme_id: Mapped[int | None] = mapped_column(
-        ForeignKey("themes.id", ondelete="SET NULL", name="fk_scripts_theme_id"), index=True)
-    format: Mapped[str] = mapped_column(String(16), default="single")      # single|list
+        ForeignKey("themes.id", ondelete="SET NULL", name="fk_scripts_theme_id"), index=True
+    )
+    format: Mapped[str] = mapped_column(String(16), default="single")  # single|list
     target_minutes: Mapped[int] = mapped_column(Integer, default=6)
-    video: Mapped[str] = mapped_column(String(8), default="long")      # long | short (a Short only)
-    form: Mapped[str] = mapped_column(String(12), default="long")      # copied from its idea when created
-    story_shape: Mapped[str | None] = mapped_column(String(16))         # copied from its idea when created
-    target_seconds: Mapped[int] = mapped_column(Integer, default=50)   # for a Short
+    video: Mapped[str] = mapped_column(String(8), default="long")  # long | short (a Short only)
+    form: Mapped[str] = mapped_column(String(12), default="long")  # copied from its idea when created
+    story_shape: Mapped[str | None] = mapped_column(String(16))  # copied from its idea when created
+    target_seconds: Mapped[int] = mapped_column(Integer, default=50)  # for a Short
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved
-    research: Mapped[dict | None] = mapped_column(JSON)    # {notes, sources: [{n, url, title}], searches}
+    research: Mapped[dict | None] = mapped_column(JSON)  # {notes, sources: [{n, url, title}], searches}
     # Versioned, source-backed plan between research and prose (studio/story_map.py).
     story_map: Mapped[dict | None] = mapped_column(JSON)
-    sections: Mapped[list] = mapped_column(JSON, default=list)   # [{key, heading, text, short}]
-    claims: Mapped[list | None] = mapped_column(JSON)      # [{section, claim, verdict, note, sources}]
+    sections: Mapped[list] = mapped_column(JSON, default=list)  # [{key, heading, text, short}]
+    claims: Mapped[list | None] = mapped_column(JSON)  # [{section, claim, verdict, note, sources}]
     checked_hash: Mapped[str | None] = mapped_column(String(64))  # hash of the text the claims were checked on
     previous_sections: Mapped[list | None] = mapped_column(JSON)  # the text before the last whole-script rewrite
-    hold: Mapped[dict | None] = mapped_column(JSON)   # hold check labels: {hash, roles, topic, checked_at, ...}
+    hold: Mapped[dict | None] = mapped_column(JSON)  # hold check labels: {hash, roles, topic, checked_at, ...}
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -211,9 +217,11 @@ class Script(Base):
     idea: Mapped["Idea | None"] = relationship()
     theme_ref: Mapped["Theme | None"] = relationship()
     takes: Mapped[list["VoiceTake"]] = relationship(
-        back_populates="script", cascade="all, delete-orphan", order_by="VoiceTake.id")
+        back_populates="script", cascade="all, delete-orphan", order_by="VoiceTake.id"
+    )
     storyboards: Mapped[list["Storyboard"]] = relationship(
-        back_populates="script", cascade="all, delete-orphan", order_by="Storyboard.id")
+        back_populates="script", cascade="all, delete-orphan", order_by="Storyboard.id"
+    )
 
 
 class VoiceTake(Base):
@@ -230,12 +238,13 @@ class VoiceTake(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     script_id: Mapped[int] = mapped_column(
-        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_voice_takes_script_id"), index=True)
-    source: Mapped[str] = mapped_column(String(16))                 # recording|kokoro|chatterbox|elevenlabs
-    voice: Mapped[str] = mapped_column(String(120), default="")     # AI voice name, or the uploaded file name
+        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_voice_takes_script_id"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(16))  # recording|kokoro|chatterbox|elevenlabs|silent
+    voice: Mapped[str] = mapped_column(String(120), default="")  # AI voice name, or the uploaded file name
     speed: Mapped[float | None] = mapped_column(Float)
-    pauses: Mapped[str | None] = mapped_column(String(16))          # AI takes: tight | natural | relaxed
-    path: Mapped[str | None] = mapped_column(Text)                  # the prepared WAV, absolute
+    pauses: Mapped[str | None] = mapped_column(String(16))  # AI takes: tight | natural | relaxed
+    path: Mapped[str | None] = mapped_column(Text)  # the prepared WAV, absolute
     duration: Mapped[float | None] = mapped_column(Float)
     script_hash: Mapped[str] = mapped_column(String(64))
     alignment: Mapped[dict | None] = mapped_column(JSON)
@@ -250,9 +259,9 @@ class StudioAsset(Base):
 
     __tablename__ = "studio_assets"
 
-    name: Mapped[str] = mapped_column(String(48), primary_key=True)   # snake_case, used in storyboards
+    name: Mapped[str] = mapped_column(String(48), primary_key=True)  # snake_case, used in storyboards
     description: Mapped[str] = mapped_column(Text, default="")
-    svg: Mapped[str | None] = mapped_column(Text)                      # NULL = not drawn yet
+    svg: Mapped[str | None] = mapped_column(Text)  # NULL = not drawn yet
     origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -268,10 +277,10 @@ class StudioPlace(Base):
 
     __tablename__ = "studio_places"
 
-    name: Mapped[str] = mapped_column(String(48), primary_key=True)   # snake_case, used on shot lines
+    name: Mapped[str] = mapped_column(String(48), primary_key=True)  # snake_case, used on shot lines
     description: Mapped[str] = mapped_column(Text, default="")
-    svg: Mapped[str | None] = mapped_column(Text)                      # wide; NULL = not drawn yet
-    svg_tall: Mapped[str | None] = mapped_column(Text)                 # tall, for Shorts
+    svg: Mapped[str | None] = mapped_column(Text)  # wide; NULL = not drawn yet
+    svg_tall: Mapped[str | None] = mapped_column(Text)  # tall, for Shorts
     origin: Mapped[str] = mapped_column(String(16), default="claude")  # claude|you
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -285,13 +294,13 @@ class StudioMusic(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200))
-    path: Mapped[str] = mapped_column(Text)                 # absolute
+    path: Mapped[str] = mapped_column(Text)  # absolute
     duration: Mapped[float] = mapped_column(Float, default=0.0)
     # Where it came from, for tracks found through the music search; empty for uploads.
     creator: Mapped[str] = mapped_column(Text, default="")
-    license: Mapped[str] = mapped_column(String(16), default="")       # cc0 | pdm | by
+    license: Mapped[str] = mapped_column(String(16), default="")  # cc0 | pdm | by
     source_url: Mapped[str] = mapped_column(Text, default="")
-    attribution: Mapped[str] = mapped_column(Text, default="")         # the credit line for the description
+    attribution: Mapped[str] = mapped_column(Text, default="")  # the credit line for the description
     genres: Mapped[list] = mapped_column(JSON, default=list)
     # Measured from the audio: tempo, how busy and how bright it is (see sound.describe_track).
     features: Mapped[dict | None] = mapped_column(JSON)
@@ -310,23 +319,23 @@ class StudioSound(Base):
     __table_args__ = (UniqueConstraint("provider", "provider_id", name="ux_studio_sounds_provider_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(24), index=True)           # pop|whoosh|impact|scribble|step|riser...
+    kind: Mapped[str] = mapped_column(String(24), index=True)  # pop|whoosh|impact|scribble|step|riser...
     name: Mapped[str] = mapped_column(String(200))
-    path: Mapped[str] = mapped_column(Text, default="")                # normalized 48 kHz mono file after approval
+    path: Mapped[str] = mapped_column(Text, default="")  # normalized 48 kHz mono file after approval
     duration: Mapped[float] = mapped_column(Float, default=0.0)
     gain: Mapped[float] = mapped_column(Float, default=1.0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    provider: Mapped[str] = mapped_column(String(24))                  # openverse|wikimedia|upload
+    provider: Mapped[str] = mapped_column(String(24))  # openverse|wikimedia|upload
     provider_id: Mapped[str] = mapped_column(String(100))
     upstream_id: Mapped[str] = mapped_column(String(160), default="")
     creator: Mapped[str] = mapped_column(Text, default="")
     creator_url: Mapped[str] = mapped_column(Text, default="")
     landing_url: Mapped[str] = mapped_column(Text, default="")
-    license: Mapped[str] = mapped_column(String(16))                   # cc0|by (strict whitelist for providers)
+    license: Mapped[str] = mapped_column(String(16))  # cc0|by (strict whitelist for providers)
     license_version: Mapped[str] = mapped_column(String(16), default="")
     license_url: Mapped[str] = mapped_column(Text, default="")
     attribution: Mapped[str] = mapped_column(Text, default="")
-    media_url: Mapped[str] = mapped_column(Text, default="")           # evidence; final renders never hotlink it
+    media_url: Mapped[str] = mapped_column(Text, default="")  # evidence; final renders never hotlink it
     checksum: Mapped[str] = mapped_column(String(64), default="")
     acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -348,25 +357,27 @@ class Storyboard(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     script_id: Mapped[int] = mapped_column(
-        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_storyboards_script_id"), index=True)
+        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_storyboards_script_id"), index=True
+    )
     take_id: Mapped[int | None] = mapped_column(
-        ForeignKey("voice_takes.id", ondelete="SET NULL", name="fk_storyboards_take_id"))
-    format: Mapped[str] = mapped_column(String(8), default="short")      # short|long
-    form: Mapped[str] = mapped_column(String(12), default="short")       # copied from its script when created
-    story_shape: Mapped[str | None] = mapped_column(String(16))           # copied from its script when created
+        ForeignKey("voice_takes.id", ondelete="SET NULL", name="fk_storyboards_take_id")
+    )
+    format: Mapped[str] = mapped_column(String(8), default="short")  # short|long
+    form: Mapped[str] = mapped_column(String(12), default="short")  # copied from its script when created
+    story_shape: Mapped[str | None] = mapped_column(String(16))  # copied from its script when created
     # default preserves current behavior: captions on Shorts and off long videos.
     caption_mode: Mapped[str] = mapped_column(String(8), default="default")  # default|on|off
-    style: Mapped[str] = mapped_column(String(8), default="ink")         # ink (beats on one page) | flat (slides)
-    look: Mapped[str] = mapped_column(String(12), default="ink")         # ink style only: ink | paper | blueprint
-    section_key: Mapped[str | None] = mapped_column(String(16))          # NULL = the whole script
+    style: Mapped[str] = mapped_column(String(8), default="ink")  # ink (beats on one page) | flat (slides)
+    look: Mapped[str] = mapped_column(String(12), default="ink")  # ink style only: ink | paper | blueprint
+    section_key: Mapped[str | None] = mapped_column(String(16))  # NULL = the whole script
     title: Mapped[str] = mapped_column(Text, default="")
-    start: Mapped[float] = mapped_column(Float, default=0.0)            # seconds into the take's audio
+    start: Mapped[float] = mapped_column(Float, default=0.0)  # seconds into the take's audio
     end: Mapped[float] = mapped_column(Float, default=0.0)
     words: Mapped[list] = mapped_column(JSON, default=list)
     scenes: Mapped[list] = mapped_column(JSON, default=list)
     video_path: Mapped[str | None] = mapped_column(Text)
     rendered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    review: Mapped[str] = mapped_column(String(16), default="pending")   # pending|approved|rejected
+    review: Mapped[str] = mapped_column(String(16), default="pending")  # pending|approved|rejected
     # When the verdict last changed. With rendered_at it starts the grace period (studio/retention.py).
     review_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Long videos are uploaded/scheduled by hand; this records the one-click handoff to Published.
@@ -377,9 +388,10 @@ class Storyboard(Base):
     export: Mapped[dict | None] = mapped_column(JSON)
     # Sound under the voice.
     music_id: Mapped[int | None] = mapped_column(
-        ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id"))
-    music_db: Mapped[float] = mapped_column(Float, default=-18.0)        # music level vs the voice, before ducking
-    effects: Mapped[bool] = mapped_column(Boolean, default=True)         # pops and whooshes
+        ForeignKey("studio_music.id", ondelete="SET NULL", name="fk_storyboards_music_id")
+    )
+    music_db: Mapped[float] = mapped_column(Float, default=-18.0)  # music level vs the voice, before ducking
+    effects: Mapped[bool] = mapped_column(Boolean, default=True)  # pops and whooshes
     # Per-video attention-sound experiment. "default" inherits Settings; on/off override it.
     starter_mode: Mapped[str] = mapped_column(String(8), default="default")
     riser_mode: Mapped[str] = mapped_column(String(8), default="default")
@@ -402,7 +414,8 @@ class Storyboard(Base):
     music: Mapped["StudioMusic | None"] = relationship()
     take: Mapped["VoiceTake | None"] = relationship()
     sound_assignments: Mapped[list["StoryboardSound"]] = relationship(
-        back_populates="storyboard", cascade="all, delete-orphan", order_by="StoryboardSound.at")
+        back_populates="storyboard", cascade="all, delete-orphan", order_by="StoryboardSound.at"
+    )
 
 
 class StoryboardSound(Base):
@@ -417,9 +430,11 @@ class StoryboardSound(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     storyboard_id: Mapped[int] = mapped_column(
-        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_storyboard_sounds_storyboard_id"), index=True)
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_storyboard_sounds_storyboard_id"), index=True
+    )
     sound_id: Mapped[int] = mapped_column(
-        ForeignKey("studio_sounds.id", ondelete="RESTRICT", name="fk_storyboard_sounds_sound_id"), index=True)
+        ForeignKey("studio_sounds.id", ondelete="RESTRICT", name="fk_storyboard_sounds_sound_id"), index=True
+    )
     rule: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     at: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     gain: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
@@ -440,14 +455,15 @@ class VideoAnalytics(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     storyboard_id: Mapped[int] = mapped_column(
-        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_analytics_storyboard_id"), index=True)
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_analytics_storyboard_id"), index=True
+    )
     youtube_id: Mapped[str] = mapped_column(String(16))
-    source: Mapped[str] = mapped_column(String(8))                      # linked (published_url) | buffer (a post)
-    duration_s: Mapped[float | None] = mapped_column(Float)              # the video's length on YouTube
+    source: Mapped[str] = mapped_column(String(8))  # linked (published_url) | buffer (a post)
+    duration_s: Mapped[float | None] = mapped_column(Float)  # the video's length on YouTube
     views: Mapped[int | None] = mapped_column(Integer)
-    minutes_watched: Mapped[float | None] = mapped_column(Float)         # estimatedMinutesWatched
-    average_view_s: Mapped[float | None] = mapped_column(Float)          # averageViewDuration
-    average_view_pct: Mapped[float | None] = mapped_column(Float)        # averageViewPercentage
+    minutes_watched: Mapped[float | None] = mapped_column(Float)  # estimatedMinutesWatched
+    average_view_s: Mapped[float | None] = mapped_column(Float)  # averageViewDuration
+    average_view_pct: Mapped[float | None] = mapped_column(Float)  # averageViewPercentage
     retention: Mapped[list | None] = mapped_column(JSON)
     note: Mapped[str | None] = mapped_column(Text)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -467,8 +483,9 @@ class VideoMetricSnapshot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     storyboard_id: Mapped[int] = mapped_column(
-        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_metric_snapshots_storyboard_id"), index=True)
-    source_key: Mapped[str] = mapped_column(String(80))                 # buffer:<post id> | youtube:<video id>
+        ForeignKey("storyboards.id", ondelete="CASCADE", name="fk_video_metric_snapshots_storyboard_id"), index=True
+    )
+    source_key: Mapped[str] = mapped_column(String(80))  # buffer:<post id> | youtube:<video id>
     service: Mapped[str] = mapped_column(String(16))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     observed_day: Mapped[date] = mapped_column(Date)
@@ -480,21 +497,31 @@ class VideoMetricSnapshot(Base):
     average_view_pct: Mapped[float | None] = mapped_column(Float)
 
 
-def record_metric_snapshot(session, *, storyboard_id: int, source_key: str, service: str,
-                           observed_at: datetime | None = None, views: int | float | None | object = _UNSET,
-                           likes: int | float | None | object = _UNSET,
-                           comments: int | float | None | object = _UNSET,
-                           minutes_watched: float | None | object = _UNSET,
-                           average_view_s: float | None | object = _UNSET,
-                           average_view_pct: float | None | object = _UNSET) -> VideoMetricSnapshot:
+def record_metric_snapshot(
+    session,
+    *,
+    storyboard_id: int,
+    source_key: str,
+    service: str,
+    observed_at: datetime | None = None,
+    views: int | float | None | object = _UNSET,
+    likes: int | float | None | object = _UNSET,
+    comments: int | float | None | object = _UNSET,
+    minutes_watched: float | None | object = _UNSET,
+    average_view_s: float | None | object = _UNSET,
+    average_view_pct: float | None | object = _UNSET,
+) -> VideoMetricSnapshot:
     """Create or update one source/day observation in a caller's transaction."""
     at = as_utc(observed_at) or utcnow()
     day = at.date()
     row = session.query(VideoMetricSnapshot).filter_by(source_key=source_key, observed_day=day).one_or_none()
     values = {"storyboard_id": storyboard_id, "service": service, "observed_at": at}
     for field, value, coerce in (
-        ("views", views, int), ("likes", likes, int), ("comments", comments, int),
-        ("minutes_watched", minutes_watched, float), ("average_view_s", average_view_s, float),
+        ("views", views, int),
+        ("likes", likes, int),
+        ("comments", comments, int),
+        ("minutes_watched", minutes_watched, float),
+        ("average_view_s", average_view_s, float),
         ("average_view_pct", average_view_pct, float),
     ):
         if value is not _UNSET:
@@ -522,7 +549,7 @@ class StudioPhoto(Base):
     query: Mapped[str] = mapped_column(String(200), unique=True)
     rank: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(40), default="Wikimedia Commons")
-    key: Mapped[str] = mapped_column(String(40), default="")            # the source's own id
+    key: Mapped[str] = mapped_column(String(40), default="")  # the source's own id
     title: Mapped[str] = mapped_column(Text, default="")
     creator: Mapped[str] = mapped_column(Text, default="")
     license: Mapped[str] = mapped_column(String(60), default="")
@@ -548,12 +575,13 @@ class StudioEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     script_id: Mapped[int] = mapped_column(
-        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_studio_events_script_id"), index=True)
+        ForeignKey("scripts.id", ondelete="CASCADE", name="fk_studio_events_script_id"), index=True
+    )
     storyboard_id: Mapped[int | None] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(24))
-    by: Mapped[str] = mapped_column(String(4))                           # you | ai
+    by: Mapped[str] = mapped_column(String(4))  # you | ai
     summary: Mapped[str] = mapped_column(Text, default="")
-    amount: Mapped[int] = mapped_column(Integer, default=0)              # words or lines changed, when it applies
+    amount: Mapped[int] = mapped_column(Integer, default=0)  # words or lines changed, when it applies
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -572,9 +600,9 @@ class AiUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
     searches: Mapped[int] = mapped_column(Integer, default=0)
-    cost_usd: Mapped[float | None] = mapped_column(Float)              # estimate; NULL = model not priced
+    cost_usd: Mapped[float | None] = mapped_column(Float)  # estimate; NULL = model not priced
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
-    outage: Mapped[bool] = mapped_column(Boolean, default=False)      # failed because the AI was unavailable
+    outage: Mapped[bool] = mapped_column(Boolean, default=False)  # failed because the AI was unavailable
     error: Mapped[str] = mapped_column(Text, default="")
     duration_s: Mapped[float] = mapped_column(Float, default=0.0)
     # what the call was for: "idea:3", "script:4", "storyboard:8", "video:12"; NULL before this existed
@@ -596,8 +624,7 @@ class Moment(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
 
     video: Mapped[Video] = relationship(back_populates="moments")
-    clip: Mapped["Clip | None"] = relationship(
-        back_populates="moment", cascade="all, delete-orphan", uselist=False)
+    clip: Mapped["Clip | None"] = relationship(back_populates="moment", cascade="all, delete-orphan", uselist=False)
 
 
 class Clip(Base):
@@ -635,29 +662,31 @@ class Post(Base):
     __tablename__ = "posts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(12))                       # clip | storyboard
+    kind: Mapped[str] = mapped_column(String(12))  # clip | storyboard
     clip_id: Mapped[int | None] = mapped_column(
-        ForeignKey("clips.id", ondelete="SET NULL", name="fk_posts_clip_id"), index=True)
+        ForeignKey("clips.id", ondelete="SET NULL", name="fk_posts_clip_id"), index=True
+    )
     storyboard_id: Mapped[int | None] = mapped_column(
-        ForeignKey("storyboards.id", ondelete="SET NULL", name="fk_posts_storyboard_id"), index=True)
+        ForeignKey("storyboards.id", ondelete="SET NULL", name="fk_posts_storyboard_id"), index=True
+    )
     title: Mapped[str] = mapped_column(Text, default="")
-    channel_id: Mapped[str] = mapped_column(String(40))                 # Buffer's id of the channel
-    service: Mapped[str] = mapped_column(String(16))                    # instagram | tiktok | youtube
+    channel_id: Mapped[str] = mapped_column(String(40))  # Buffer's id of the channel
+    service: Mapped[str] = mapped_column(String(16))  # instagram | tiktok | youtube
     channel_name: Mapped[str] = mapped_column(Text, default="")
-    text: Mapped[str] = mapped_column(Text, default="")                 # the caption posted with the video
-    ai_label: Mapped[bool] = mapped_column(Boolean, default=False)      # disclosed as AI-generated
-    mode: Mapped[str] = mapped_column(String(8), default="queue")       # queue | at | draft
+    text: Mapped[str] = mapped_column(Text, default="")  # the caption posted with the video
+    ai_label: Mapped[bool] = mapped_column(Boolean, default=False)  # disclosed as AI-generated
+    mode: Mapped[str] = mapped_column(String(8), default="queue")  # queue | at | draft
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # queued (waiting for our worker) -> draft | scheduled -> sending -> sent, or
     # failed (never reached Buffer, or Buffer could not publish) | cancelled | removed (deleted in Buffer)
     status: Mapped[str] = mapped_column(String(12), default="queued", index=True)
     buffer_id: Mapped[str | None] = mapped_column(String(40))
-    media_key: Mapped[str | None] = mapped_column(Text)                 # NULL once the hosted copy is deleted
+    media_key: Mapped[str | None] = mapped_column(Text)  # NULL once the hosted copy is deleted
     media_url: Mapped[str | None] = mapped_column(Text)
-    link: Mapped[str | None] = mapped_column(Text)                      # the post on the network, once sent
+    link: Mapped[str | None] = mapped_column(Text)  # the post on the network, once sent
     error: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # last asked Buffer
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # last asked Buffer
     # Statistics Buffer reports for a sent post ({views, likes, comments, shares, saves, ...}), and when
     # Buffer last updated them; NULL = not asked yet. See posting.sync_metrics.
     metrics: Mapped[dict | None] = mapped_column(JSON)
@@ -670,14 +699,14 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(24))        # process|select|render|check|subtitles|post...
+    kind: Mapped[str] = mapped_column(String(24))  # process|select|render|check|subtitles|post...
     label: Mapped[str] = mapped_column(Text)
     # Not a foreign key: a job's history outlives the video it worked on.
     video_id: Mapped[str | None] = mapped_column(String(80), index=True)
     state: Mapped[str] = mapped_column(String(16), default="queued", index=True)
     stages: Mapped[list] = mapped_column(JSON, default=list)
     stage: Mapped[str | None] = mapped_column(String(24))
-    progress: Mapped[float | None] = mapped_column(Float)   # 0..1 within the stage; NULL = unknown
+    progress: Mapped[float | None] = mapped_column(Float)  # 0..1 within the stage; NULL = unknown
     message: Mapped[str] = mapped_column(Text, default="Waiting")
     error: Mapped[str | None] = mapped_column(Text)
     params: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -688,7 +717,8 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     events: Mapped[list["JobEvent"]] = relationship(
-        back_populates="job", cascade="all, delete-orphan", order_by="JobEvent.id")
+        back_populates="job", cascade="all, delete-orphan", order_by="JobEvent.id"
+    )
 
     @property
     def script_id(self) -> int | None:
@@ -718,7 +748,7 @@ class JobEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    level: Mapped[str] = mapped_column(String(8), default="info")   # info|warning|error
+    level: Mapped[str] = mapped_column(String(8), default="info")  # info|warning|error
     stage: Mapped[str | None] = mapped_column(String(24))
     message: Mapped[str] = mapped_column(Text)
 

@@ -29,7 +29,7 @@
     <div class="tabs page-tabs" role="tablist">
       @for (t of tabs; track t.value) {
         <button role="tab" [class.on]="tab() === t.value" [attr.aria-selected]="tab() === t.value" (click)="setTab(t.value)">
-          {{ t.label }}</button>
+          {{ t.value === 'voice' && s.form === 'micro_short' ? 'Timing' : t.label }}</button>
       }
     </div>
 
@@ -55,10 +55,11 @@
             </select>
           </label>
         </dd></div>
-        <div><dt>Length</dt><dd class="num">{{ minutes().toFixed(1) }}<small> min · {{ words() }} words</small></dd></div>
-        <div><dt>Target</dt><dd class="num">
-          <input type="number" min="1" max="30" [value]="s.target_minutes" (change)="setTarget($any($event.target).value)"
-                 aria-label="Target minutes" [disabled]="busy()" /><small> min</small></dd></div>
+        <div><dt>Length</dt><dd class="num">@if (s.form === 'micro_short') { 5<small> designed cues</small> }
+          @else { {{ minutes().toFixed(1) }}<small> min · {{ words() }} words</small> }</dd></div>
+        <div><dt>Target</dt><dd class="num">@if (s.form === 'micro_short') { {{ s.target_seconds }}<small> s, silent loop</small> }
+          @else { <input type="number" min="1" max="30" [value]="s.target_minutes" (change)="setTarget($any($event.target).value)"
+                 aria-label="Target minutes" [disabled]="busy()" /><small> min</small> }</dd></div>
         @if (s.claim_counts; as c) {
           <div><dt>Supported claims</dt><dd class="num">{{ c.supported }}</dd></div>
           <div><dt>Contradicted</dt><dd class="num" [class.bad]="c.contradicted">{{ c.contradicted }}</dd></div>
@@ -79,7 +80,7 @@
         </span></div>
       }
 
-      @if (s.plain; as p) {
+      @if (s.form !== 'micro_short' && s.plain; as p) {
         <details class="card plain" [class.ok]="p.score >= 85" [class.warn]="p.score < 85 && p.score >= 65" [class.bad]="p.score < 65">
           <summary>
             <span class="plain-title">Easy to follow <span class="num">{{ p.score }}</span><span class="muted small">/100</span></span>
@@ -105,6 +106,30 @@
         </details>
       }
 
+      @if (s.form === 'micro_short') {
+        <section class="card plain hold" [class.ok]="s.hold?.current">
+          <div class="hold-head">
+            <span class="plain-title">Visual loop check</span>
+            @if (s.hold?.current && s.hold; as h) {
+              <span class="pill approved">Five cues ready</span>
+              <span class="small muted">Designed timing across {{ s.target_seconds }} seconds · no narration pace measured</span>
+            } @else {
+              <span class="small muted">Check the setup, hidden rule, both outcomes and return to the opening.</span>
+            }
+          </div>
+          @if (s.hold?.visual_checkpoints; as points) {
+            <ol class="roles">
+              @for (point of points; track point.kind) {
+                <li><span class="at num muted">{{ point.time_s.toFixed(1) }} s</span>
+                  <span class="role">{{ point.kind.replace('_', ' ') }}</span>
+                  <span class="said">{{ point.evidence }}</span></li>
+              }
+            </ol>
+          }
+          <div class="row"><button class="quiet" (click)="checkHold()" [disabled]="busy() || !s.sections.length">
+            {{ s.hold?.current ? 'Check loop again' : 'Check visual loop' }}</button></div>
+        </section>
+      } @else {
       <section class="card plain hold" [class.ok]="(s.hold?.score ?? 0) >= 85 && s.hold?.current"
                [class.warn]="s.hold?.current && (s.hold?.score ?? 0) < 85 && (s.hold?.score ?? 0) >= 65"
                [class.bad]="s.hold?.current && (s.hold?.score ?? 0) < 65">
@@ -181,13 +206,16 @@
             {{ s.hold?.current ? 'Check again' : 'Check how it holds' }}</button>
         </div>
       </section>
+      }
 
       <div class="row">
         <button (click)="checkFacts()" [disabled]="busy() || !s.sections.length">Check the facts</button>
+        @if (s.form !== 'micro_short') {
         <button (click)="makeSpoken()" [disabled]="busy() || !s.sections.length"
                 title="Rewrite the whole script for the ear: contractions, questions, beats. Keeps every fact.">Make it sound spoken</button>
         <button (click)="makeSimpler()" [disabled]="busy() || !s.sections.length"
                 title="Rewrite the whole script in plainer words for the audience: fewer names and numbers, everyday comparisons. Keeps what is true.">Make it simpler</button>
+        }
         @if (s.can_undo_rewrite) {
           <button class="quiet" (click)="undoRewrite()" [disabled]="busy()" title="Swap between the text before and after the last rewrite">Switch versions</button>
         }
@@ -437,9 +465,11 @@
           <div class="section-head">
             <input class="heading" type="text" [value]="sec.heading" (input)="edit(i, { heading: $any($event.target).value })"
                    aria-label="Section heading" [disabled]="busy()" />
+            @if (s.form !== 'micro_short') {
             <label class="check small"><input type="checkbox" [checked]="sec.short" (change)="edit(i, { short: $any($event.target).checked })"
                                              [disabled]="busy()" /><span>Works as a Short</span></label>
-            <span class="small muted num">{{ count(sec.text) }} words · {{ seconds(sec.text) }} s</span>
+            }
+            <span class="small muted num">{{ s.form === 'micro_short' ? '5 designed cues · ' + s.target_seconds + ' s' : count(sec.text) + ' words · ' + seconds(sec.text) + ' s' }}</span>
             <div class="row tools">
               <button class="sm quiet" (click)="move(i, -1)" [disabled]="busy() || i === 0" aria-label="Move up">↑</button>
               <button class="sm quiet" (click)="move(i, 1)" [disabled]="busy() || i === drafts().length - 1" aria-label="Move down">↓</button>
@@ -449,7 +479,7 @@
           </div>
 
           <textarea class="narration" [value]="sec.text" [rows]="rows(sec.text)" (input)="edit(i, { text: $any($event.target).value })"
-                    [attr.aria-label]="'Narration for ' + sec.heading" [disabled]="busy()"></textarea>
+                    [attr.aria-label]="(s.form === 'micro_short' ? 'Visual cues for ' : 'Narration for ') + sec.heading" [disabled]="busy()"></textarea>
 
           @if (proposal(); as p) {
             @if (p.key === sec.key) {

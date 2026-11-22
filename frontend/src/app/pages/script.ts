@@ -249,7 +249,7 @@ export class ScriptPage {
 
   protected readonly roleLabels: Record<HoldRole, string> = {
     hook: 'Hook', context: 'Context', stakes: 'Stakes', question: 'Question', twist: 'Twist', rehook: 'Rehook',
-    fact: 'Fact', payoff: 'Payoff', callback: 'Callback', filler: 'Filler',
+    fact: 'Fact', consequence: 'Consequence', payoff: 'Payoff', callback: 'Callback', filler: 'Filler',
   };
 
   protected async makeSimpler(): Promise<void> {

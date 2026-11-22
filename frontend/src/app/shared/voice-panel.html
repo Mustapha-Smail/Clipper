@@ -1,11 +1,14 @@
 <section class="card voice">
   <div class="row spread">
     <div>
-      <h3>Voice</h3>
-      <p class="small muted">Record yourself, upload a recording, or have an AI voice read the script. Every take is timed word by word against the script.</p>
+      <h3>{{ script().form === 'micro_short' ? 'Visual timing' : 'Voice' }}</h3>
+      <p class="small muted">@if (script().form === 'micro_short') {
+        This concept test is silent. Clipper designs five cue moments over the target duration and keeps a silent audio stream for compatible exports.
+      } @else { Record yourself, upload a recording, or have an AI voice read the script. Every take is timed word by word against the script. }</p>
     </div>
   </div>
 
+  @if (script().form !== 'micro_short') {
   <div class="row">
     <button [class.primary]="mode() === 'record'" (click)="mode.set(mode() === 'record' ? 'none' : 'record')" [disabled]="working()">
       Record yourself</button>
@@ -95,6 +98,10 @@
       <p class="small muted">Loading the voices…</p>
     }
   }
+  } @else {
+    <div class="notice small"><span>There is no TTS or transcription step. Edit the five visual cues on the Script tab,
+      then rebuild this designed timing if the cue sheet changes. Music and sound effects remain optional.</span></div>
+  }
 
   @for (take of takes(); track take.id) {
     <article class="take" [class.chosen]="take.chosen">
@@ -113,20 +120,26 @@
         <app-job-card [job]="j" [inset]="true" class="in-take" />
       }
 
-      @if (take.duration && !take.job) {
+      @if (take.duration && !take.job && take.source !== 'silent') {
         <audio controls preload="none" [src]="audio(take)"></audio>
       }
 
       @if (take.alignment; as a) {
+        @if (a.mode === 'designed_cues') {
+          <p class="small summary"><strong>{{ a.cue_tokens ?? 0 }}</strong> designed cue tokens across
+            {{ time(take.duration) }} · silent track · no words-per-minute measurement</p>
+        } @else {
         <p class="small summary">
           <strong [class.warn]="a.coverage < 0.9">{{ (a.coverage * 100).toFixed(0) }}%</strong> of the script found in the take
           @if (a.missing.length) { · <span class="warn">{{ a.missing.length }} {{ a.missing.length === 1 ? 'passage' : 'passages' }} not spoken as written</span> }
           @if (a.extra.length) { · {{ a.extra.length }} {{ a.extra.length === 1 ? 'stretch' : 'stretches' }} of speech not in the script }
           @if (a.wpm) { · <span class="num" title="Script words a minute, pauses included. Scripts are written for 150.">{{ a.wpm }} words a minute</span> }
         </p>
+        }
         <details class="fold small">
-          <summary class="muted">Timing and differences</summary>
+          <summary class="muted">{{ a.mode === 'designed_cues' ? 'Designed cue timing' : 'Timing and differences' }}</summary>
           <div class="detail">
+            @if (a.mode !== 'designed_cues') {
             <div>
               <h4>Sections</h4>
               <ul class="times">
@@ -135,6 +148,13 @@
                 }
               </ul>
             </div>
+            } @else if (a.checkpoints?.length) {
+              <div><h4>Visual checkpoints</h4><ul class="times">
+                @for (point of a.checkpoints; track point.kind + point.word_number) {
+                  <li><span>{{ point.kind.replace('_', ' ') }}</span><span class="num muted">{{ time(point.time_s) }}</span></li>
+                }
+              </ul></div>
+            }
             <div>
               @if (a.missing.length) {
                 <h4>Not spoken as written</h4>
@@ -171,11 +191,12 @@
       @if (!take.job) {
         <div class="row">
           @if (!take.chosen && take.ready) { <button class="sm" (click)="choose(take)">Use for the video</button> }
-          @if (take.duration && !take.alignment) {
+          @if (take.duration && !take.alignment && take.source !== 'silent') {
             <button class="sm primary" (click)="realign(take)" [disabled]="working()">Time it again</button>
           }
           @if (!take.current && take.duration && take.alignment) {
-            <button class="sm quiet" (click)="realign(take)" [disabled]="working()">Time it against the current script</button>
+            <button class="sm quiet" (click)="realign(take)" [disabled]="working()">
+              {{ take.source === 'silent' ? 'Rebuild cue timing' : 'Time it against the current script' }}</button>
           }
           <button class="sm quiet danger" (click)="remove(take)">Delete</button>
         </div>

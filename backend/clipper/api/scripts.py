@@ -45,8 +45,9 @@ def _computed(script: Script, job: Job | None) -> dict:
     words = script_mod.word_count(script.sections)
     counts = None
     if script.claims is not None:
-        counts = {v: sum(c["verdict"] == v for c in script.claims)
-                  for v in ("supported", "contradicted", "unclear", "joke")}
+        counts = {
+            v: sum(c["verdict"] == v for c in script.claims) for v in ("supported", "contradicted", "unclear", "joke")
+        }
     return {
         "words": words,
         "minutes": round(words / script_mod.WORDS_PER_MINUTE, 1),
@@ -63,13 +64,25 @@ def summary_out(script: Script, job: Job | None) -> s.ScriptSummary:
 
 
 def script_out(script: Script, job: Job | None) -> s.ScriptOut:
-    fields = set(s.ScriptOut.model_fields) - {"words", "minutes", "claim_counts", "checked_current", "job",
-                                              "can_undo_rewrite", "plain", "hold", "story_map"}
-    return s.ScriptOut(**{f: getattr(script, f) for f in fields}, **_computed(script, job),
-                       can_undo_rewrite=bool(script.previous_sections),
-                       plain=plain.check(script.sections or [], plain.level(), script.title),
-                       hold=hold.score_script(script),
-                       story_map=story_map_mod.out(script))
+    fields = set(s.ScriptOut.model_fields) - {
+        "words",
+        "minutes",
+        "claim_counts",
+        "checked_current",
+        "job",
+        "can_undo_rewrite",
+        "plain",
+        "hold",
+        "story_map",
+    }
+    return s.ScriptOut(
+        **{f: getattr(script, f) for f in fields},
+        **_computed(script, job),
+        can_undo_rewrite=bool(script.previous_sections),
+        plain=plain.check(script.sections or [], plain.level(), script.title),
+        hold=hold.score_script(script),
+        story_map=story_map_mod.out(script),
+    )
 
 
 def _require_idle(db: Session, script: Script) -> None:
@@ -101,13 +114,23 @@ def start_script(idea_id: int, body: s.ScriptCreate | None = None, db: Session =
         raise HTTPException(422, "A micro-Short concept test must be 12 to 18 seconds")
     if form == "short" and not 15 <= seconds <= 90:
         raise HTTPException(422, "A narrated Short must be 15 to 90 seconds")
-    script = Script(idea_id=idea.id, title=idea.title, theme=idea.theme, theme_id=idea.theme_id, format=idea.format,
-                    target_minutes=1 if video == "short" else minutes, video=video, form=form,
-                    story_shape=requested_shape or idea.story_shape, target_seconds=seconds,
-                    sections=[])
+    script = Script(
+        idea_id=idea.id,
+        title=idea.title,
+        theme=idea.theme,
+        theme_id=idea.theme_id,
+        format=idea.format,
+        target_minutes=1 if video == "short" else minutes,
+        video=video,
+        form=form,
+        story_shape=requested_shape or idea.story_shape,
+        target_seconds=seconds,
+        sections=[],
+    )
     db.add(script)
     db.flush()
-    job = _start(db, script, "script")
+    stages = [*jobs.STAGES["script"], "cue"] if form == "micro_short" else None
+    job = _start(db, script, "script", stages)
     log.info("script started", extra={"script_id": script.id, "idea_id": idea.id})
     return script_out(script, job)
 
@@ -126,8 +149,9 @@ def read_script(script: Script = Depends(get_script), db: Session = Depends(get_
 @router.get("/scripts/{script_id}/text", response_class=PlainTextResponse)
 def script_text(script: Script = Depends(get_script)):
     """The script as plain text, to print or read from."""
-    return PlainTextResponse(script_mod.plain_text(script), headers={
-        "Content-Disposition": f'attachment; filename="script-{script.id}.txt"'})
+    return PlainTextResponse(
+        script_mod.plain_text(script), headers={"Content-Disposition": f'attachment; filename="script-{script.id}.txt"'}
+    )
 
 
 @router.patch("/scripts/{script_id}", response_model=s.ScriptOut)
@@ -146,8 +170,15 @@ def update_script(body: s.ScriptPatch, script: Script = Depends(get_script), db:
 def save_sections(body: s.ScriptSections, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """Replace the script's text with your edited version. Moving back to draft if it was approved."""
     _require_idle(db, script)
-    sections = [{"key": sec.key or uuid.uuid4().hex[:8], "heading": sec.heading.strip(), "text": sec.text.strip(),
-                 "short": sec.short} for sec in body.sections]
+    sections = [
+        {
+            "key": sec.key or uuid.uuid4().hex[:8],
+            "heading": sec.heading.strip(),
+            "text": sec.text.strip(),
+            "short": sec.short,
+        }
+        for sec in body.sections
+    ]
     if script_mod.text_hash(sections) != script_mod.text_hash(script.sections):
         script.status = "draft"
         before, after = compliance.sections_text(script.sections), compliance.sections_text(sections)
@@ -171,8 +202,9 @@ def rewrite_section(body: s.SectionRewrite, script: Script = Depends(get_script)
         status = 409 if "story map" in str(err).lower() else 502
         raise HTTPException(status, str(err)) from err
     heading = next((x["heading"] for x in script.sections if x["key"] == body.key), body.key)
-    compliance.record(db, script.id, "rewrite", "ai",
-                      f"Rewrote '{heading}' on your instruction: {body.instruction.strip()[:200]}")
+    compliance.record(
+        db, script.id, "rewrite", "ai", f"Rewrote '{heading}' on your instruction: {body.instruction.strip()[:200]}"
+    )
     return {"key": body.key, "text": text}
 
 
@@ -188,6 +220,8 @@ def make_spoken(script: Script = Depends(get_script), db: Session = Depends(get_
     """Rewrite the whole script so it sounds spoken, keeping the facts. Undo brings the old text back."""
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
+    if script.form == "micro_short":
+        raise HTTPException(409, "A silent micro-Short uses visual cues, not spoken narration")
     try:
         story_map_mod.prompt_value(script)
     except RuntimeError as err:
@@ -201,6 +235,8 @@ def make_simpler(script: Script = Depends(get_script), db: Session = Depends(get
     Undo brings the old text back; check the facts again afterwards."""
     if not script.sections:
         raise HTTPException(409, "The script has no text yet")
+    if script.form == "micro_short":
+        raise HTTPException(409, "Edit the five visual cues directly; a micro-Short has no spoken narration")
     try:
         story_map_mod.prompt_value(script)
     except RuntimeError as err:
@@ -217,8 +253,9 @@ def check_hold(script: Script = Depends(get_script), db: Session = Depends(get_d
 
 
 @router.post("/scripts/{script_id}/story-map", response_model=s.JobOut, status_code=202)
-def rebuild_story_map(body: s.StoryMapRebuild | None = None, script: Script = Depends(get_script),
-                      db: Session = Depends(get_db)):
+def rebuild_story_map(
+    body: s.StoryMapRebuild | None = None, script: Script = Depends(get_script), db: Session = Depends(get_db)
+):
     """Build a map from the saved research. Replacing an existing map requires explicit confirmation."""
     _require_idle(db, script)
     if not script.research:
@@ -256,23 +293,27 @@ def undo_rewrite(script: Script = Depends(get_script), db: Session = Depends(get
 
 
 @router.post("/scripts/{script_id}/redraft", response_model=s.JobOut, status_code=202)
-def redraft(body: s.RedraftRequest | None = None, script: Script = Depends(get_script),
-            db: Session = Depends(get_db)):
+def redraft(body: s.RedraftRequest | None = None, script: Script = Depends(get_script), db: Session = Depends(get_db)):
     """Write again from a current map. Legacy scripts get a map first; stale maps need explicit replacement."""
     _require_idle(db, script)
+    cue = ["cue"] if script.form == "micro_short" else []
     if not script.research:
-        return _start(db, script, "script")
+        return _start(db, script, "script", [*jobs.STAGES["script"], *cue] if cue else None)
     if not script.story_map:
-        return _start(db, script, "redraft", ["story_map", "write", "factcheck", "hold"])
+        return _start(db, script, "redraft", ["story_map", "write", "factcheck", "hold", *cue])
     current, reasons = story_map_mod.status(script)
     rebuild = bool(body and body.rebuild_story_map)
     if not current and not rebuild:
-        raise HTTPException(409, "The story map is out of date: " + " ".join(reasons)
-                            + " Rebuild it from research before replacing the narration.")
+        raise HTTPException(
+            409,
+            "The story map is out of date: "
+            + " ".join(reasons)
+            + " Rebuild it from research before replacing the narration.",
+        )
     if not rebuild and story_map_mod.problems(script):
         # Kept separate from staleness: a current but malformed future/legacy payload must never reach the writer.
         raise HTTPException(409, "The story map has validation problems. Rebuild it from research.")
-    stages = ["story_map", "write", "factcheck", "hold"] if rebuild else None
+    stages = (["story_map"] if rebuild else []) + ["write", "factcheck", "hold", *cue]
     return _start(db, script, "redraft", stages)
 
 

@@ -67,18 +67,27 @@
                 <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
               </label>
             }
+            @if (b.form === 'micro_short') {
+              <div class="notice small"><span>Silent concept test · normal captions are off. Any essential words belong in the planned visual beats.</span></div>
+            } @else {
               <label class="field"><span>Captions</span>
                 <select [ngModel]="b.caption_mode" (ngModelChange)="setCaptionMode($event)" [disabled]="busy()">
                   <option value="default">Default for this form</option><option value="on">Always on</option><option value="off">Always off</option>
                 </select>
                 <small>Render again to apply this setting.</small>
               </label>
+            }
           </div>
           @if (b.missing_props.length) {
             <div class="notice small"><span>Props not drawn yet: {{ b.missing_props.join(', ') }}. They are drawn when you render,
               or now from <a routerLink="/props">Props</a>.</span></div>
           }
           @if (b.render_meta?.visual_qa; as qa) {
+            @if (qa.loop_seam; as seam) {
+              <div class="notice small" [class.warn]="!seam.passed"><span><strong>Loop seam.</strong>
+                {{ seam.passed ? 'Opening and closing visuals match closely' : 'Closing visual needs another pass' }}
+                · {{ (seam.similarity * 100).toFixed(0) }}% pixel similarity at the sampled seam.</span></div>
+            }
             @if (qa.warnings.length || qa.problem) {
               <div class="notice warn small visual-qa"><span><strong>Visual QA advice.</strong>
                 @for (warning of qa.warnings; track warning) { {{ warning }} }
