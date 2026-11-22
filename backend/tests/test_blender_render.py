@@ -255,6 +255,14 @@ def test_camera_above_its_target_looks_down_at_it(tmp_path):
     assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(front, toward_camera, strict=True))
 
 
+def test_renderer_can_open_every_asset_the_planner_may_cut_away():
+    from clipper.blender import render_scene
+    from clipper.studio import world3d
+
+    allowed = {asset for asset, verbs in world3d.CAPABILITIES.items() if "cutaway" in verbs}
+    assert set(render_scene.CUTAWAY_PARTS) == allowed
+
+
 class CancellingReporter(Reporter):
     def progress(self, fraction, message=None):
         raise jobs.JobCancelled

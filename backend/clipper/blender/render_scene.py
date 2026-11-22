@@ -34,6 +34,16 @@ SLOTS = {
     "bottom_right": (2.5, 0.0, 1.0),
 }
 SIZES = {"small": 0.65, "medium": 1.0, "large": 1.55}
+# The part a cutaway opens, for every asset world3d.CAPABILITIES lets a plan
+# cut away (a test keeps the two lists equal). Parts are named ROOT_PART.
+CUTAWAY_PARTS = {
+    "cylinder": "shell",
+    "pile_hammer": "shell",
+    "pump": "body",
+    "house": "body",
+    "wall": "wall",
+    "pipe": "pipe",
+}
 PALETTE = {
     "iron": (0.15, 0.21, 0.25, 1.0),
     "steel": (0.34, 0.43, 0.48, 1.0),
@@ -106,6 +116,7 @@ class Scene:
         self.plan = plan
         self.output = output
         self.objects = {}
+        self.kinds = {}
         self.materials = {}
         self.labels = 0
         self.schedule = []
@@ -198,6 +209,7 @@ class Scene:
             fail(f"unknown procedural asset reached Blender: {asset}")
         builder(root)
         self.objects[object_id] = root
+        self.kinds[object_id] = asset
         return root
 
     def build_ground(self, root):
@@ -431,10 +443,15 @@ class Scene:
                 child.location.z += 0.3 * (index % 3)
                 self.key(child, end)
         elif verb == "cutaway":
-            root = self.require(str(args[0]))
-            shell = next((child for child in root.children if "shell" in child.name), None)
+            object_id = str(args[0])
+            root = self.require(object_id)
+            kind = self.kinds.get(object_id)
+            name = f"{root.name}_{CUTAWAY_PARTS.get(kind)}"
+            # Blender adds ".001" when a name is already taken.
+            shell = next((child for child in root.children
+                          if child.name == name or child.name.startswith(name + ".")), None)
             if shell is None:
-                fail("cutaway target has no code-defined shell")
+                fail(f"cutaway target '{object_id}' ({kind}) has no code-defined part to open")
             self.key(shell, start, ("scale",))
             shell.scale.y *= 0.38
             self.key(shell, end, ("scale",))
