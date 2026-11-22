@@ -42,6 +42,7 @@ The beat language. Each line starts with the number of the narration word on whi
   N timeline "label" "label"... [PLACE] [COLOUR] [as ID]        (2 to 7 moments, in order, left to right)
   N who ID "Full Name" TRAIT...                          (defines a person; then: N actor ID ...)
   N photo "search words" [PLACE] [small|large|full] [as ID]   (a real picture from Wikimedia Commons)
+  N data CARD_ID [PLACE] [small|large] [as ID]          (a fixed cited graphic listed in <data_cards>)
   N do ACTOR POSE|ACTION [TARGET] [FACE]
   N face ACTOR FACE
   N move ACTOR|PROP PLACE|TARGET [GAIT]   (to a thing: walks up to it, or lands on it)

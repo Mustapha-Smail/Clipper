@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from .. import captions as captions_mod
 from .. import config
 from ..settings import Settings, hex_to_rgb, resolve_font
-from . import animate, composition, film, geo, photos
+from . import animate, composition, data_graphics, film, geo, photos
 
 FPS = 24
 S = 1.25                          # sprite pixels per world unit (the camera rarely zooms past 1.25)
@@ -566,13 +566,15 @@ class FilmComposer:
         self.words = board["words"]
         self.duration = board["end"] - board["start"]
         self.photos: dict[str, dict] = board.get("photos") or {}
+        self.data_cards: dict[str, dict] = board.get("data_cards") or {}
+        self.font_path = resolve_font(settings)
         self.look = get_look(board.get("look"))
         self.tail = TAIL if self.duration > 15 else 0.6
         self.shots = board["scenes"] or [{"start_word": 0, "lines": []}]
         self.captions = None
         if self.layout.captions and settings.captions_enabled and self.words:
             self.captions = captions_mod.CaptionRenderer(captions_mod.group_words(self.words, 0.0, self.duration),
-                                                         resolve_font(settings), hex_to_rgb(settings.highlight_color))
+                                                         self.font_path, hex_to_rgb(settings.highlight_color))
         self.compositions = [composition.geometry(self.format, shot.get("composition"),
                                                    captions=self.captions is not None)
                              for shot in self.shots]
@@ -754,6 +756,17 @@ class FilmComposer:
             image, thing.w, thing.h, inner = print_sprite(picture, "map", 940, 900, self.look.pins)
             thing.extra.update(codes=codes, inner=inner)
             self.events.append((thing.born, "pin"))
+        elif thing.kind == "data":
+            card = self.data_cards.get(line.text)
+            if card is None:
+                image = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+                thing.w = thing.h = 1
+            else:
+                width, height = 900, 520
+                image = data_graphics.render(card, round(width * S), round(height * S),
+                                             font_path=str(self.font_path))
+                thing.w, thing.h = width, height
+                self.events.append((thing.born, "pin"))
         elif thing.kind == "doc":
             layout = doc_layout(line.text, line.lines)
             thing.extra["layout"] = layout
@@ -1255,7 +1268,8 @@ class FilmComposer:
         frame = self._background(cx, cy, z, roll)
         half_w, half_h = self.W / 2 / z, self.H / 2 / z
         reach = math.hypot(half_w, half_h) + 1400
-        layer = {"photo": 0, "flag": 0, "card": 0, "doc": 0, "map": 0, "big": 0, "count": 0, "label": 1,
+        layer = {"photo": 0, "flag": 0, "card": 0, "doc": 0, "map": 0, "data": 0,
+                 "big": 0, "count": 0, "label": 1,
                  "highlight": 2, "mark": 3, "mappin": 4, "stamp": 5}
         for s in self.strings:                 # strings run under the prints, from pin to pin
             self._draw_string(frame, view, s, t)

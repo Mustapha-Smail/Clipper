@@ -624,6 +624,22 @@ class StoryMapParallel(BaseModel):
     lanes: list[StoryMapLane]
 
 
+class StoryMapDataItem(BaseModel):
+    label: str = Field(min_length=1, max_length=36)
+    value: float
+
+
+class StoryMapDataCard(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    kind: Literal["metric", "comparison", "bars", "gauge", "cohort", "clock", "scorecard"]
+    label: str = Field(min_length=1, max_length=60)
+    value: float | None = None
+    unit: str = Field(default="", max_length=16)
+    items: list[StoryMapDataItem] = Field(default_factory=list, max_length=6)
+    max_value: float | None = None
+    source_numbers: list[int] = Field(default_factory=list)
+
+
 class StoryMapEdit(BaseModel):
     template: StoryTemplate
     # Optional solely for v1 map compatibility. v2 generated maps always set it.
@@ -632,6 +648,7 @@ class StoryMapEdit(BaseModel):
     opening: StoryMapOpening
     beats: list[StoryMapBeat]
     ending: StoryMapEnding
+    data_cards: list[StoryMapDataCard] | None = None
 
 
 class StoryMapOut(StoryMapEdit):
@@ -904,6 +921,8 @@ class StoryboardOut(StoryboardSummary):
     sound_riser_default: bool = False
     continuity: list[str] = Field(default_factory=list,
                                   description="Deterministic continuity advice for the saved plan")
+    data_cards: list[StoryMapDataCard] = Field(default_factory=list,
+                                                description="Cited fixed graphics available to this plan")
 
 
 class CompositionSpec(BaseModel):

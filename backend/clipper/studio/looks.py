@@ -134,7 +134,7 @@ def background(look: Look, width: int, height: int, ink_paper) -> np.ndarray:
     return ink_paper(width, height)
 
 
-PASTED = ("photo", "flag", "map")     # pasted in as they are, never recoloured
+PASTED = ("photo", "flag", "map", "data")  # pasted in as authored, never recoloured
 NO_EDGE = ("photo", "arrow", "mark", "tag")    # drawn straight on the card, no cut edge
 
 

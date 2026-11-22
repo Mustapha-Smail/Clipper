@@ -37,6 +37,7 @@ from ..studio import (
     cartoon,
     compliance,
     continuity,
+    data_graphics,
     film,
     music_pick,
     music_search,
@@ -116,6 +117,7 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
         score = beats.score(board.scenes, lambda i: words[max(0, min(i, len(words) - 1))]["s"],
                             board.end - board.start)
     map_value = board.script.story_map if board.script.story_map and story_map_mod.status(board.script)[0] else None
+    cards = data_graphics.stored(map_value)
     continuity_lines = continuity.check(board.style, board.scenes, board.words, board.script.sections,
                                         board.script.hold, map_value)
     settings = settings_mod.load()
@@ -128,7 +130,8 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            director_undoable=director_mod.undoable(board),
                            thumbnails=thumbnail_mod.public(board.thumbnails), render_meta=board.render_meta,
                            sound_starter_default=settings.sound_starter,
-                           sound_riser_default=settings.sound_riser, continuity=continuity_lines)
+                           sound_riser_default=settings.sound_riser, continuity=continuity_lines,
+                           data_cards=list(cards.values()))
 
 
 LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint"),
@@ -223,8 +226,9 @@ def read_storyboard(board: Storyboard = Depends(get_board), db: Session = Depend
 def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board), db: Session = Depends(get_db)):
     """Replace the scenes with your edited version. New prop names join the library, to be drawn."""
     _idle(db, board)
+    card_ids = set(data_graphics.stored(board.script.story_map))
     if board.style == "ink":
-        shots, dropped = beats.clean(body.scenes, len(board.words))
+        shots, dropped = beats.clean(body.scenes, len(board.words), card_ids)
         if dropped:
             raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
                                      + "; ".join(dropped[:3]))
@@ -237,7 +241,7 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
             if name not in cartoon.PLACES and db.get(StudioPlace, name) is None:
                 db.add(StudioPlace(name=name, description=name.replace("_", " ")))
     elif board.style == "film":
-        shots, dropped = film.clean(body.scenes, len(board.words))
+        shots, dropped = film.clean(body.scenes, len(board.words), card_ids)
         if dropped:
             raise HTTPException(400, f"{len(dropped)} line{'s' if len(dropped) > 1 else ''} could not be used: "
                                      + "; ".join(dropped[:3]))
@@ -259,7 +263,7 @@ def save_scenes(body: s.StoryboardScenes, board: Storyboard = Depends(get_board)
         except ValidationError as err:
             first = err.errors()[0]
             raise HTTPException(400, f"{'.'.join(str(x) for x in first['loc'])}: {first['msg']}") from err
-        board.scenes = storyboard_mod.clean(scenes, len(board.words))
+        board.scenes = storyboard_mod.clean(scenes, len(board.words), card_ids)
     for name in _prop_names(board):
         if db.get(StudioAsset, name) is None:
             db.add(StudioAsset(name=name, description=name.replace("_", " ")))

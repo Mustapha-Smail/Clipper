@@ -189,6 +189,14 @@
             <button class="sm quiet" (click)="openAll(false)">Close all</button>
           </div>
         }
+        @if (b.data_cards.length) {
+          <div class="row data-card-list" aria-label="Cited data cards available to storyboard scenes">
+            <span class="small muted">Fixed cited graphics:</span>
+            @for (card of b.data_cards; track card.id) {
+              <span class="chip" [title]="'Sources ' + card.source_numbers.join(', ')">{{ card.id }} · {{ card.label }}</span>
+            }
+          </div>
+        }
         @for (g of groups(); track g.from) {
           <section class="group">
             <button class="group-head" (click)="toggleGroup(g.from)" [attr.aria-expanded]="isOpen(g.from)">
@@ -273,7 +281,7 @@
                 <p class="small muted">{{ scene.note }}</p>
                 <div class="chips">
                   @for (e of scene.elements; track $index) {
-                    <span class="chip">{{ e.kind === 'character' ? e.name + ' · ' + label(e.pose) : e.kind === 'prop' ? e.name : e.kind === 'arrow' ? 'arrow' : '“' + e.text + '”' }}</span>
+                    <span class="chip">{{ e.kind === 'character' ? e.name + ' · ' + label(e.pose) : e.kind === 'prop' ? e.name : e.kind === 'data' ? 'data · ' + e.data_card : e.kind === 'arrow' ? 'arrow' : '“' + e.text + '”' }}</span>
                   }
                 </div>
                 <button class="sm quiet" (click)="openScene.set(openScene() === i ? null : i)">{{ openScene() === i ? 'Close' : 'Edit' }}</button>
@@ -313,7 +321,7 @@
                       <div class="fields">
                         <label class="field"><span>Kind</span>
                           <select [ngModel]="e.kind" (ngModelChange)="changeElement(i, k, { kind: $event, name: $event === 'character' ? 'narrator' : e.name })">
-                            @for (o of ['character', 'prop', 'text', 'number', 'arrow']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
+                            @for (o of ['character', 'prop', 'text', 'number', 'arrow', 'data']; track o) { <option [value]="o">{{ o }}</option> }</select></label>
                         @if (e.kind === 'character') {
                           <label class="field"><span>Who</span>
                             <select [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })">
@@ -334,6 +342,15 @@
                           <label class="field"><span>Prop</span>
                             <input type="text" list="props" [ngModel]="e.name" (ngModelChange)="changeElement(i, k, { name: $event })"
                                    placeholder="snake_case name" /></label>
+                        }
+                        @if (e.kind === 'data') {
+                          <label class="field"><span>Data card</span>
+                            <select [ngModel]="e.data_card ?? ''" (ngModelChange)="changeElement(i, k, { data_card: $event })">
+                              <option value="" disabled>Choose a cited card</option>
+                              @for (card of b.data_cards; track card.id) {
+                                <option [value]="card.id">{{ card.label }} · {{ card.kind }}</option>
+                              }
+                            </select></label>
                         }
                         @if (e.kind === 'text' || e.kind === 'number' || e.kind === 'prop') {
                           <label class="field"><span>{{ e.kind === 'prop' ? 'Label' : 'Text' }}</span>
@@ -373,7 +390,7 @@
 
                   <div class="row">
                     <span class="small muted">Add:</span>
-                    @for (kind of ['character', 'prop', 'text', 'number', 'arrow']; track kind) {
+                    @for (kind of ['character', 'prop', 'text', 'number', 'arrow', 'data']; track kind) {
                       <button class="sm" (click)="addElement(i, $any(kind))" [disabled]="scene.elements.length >= 4">{{ kind }}</button>
                     }
                     <span class="grow"></span>

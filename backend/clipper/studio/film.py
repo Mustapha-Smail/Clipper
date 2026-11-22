@@ -36,8 +36,8 @@ from . import composition
 
 TOKEN = re.compile(r'"[^"]*"|\S+')
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
-CREATES = ("photo", "flag", "big", "count", "card", "doc", "map")
-PINNED = ("photo", "flag", "card", "doc", "map")       # things with a pin, that strings tie to
+CREATES = ("photo", "flag", "big", "count", "card", "doc", "map", "data")
+PINNED = ("photo", "flag", "card", "doc", "map", "data")  # things with a pin, that strings tie to
 MARKS = ("stamp", "highlight", "circle", "underline", "cross")
 VERBS = (*CREATES, *MARKS, "pin", "route", "string", "look", "wide")
 COLOURS = ("red", "yellow", "white")
@@ -81,6 +81,8 @@ class Line:
             parts.append(q(self.text))
             if self.bar and v == "big":
                 parts.append("bar")
+        elif v == "data":
+            parts.append(self.text)
         elif v == "flag":
             parts.append(self.text)
         elif v == "count":
@@ -191,6 +193,10 @@ def parse_line(raw: str) -> Line | None:
             line.lines = ([short[1]] if len(quoted) > 2 and short[1] else []) + [sentence]
         if v == "stamp" and not line.target and bare and NAME.match(bare[0]):
             line.target = bare[0]
+    elif v == "data":
+        if len(bare) != 1 or not NAME.match(bare[0]):
+            return None
+        line.text = bare[0]
     elif v == "flag":
         country = _country(bare[0]) if bare else None
         if country is None:
@@ -228,7 +234,7 @@ def parsed(shot: dict) -> list[Line]:
     return [line for line in (parse_line(x) for x in shot.get("lines", [])) if line is not None]
 
 
-def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
+def clean(shots: list[dict], word_count: int, data_cards: set[str] | None = None) -> tuple[list[dict], list[str]]:
     """Make any plan safe to render: lines in order, words in range, references to things that exist.
 
     Returns (shots, the lines that were dropped)."""
@@ -256,6 +262,9 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                 continue
             if spec["kind"] == "split" and not line.lane and line.verb != "wide":
                 dropped.append(f"{line.render()}  (split-scene beats need lane a or lane b)")
+                continue
+            if line.verb == "data" and data_cards is not None and line.text not in data_cards:
+                dropped.append(f"{line.render()}  (data card '{line.text}' is unknown or is not source-backed)")
                 continue
             authored_id = line.id
             if line.verb in CREATES and line.id in known:

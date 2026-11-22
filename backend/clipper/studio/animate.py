@@ -26,7 +26,7 @@ from ..jobs import Reporter
 from ..render import RenderOptions
 from ..settings import Settings, hex_to_rgb, resolve_font
 from ..settings import load as load_settings
-from . import art, beats, composition, film, sfx, sound, visual_qa
+from . import art, beats, composition, data_graphics, film, sfx, sound, visual_qa
 from . import script as script_mod
 from . import voice as voice_mod
 
@@ -217,6 +217,16 @@ class Composer:
             return image
         return self.sprite(key, make)
 
+    def data_card(self, e: dict) -> Image.Image | None:
+        card = self.board.get("data_cards", {}).get(e.get("data_card"))
+        if card is None:
+            return None
+        base = self.layout.prop[e["size"]]
+        width = min(round(base * 1.7), round(self.layout.width * 0.82))
+        height = max(round(width * 0.58), round(base * 1.02))
+        key = ("data", e["data_card"], width, height)
+        return self.sprite(key, lambda: data_graphics.render(card, width, height, font_path=str(self.font_path)))
+
     # --- layout ------------------------------------------------------------------------
 
     def base_sprite(self, e: dict, dark: bool) -> Image.Image | None:
@@ -226,6 +236,8 @@ class Composer:
             return self.prop(e)
         if e["kind"] in ("text", "number"):
             return self.text(e, dark)
+        if e["kind"] == "data":
+            return self.data_card(e)
         return None
 
     def placement(self, index: int) -> list[tuple[float, float, float]]:
@@ -351,6 +363,10 @@ class Composer:
                 sprite = self.character(e, mouth if e.get("talking") else 0, blink)
             elif e["kind"] == "prop":
                 sprite = self.prop(e)
+            elif e["kind"] == "data":
+                sprite = self.data_card(e)
+                if sprite is None:
+                    continue
             else:
                 sprite = self.text(e, dark)
             bounds = None if geo.single else (view.x0, view.y0, view.x1, view.y1)
@@ -534,6 +550,7 @@ def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
                 "effects": board.effects, "starter_mode": board.starter_mode, "riser_mode": board.riser_mode,
                 "music_db": board.music_db,
                 "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
+        data["data_cards"] = data_graphics.stored(board.script.story_map)
         names = beats.prop_names(board.scenes) if board.style == "ink" else set() if board.style == "film" else \
             {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
@@ -707,6 +724,7 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
                                  wpm=round(wpm) if wpm else script_mod.WORDS_PER_MINUTE,
                                  timing="measured" if wpm else "estimated")
     current_map = script.story_map if script.story_map and story_map.status(script)[0] else None
+    fixed_cards = data_graphics.stored(current_map)
     opening = (current_map or {}).get("opening", {})
     shape = " > ".join(name for name in ("context", "lean", "turn") if opening.get(name)) or None
     state = attention_state({"effects": board.effects, "starter_mode": board.starter_mode,
@@ -722,6 +740,7 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
         "form": board.form,
         "story_shape": board.story_shape,
         "story_template": (current_map or {}).get("template"),
+        "data_cards": list(fixed_cards.values()),
         "hook_shape": shape,
         "starter": state["starter"],
         "riser": state["riser"],

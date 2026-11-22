@@ -317,6 +317,19 @@
                 }
               </div>
 
+              @if (editMap.data_cards?.length) {
+                <fieldset>
+                  <legend>Fixed cited graphics</legend>
+                  <p class="small muted">Values and sources stay fixed when a storyboard references the card ID.</p>
+                  <div class="loop-chips">
+                    @for (card of editMap.data_cards; track card.id) {
+                      <span class="loop-chip" [title]="'Sources ' + card.source_numbers.join(', ')">
+                        {{ card.id }} · {{ card.kind }} · {{ card.label }}</span>
+                    }
+                  </div>
+                </fieldset>
+              }
+
               <fieldset>
                 <legend>Ending</legend>
                 <div class="story-fields two-col">
@@ -372,6 +385,18 @@
                   </article>
                 }
               </div>
+
+              @if (map.data_cards?.length) {
+                <section class="story-ending">
+                  <h3>Fixed cited graphics</h3>
+                  <div class="loop-chips">
+                    @for (card of map.data_cards; track card.id) {
+                      <span class="loop-chip" [title]="'Sources ' + card.source_numbers.join(', ')">
+                        {{ card.id }} · {{ card.kind }} · {{ card.label }}</span>
+                    }
+                  </div>
+                </section>
+              }
 
               <section class="story-ending">
                 <h3>Ending</h3>

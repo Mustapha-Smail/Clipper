@@ -17,7 +17,7 @@ from .. import llm, prompts
 from ..db import session_scope
 from ..db.models import Script, utcnow
 from ..jobs import Reporter
-from . import compliance, plain
+from . import compliance, data_graphics, plain
 
 Template = Literal["mechanism", "story_loop", "journey", "ranking"]
 StoryShape = Literal["parallel", "explain", "scorecard", "investigation"]
@@ -78,6 +78,13 @@ class Draft(BaseModel):
     opening: Opening
     beats: list[Beat]
     ending: Ending
+    # Omitted on legacy maps. New maps may offer fixed numbers for the
+    # storyboard, but never coordinates or an unsourced display value.
+    data_cards: list[data_graphics.Card] | None = Field(
+        default=None,
+        description="Optional fixed graphics for exact sourced values. Every card cites retained research source "
+                    "numbers; never invent or infer a displayed value.",
+    )
 
 
 @dataclass
@@ -180,7 +187,13 @@ def clean(raw: dict, source_numbers: set[int], expected_shape: str | None = None
         beat["source_numbers"] = sources_at(f"Beat {index} ({beat['id']})", beat["source_numbers"])
     value["ending"]["source_numbers"] = sources_at("Ending", value["ending"]["source_numbers"])
 
-    problems: list[str] = []
+    resolved_cards = data_graphics.resolve(value.get("data_cards"), source_numbers)
+    # Keep the authored cards in the source-backed contract so editors and
+    # fact-check/export paths can see their cited values. Invalid cards make
+    # the map technically invalid rather than disappearing silently.
+    card_problems = list(resolved_cards.omissions)
+
+    problems: list[str] = card_problems
     shape = value.get("story_shape")
     if expected_shape and shape != expected_shape:
         problems.append(f"Story shape is '{shape or 'legacy'}', but the script requires '{expected_shape}'.")
@@ -312,7 +325,7 @@ def prompt_value(script: Script, *, required: bool = False) -> str:
     invalid = problems(script)
     if invalid:
         raise RuntimeError("The story map has validation problems: " + " ".join(invalid))
-    keys = ("template", "opening", "beats", "ending")
+    keys = ("template", "opening", "beats", "ending", "data_cards")
     value = {key: script.story_map[key] for key in keys if key in script.story_map}
     # v2 fields are deliberately passed through as structured JSON. Legacy
     # maps have neither key and therefore render exactly as they did before.

@@ -37,9 +37,9 @@ TARGETED = {"point", "hold", "push", "pull", "carry"}  # poses that reach for so
 CAMERAS = ("wide", "push", "drift", "close")
 MARKS = ("circle", "underline", "cross", "tick")
 MOTIONS = ("shake", "bounce", "pulse", "spin", "grow", "shrink")
-CREATES = ("actor", "draw", "write", "flag", "map", "timeline", "photo")
+CREATES = ("actor", "draw", "write", "flag", "map", "timeline", "photo", "data")
 VERBS = (*CREATES, "do", "face", "move", "arrow", *MARKS, *MOTIONS, "erase", "look", "who")
-SHOWN = ("flag", "map", "timeline", "photo")  # things made from data or archives, not from the prop library
+SHOWN = ("flag", "map", "timeline", "photo", "data")  # source/archive objects, not prop-library drawings
 MAX_LIVE = 6                  # things on stage at once; older ones are erased to make room
 MAX_TEXT_WORDS = 6
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
@@ -80,13 +80,15 @@ class Line:
     def render(self) -> str:
         """The canonical text of the line."""
         parts = [str(self.word), self.verb]
-        if self.verb in ("flag", "map", "timeline", "who", "photo"):
+        if self.verb in ("flag", "map", "timeline", "who", "photo", "data"):
             if self.verb == "photo":
                 parts.append(_quote(self.text))
             elif self.verb == "flag":
                 parts.append(self.who)
             elif self.verb == "map":
                 parts += self.extra
+            elif self.verb == "data":
+                parts.append(self.who)
             elif self.verb == "timeline":
                 parts += [_quote(x) for x in self.extra]
             else:
@@ -150,7 +152,7 @@ def parse_line(raw: str) -> Line | None:
         if k + 1 < len(rest) and NAME.match(_name(rest[k + 1])):
             line.ident = _name(rest[k + 1])
         rest = rest[:k] + rest[k + 2:]
-    if verb in ("flag", "map", "timeline", "who", "photo"):
+    if verb in ("flag", "map", "timeline", "who", "photo", "data"):
         return _parse_shown(line, rest)
     refs: list[str] = []
     # Lane is a semantic modifier, not a left/right slot. Strip it before the
@@ -256,6 +258,10 @@ def _parse_shown(line: Line, rest: list[str]) -> Line | None:
         if not quoted or not quoted[0].strip():
             return None
         line.text = " ".join(quoted[0].split()[:8])
+    elif line.verb == "data":
+        if len(words) != 1 or not NAME.match(words[0]):
+            return None
+        line.who = words[0]
     elif line.verb == "flag":
         codes = [c for c in (geo.code(w) for w in words) if c]
         if not codes or codes[0] not in geo.flags():
@@ -362,7 +368,7 @@ def parse_plan(text: str, word_count: int, offset: int = 0, check: bool = True) 
     return clean(shots, word_count)[0] if shots else []
 
 
-def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
+def clean(shots: list[dict], word_count: int, data_cards: set[str] | None = None) -> tuple[list[dict], list[str]]:
     """Make shots safe to render. Returns them and the lines that were dropped, each with the reason.
 
     Shots are ordered by their first word and never share it; each line is
@@ -425,6 +431,9 @@ def clean(shots: list[dict], word_count: int) -> tuple[list[dict], list[str]]:
                 kept.append(line)
                 continue
             if line.verb in CREATES:
+                if line.verb == "data" and data_cards is not None and line.who not in data_cards:
+                    dropped.append(f"{line.render()}  (data card '{line.who}' is unknown or is not source-backed)")
+                    continue
                 authored_id = line.id
                 current_id = aliases.get((line.lane, authored_id), authored_id)
                 if line.verb == "actor":
