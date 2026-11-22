@@ -30,32 +30,58 @@ ART_FPS = 12
 # a strong boil on every line, all the time, is tiring to watch.
 WOBBLE = {"off": (0.0, 1), "subtle": (0.7, 4), "strong": (2.2, 8)}
 BODIES = ("actor", "prop", "text", "flag", "map", "timeline", "photo", "data")  # placed stage objects
-DRAW_TIME = {"actor": 0.7, "prop": 0.8, "arrow": 0.45, "circle": 0.55, "underline": 0.35, "cross": 0.35,
-             "tick": 0.3, "flag": 0.9, "map": 1.5, "timeline": 1.3, "tag": 0.6, "photo": 0.6,
-             "data": 0.45}
-TAG_TIME = 3.2               # how long a person's name stays under them when they first appear
+DRAW_TIME = {
+    "actor": 0.7,
+    "prop": 0.8,
+    "arrow": 0.45,
+    "circle": 0.55,
+    "underline": 0.35,
+    "cross": 0.35,
+    "tick": 0.3,
+    "flag": 0.9,
+    "map": 1.5,
+    "timeline": 1.3,
+    "tag": 0.6,
+    "photo": 0.6,
+    "data": 0.45,
+}
+TAG_TIME = 3.2  # how long a person's name stays under them when they first appear
 ERASE_TIME = 0.3
 POSE_TIME = 0.45
-MOVE_SPEED = 0.5             # of the frame width per second, walking
-GAIT_SPEED = {"walk": 1.0, "run": 2.1, "march": 0.9, "zombie": 0.45}     # times MOVE_SPEED
-LIFT_TIME = 0.25             # picking something up
-FALL_TIME = 0.4              # something dropped falls to the ground
+MOVE_SPEED = 0.5  # of the frame width per second, walking
+GAIT_SPEED = {"walk": 1.0, "run": 2.1, "march": 0.9, "zombie": 0.45}  # times MOVE_SPEED
+LIFT_TIME = 0.25  # picking something up
+FALL_TIME = 0.4  # something dropped falls to the ground
 PAN_TIME = 0.9
 PAGE_TIME = 1.2
 LOOK_TIME = 0.6
 BANNER = 3.4
 
-SIZES = {   # pixels at zoom 1
-    "short": {"actor": {"small": 440, "medium": 600, "large": 760}, "prop": {"small": 300, "medium": 440, "large": 600},
-              "text": {"small": 70, "medium": 96, "large": 128}},
-    "long": {"actor": {"small": 340, "medium": 450, "large": 580}, "prop": {"small": 240, "medium": 350, "large": 480},
-             "text": {"small": 60, "medium": 80, "large": 108}},
+SIZES = {  # pixels at zoom 1
+    "short": {
+        "actor": {"small": 440, "medium": 600, "large": 760},
+        "prop": {"small": 300, "medium": 440, "large": 600},
+        "text": {"small": 70, "medium": 96, "large": 128},
+    },
+    "long": {
+        "actor": {"small": 340, "medium": 450, "large": 580},
+        "prop": {"small": 240, "medium": 350, "large": 480},
+        "text": {"small": 60, "medium": 80, "large": 108},
+    },
 }
-SLOTS = {   # where things go within a shot, as fractions of the frame; closer together than the flat style's
+SLOTS = {  # where things go within a shot, as fractions of the frame; closer together than the flat style's
     "short": animate.LAYOUTS["short"].slots,
-    "long": {"top_left": (0.27, 0.25), "top": (0.5, 0.22), "top_right": (0.73, 0.25),
-             "left": (0.28, 0.6), "center": (0.5, 0.58), "right": (0.72, 0.6),
-             "bottom_left": (0.28, 0.86), "bottom": (0.5, 0.86), "bottom_right": (0.72, 0.86)},
+    "long": {
+        "top_left": (0.27, 0.25),
+        "top": (0.5, 0.22),
+        "top_right": (0.73, 0.25),
+        "left": (0.28, 0.6),
+        "center": (0.5, 0.58),
+        "right": (0.72, 0.6),
+        "bottom_left": (0.28, 0.86),
+        "bottom": (0.5, 0.86),
+        "bottom_right": (0.72, 0.86),
+    },
 }
 ZOOM = {"wide": (1.0, 1.15), "push": (1.0, 1.12), "drift": (1.0, 1.12), "close": (1.05, 1.5)}
 MARK_COLOR = {"circle": "warm", "underline": "warm", "cross": "bad", "tick": "good", "arrow": "warm"}
@@ -65,31 +91,32 @@ Feet = tuple[float, float]
 @dataclass
 class Thing:
     """Something on the page: an actor, a prop, writing, an arrow or a mark."""
+
     id: str
-    kind: str                     # actor, prop, text, arrow, mark
+    kind: str  # actor, prop, text, arrow, mark
     shot: int
     born: float
     line: beats.Line
     order: int
-    gone: float | None = None     # when it starts to be erased
-    spans: list[tuple[int, float]] = field(default_factory=list)   # (shot, from when): actors move between shots
-    box: tuple[float, float, float, float] = (0, 0, 0, 0)    # page centre x, y and w, h (after layout)
+    gone: float | None = None  # when it starts to be erased
+    spans: list[tuple[int, float]] = field(default_factory=list)  # (shot, from when): actors move between shots
+    box: tuple[float, float, float, float] = (0, 0, 0, 0)  # page centre x, y and w, h (after layout)
     scale: float = 1.0
     motions: list[tuple[float, str]] = field(default_factory=list)
     # actors
-    home: Feet = (0.0, 0.0)                                     # where the feet are when it appears
+    home: Feet = (0.0, 0.0)  # where the feet are when it appears
     # (t, "pose" or "move", pose or place, target, shot), turned into poses and moves shot by shot
     requests: list[tuple[float, str, str, str, int]] = field(default_factory=list)
     poses: list[tuple[float, ink.Pose, ink.Pose, str]] = field(default_factory=list)  # (t, from, to, name)
-    moves: list[tuple[float, float, Feet, Feet]] = field(default_factory=list)       # (t, duration, from, to)
+    moves: list[tuple[float, float, Feet, Feet]] = field(default_factory=list)  # (t, duration, from, to)
     faces: list[tuple[float, str]] = field(default_factory=list)
     facing: list[tuple[float, str]] = field(default_factory=list)
-    gaits: list[tuple[float, float, str]] = field(default_factory=list)   # (start, end, walk|run|march|zombie)
-    acts: list[tuple[float, str]] = field(default_factory=list)           # recorded moves: (start, name)
+    gaits: list[tuple[float, float, str]] = field(default_factory=list)  # (start, end, walk|run|march|zombie)
+    acts: list[tuple[float, str]] = field(default_factory=list)  # recorded moves: (start, name)
     # props: held by an actor from start to end (None: still held)
     held: list[list] = field(default_factory=list)
-    look: dict = field(default_factory=dict)                     # someone in particular (`who`)
-    owner: "Thing | None" = None                                # a name tag's person
+    look: dict = field(default_factory=dict)  # someone in particular (`who`)
+    owner: "Thing | None" = None  # a name tag's person
     # writing, arrows and marks
     strokes: list = field(default_factory=list)
     lines: list[str] = field(default_factory=list)
@@ -110,8 +137,9 @@ def paper(width: int, height: int, seed: int = 11) -> np.ndarray:
     return np.clip((base + grain + mottle) * vignette, 0, 255).astype(np.uint8)
 
 
-def boil_fields(width: int, height: int, count: int = 3, seed: int = 5,
-                strength: float = 2.2) -> list[tuple[np.ndarray, np.ndarray]]:
+def boil_fields(
+    width: int, height: int, count: int = 3, seed: int = 5, strength: float = 2.2
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Smooth random displacement maps: drawn lines wobble a little differently in each."""
     rng = np.random.default_rng(seed)
     amp = strength * min(width, height) / 1080
@@ -123,7 +151,7 @@ def boil_fields(width: int, height: int, count: int = 3, seed: int = 5,
         for _axis in range(2):
             low = rng.normal(0, 1, (height // cell + 3, width // cell + 3)).astype(np.float32)
             big = np.asarray(Image.fromarray(low).resize((width + 2 * cell, height + 2 * cell), Image.BICUBIC))
-            maps.append(big[cell:cell + height, cell:cell + width] * amp)
+            maps.append(big[cell : cell + height, cell : cell + width] * amp)
         out.append((gx + maps[0], gy + maps[1]))
     return out
 
@@ -138,7 +166,7 @@ class InkComposer:
         self.W, self.H = self.layout.width, self.layout.height
         self.sizes = SIZES[self.format]
         self.props = props
-        self.photos: dict[str, dict] = board.get("photos") or {}     # search -> {path, width, height}
+        self.photos: dict[str, dict] = board.get("photos") or {}  # search -> {path, width, height}
         self.data_cards: dict[str, dict] = board.get("data_cards") or {}
         self.mouths = mouths
         self.words = board["words"]
@@ -148,13 +176,23 @@ class InkComposer:
         self.starts = [0.0] + [self.word_time(s["start_word"]) for s in self.shots[1:]]
         self.font_path = resolve_font(settings)
         self.captions = None
-        if self.layout.captions and settings.captions_enabled and self.words:
+        if captions_mod.resolved_mode(self.format, board.get("caption_mode"), settings.captions_enabled) and self.words:
             highlight = hex_to_rgb(settings.highlight_color)
-            self.captions = captions_mod.CaptionRenderer(captions_mod.group_words(self.words, 0.0, self.duration),
-                                                         self.font_path, highlight)
-        self.compositions = [composition.geometry(self.format, shot.get("composition"),
-                                                   captions=self.captions is not None)
-                             for shot in self.shots]
+            self.captions = captions_mod.CaptionRenderer(
+                captions_mod.group_words(self.words, 0.0, self.duration),
+                self.font_path,
+                highlight,
+                fmt=captions_mod.studio_format(self.format),
+            )
+        # This is shared with composition.geometry below.  Keep the historical
+        # long-video bottom when captions are absent; only an explicit/Short
+        # caption reserve narrows the drawing stage.
+        caption_bottom = 0.665 if self.format == "short" else (0.82 if self.captions else 1.0)
+        self.stage_bottom = min(self.layout.stage_bottom, caption_bottom)
+        self.compositions = [
+            composition.geometry(self.format, shot.get("composition"), captions=self.captions is not None)
+            for shot in self.shots
+        ]
         self.chapters: list[tuple[float, int, str]] = []
         if self.format == "long":
             seen = None
@@ -165,7 +203,7 @@ class InkComposer:
                         self.chapters.append((w["s"], len(self.chapters) + 2, board.get("headings", {}).get(key, "")))
                     seen = key
         self.origins = self._origins()
-        self.arrivals: list[float] = []      # when each shot first has something to show
+        self.arrivals: list[float] = []  # when each shot first has something to show
         self.things: list[Thing] = []
         self.looks: list[tuple[float, str | None, int]] = []
         self._build()
@@ -180,16 +218,16 @@ class InkComposer:
         self._cache: OrderedDict = OrderedDict()
         self._cache_bytes = 0
         self.cache_limit = 250 * 1024 * 1024
-        self._sized: OrderedDict = OrderedDict()      # sprites resized for the current zoom
+        self._sized: OrderedDict = OrderedDict()  # sprites resized for the current zoom
         self._sized_bytes = 0
         # cartoon: one drawn place per shot, a little larger than the frame so the camera can move across it
         self.places: list[str] = list(board.get("places") or [])
         self.place_svgs: dict[str, str] = dict(board.get("place_svgs") or {})
         self._place_size = cartoon.picture_size(self.W, self.H)
-        self._place_pictures: OrderedDict = OrderedDict()      # a few places drawn, the latest kept
+        self._place_pictures: OrderedDict = OrderedDict()  # a few places drawn, the latest kept
         self._place_ground: dict[int, float | None] = {}
         self._place_origin: dict[int, float] = {}
-        self._dressed: OrderedDict = OrderedDict()    # sprites dressed for the look (cut out, recoloured)
+        self._dressed: OrderedDict = OrderedDict()  # sprites dressed for the look (cut out, recoloured)
         self._dressed_bytes = 0
         self._last: tuple | None = None
 
@@ -220,7 +258,7 @@ class InkComposer:
         if i == 0:
             return 0.0, 0.0
         arrive = self.arrivals[i] if i < len(self.arrivals) else self.starts[i]
-        if self.shots[i].get("cut"):        # a hard cut: the picture changes at once
+        if self.shots[i].get("cut"):  # a hard cut: the picture changes at once
             return arrive, 0.0
         duration = PAGE_TIME if self.shots[i].get("page") else PAN_TIME
         return max(0.0, arrive - duration * 0.35), duration
@@ -251,7 +289,7 @@ class InkComposer:
         return ox + fx * self.W, oy + fy * self.H
 
     def _build(self) -> None:
-        alive: dict[str, Thing] = {}       # what is still on the page from earlier shots, by id
+        alive: dict[str, Thing] = {}  # what is still on the page from earlier shots, by id
         order = 0
         # A person keeps the look of their first definition all video long (chapters are
         # planned apart, so one may be defined again), and their name is written only once.
@@ -269,15 +307,21 @@ class InkComposer:
             # what earlier shots left on the page and this one mentions comes along with the camera
             mentioned = {x.who for x in lines} | {x.target for x in lines}
             for name, thing in alive.items():
-                if name in mentioned and thing.gone is None and not (
-                        thing.kind != "actor" and any(x.verb in beats.CREATES and x.id == name for x in lines)):
+                if (
+                    name in mentioned
+                    and thing.gone is None
+                    and not (thing.kind != "actor" and any(x.verb in beats.CREATES and x.id == name for x in lines))
+                ):
                     declared = next((x for x in lines if x.verb == "actor" and x.id == name), None)
                     if declared and declared.slot:
                         thing.line.slot = declared.slot
                     live[name] = thing
                     carried.append(thing)
-            showing = [max(start, self.word_time(x.word)) for x in lines
-                       if x.verb in beats.CREATES or x.who in {c.id for c in carried}]
+            showing = [
+                max(start, self.word_time(x.word))
+                for x in lines
+                if x.verb in beats.CREATES or x.who in {c.id for c in carried}
+            ]
             self.arrivals.append(min(showing, default=start))
             created: list[Thing] = []
             for line in lines:
@@ -301,8 +345,17 @@ class InkComposer:
                     if kind == "actor" and line.who in self.personas and line.who not in named:
                         named.add(line.who)
                         label = beats.Line(word=line.word, verb="tag", text=name, lane=line.lane)
-                        tag = Thing(f"tag:{order}", "tag", i, t + 0.6, label,
-                                    order + 200_000, gone=t + 0.6 + TAG_TIME, spans=[(i, t)], owner=thing)
+                        tag = Thing(
+                            f"tag:{order}",
+                            "tag",
+                            i,
+                            t + 0.6,
+                            label,
+                            order + 200_000,
+                            gone=t + 0.6 + TAG_TIME,
+                            spans=[(i, t)],
+                            owner=thing,
+                        )
                         self.things.append(tag)
                     alive[thing.id] = thing
                     live[thing.id] = thing
@@ -310,8 +363,15 @@ class InkComposer:
                     self.things.append(thing)
                     continue
                 if line.verb in ("arrow", *beats.MARKS):
-                    thing = Thing(f"{line.verb}:{order}", "arrow" if line.verb == "arrow" else "mark", i, t, line,
-                                  order + 100_000, spans=[(i, t)])
+                    thing = Thing(
+                        f"{line.verb}:{order}",
+                        "arrow" if line.verb == "arrow" else "mark",
+                        i,
+                        t,
+                        line,
+                        order + 100_000,
+                        spans=[(i, t)],
+                    )
                     order += 1
                     thing.color = ink.COLORS[line.color or MARK_COLOR[line.verb]]
                     self.things.append(thing)
@@ -320,11 +380,17 @@ class InkComposer:
                     continue
                 if line.verb == "erase":
                     target = live.get(line.who)
-                    gone = [x for x in live.values() if x.kind != "actor"] if line.who == "all" else \
-                        ([target] if target else [])
+                    gone = (
+                        [x for x in live.values() if x.kind != "actor"]
+                        if line.who == "all"
+                        else ([target] if target else [])
+                    )
                     names = {x.id for x in gone}
-                    gone += [x for x in live.values() if x.kind in ("arrow", "mark")
-                             and ({x.line.who, x.line.target} & names)]
+                    gone += [
+                        x
+                        for x in live.values()
+                        if x.kind in ("arrow", "mark") and ({x.line.who, x.line.target} & names)
+                    ]
                     for x in gone:
                         if x.gone is None:
                             x.gone = t
@@ -339,7 +405,7 @@ class InkComposer:
                 if line.verb in beats.MOTIONS:
                     target.motions.append((t, line.verb))
                 elif target.kind != "actor":
-                    if line.verb == "move":      # a prop or a word slides to another place, or onto something
+                    if line.verb == "move":  # a prop or a word slides to another place, or onto something
                         target.requests.append((t, "move", line.slot, line.target, i))
                     continue
                 elif line.verb == "face":
@@ -390,14 +456,17 @@ class InkComposer:
             elif x.kind == "photo":
                 found = self.photos.get(x.line.text) or {}
                 aspect = (found.get("width") or 4) / (found.get("height") or 3)
-                stage_h = self.H * (lay.stage_bottom - lay.stage_top)
+                stage_h = self.H * (self.stage_bottom - lay.stage_top)
                 if size == "full":
                     w, h = self.W, self.H
                 else:
-                    pw = {"small": 0.24, "medium": 0.36, "large": 0.5}[size] * self.W * (1.6 if self.format == "short"
-                                                                                          else 1.0)
+                    pw = (
+                        {"small": 0.24, "medium": 0.36, "large": 0.5}[size]
+                        * self.W
+                        * (1.6 if self.format == "short" else 1.0)
+                    )
                     ph = pw / aspect
-                    if ph > stage_h * 0.78:                 # tall pictures shrink to fit the stage
+                    if ph > stage_h * 0.78:  # tall pictures shrink to fit the stage
                         ph = stage_h * 0.78
                         pw = ph * aspect
                     x.size_px = int(pw)
@@ -422,15 +491,25 @@ class InkComposer:
         end = self.shot_end(shot)
 
         def alive(x: Thing) -> tuple[float, float]:
-            return (self.starts[shot] if x in carried else x.born,
-                    end if x.gone is None else x.gone + ERASE_TIME)
+            return (self.starts[shot] if x in carried else x.born, end if x.gone is None else x.gone + ERASE_TIME)
 
         spans = [alive(x) for x in todo]
-        together = {(a, b) for a in range(len(todo)) for b in range(a + 1, len(todo))
-                    if spans[a][0] < spans[b][1] and spans[b][0] < spans[a][1]}
+        together = {
+            (a, b)
+            for a in range(len(todo))
+            for b in range(a + 1, len(todo))
+            if spans[a][0] < spans[b][1] and spans[b][0] < spans[a][1]
+        }
         if self.compositions[shot].single:
-            placed = animate.separate(items, self.W * animate.MARGIN, self.W * (1 - animate.MARGIN),
-                                      self.H * lay.stage_top, self.H * lay.stage_bottom, gap=24, pairs=together)
+            placed = animate.separate(
+                items,
+                self.W * animate.MARGIN,
+                self.W * (1 - animate.MARGIN),
+                self.H * lay.stage_top,
+                self.H * self.stage_bottom,
+                gap=24,
+                pairs=together,
+            )
         else:
             geo = self.compositions[shot]
             placed = [(item[0], item[1], item[2]) for item in items]
@@ -440,12 +519,22 @@ class InkComposer:
             for lane, indices in by_lane.items():
                 view = geo.viewport(lane)
                 local = [items[n] for n in indices]
-                local_pairs = {(a, b) for a, ia in enumerate(indices) for b, ib in enumerate(indices)
-                               if (min(ia, ib), max(ia, ib)) in together}
+                local_pairs = {
+                    (a, b)
+                    for a, ia in enumerate(indices)
+                    for b, ib in enumerate(indices)
+                    if (min(ia, ib), max(ia, ib)) in together
+                }
                 margin = min(view.width, view.height) * animate.MARGIN
-                values = animate.separate(local, view.x0 - ox + margin, view.x1 - ox - margin,
-                                          view.y0 - oy + margin, view.y1 - oy - margin,
-                                          gap=24, pairs=local_pairs)
+                values = animate.separate(
+                    local,
+                    view.x0 - ox + margin,
+                    view.x1 - ox - margin,
+                    view.y0 - oy + margin,
+                    view.y1 - oy - margin,
+                    gap=24,
+                    pairs=local_pairs,
+                )
                 for n, value in zip(indices, values, strict=True):
                     placed[n] = value
         for x, (cx, cy, s), item in zip(todo, placed, items, strict=True):
@@ -472,8 +561,9 @@ class InkComposer:
                 if x.kind == "actor":
                     x.home = (cx + ox, cy + oy + h / 2)
                     x.facing.append((x.born, self._face_centre(shot, x.home[0])))
-                    first = x.line.pose if x.line.pose in ink.POSE_ANGLES and x.line.pose not in beats.TARGETED \
-                        else "stand"
+                    first = (
+                        x.line.pose if x.line.pose in ink.POSE_ANGLES and x.line.pose not in beats.TARGETED else "stand"
+                    )
                     pose = ink.Pose.named(first)
                     x.poses.append((x.born, pose, pose, first))
 
@@ -493,7 +583,7 @@ class InkComposer:
                 gait = kind.partition(":")[2] or "walk"
                 here = self.position(actor, t)
                 goal = live.get(target_name) if target_name else None
-                if goal is not None and not value:      # walk up to it and stop beside it
+                if goal is not None and not value:  # walk up to it and stop beside it
                     x0, _y0, x1, _y1 = self.body_box(goal, t)
                     side = 1 if (x0 + x1) / 2 >= here[0] else -1
                     there = ((x0 if side > 0 else x1) - side * actor.box[2] * 0.7, here[1])
@@ -585,15 +675,15 @@ class InkComposer:
             moment = min(t, end) if end is not None else t
             hands = self._hands(actor, moment)
             sign = 1 if self._facing(actor, moment) == "right" else -1
-            held = (hands[0] + sign * thing.box[2] * 0.18, hands[1] - thing.box[3] * 0.05)   # in front, at the chest
-            if t < start + LIFT_TIME:                   # picked up: rises into the hands
+            held = (hands[0] + sign * thing.box[2] * 0.18, hands[1] - thing.box[3] * 0.05)  # in front, at the chest
+            if t < start + LIFT_TIME:  # picked up: rises into the hands
                 k = ink.ease((t - start) / LIFT_TIME)
                 before = self._resting(thing, start)
                 return before[0] + (held[0] - before[0]) * k, before[1] + (held[1] - before[1]) * k
             if end is None or t < end:
                 return held
             ground = self.position(actor, end)[1] - thing.box[3] / 2
-            if t < end + FALL_TIME:                     # dropped: falls, faster and faster
+            if t < end + FALL_TIME:  # dropped: falls, faster and faster
                 k = ((t - end) / FALL_TIME) ** 2
                 return held[0], held[1] + (ground - held[1]) * k
             x, y = held[0], ground
@@ -706,8 +796,7 @@ class InkComposer:
         return None
 
     def holding(self, actor: Thing, t: float) -> bool:
-        return any(h[2] is actor and h[0] <= t and (h[1] is None or t < h[1])
-                   for x in self.things for h in x.held)
+        return any(h[2] is actor and h[0] <= t and (h[1] is None or t < h[1]) for x in self.things for h in x.held)
 
     def figure(self, actor: Thing, t: float) -> tuple[ink.Pose, str, float, tuple[float, float]]:
         """The actor at time t: pose, facing, pixels per figure unit, and where its hip is on the page.
@@ -722,9 +811,10 @@ class InkComposer:
         walk = self.walking(actor, t)
         if walk is not None:
             stride, air = ink.gait_frame(walk[1], walk[0])
-            if self.holding(actor, t):        # carrying: legs walk, arms keep holding
-                stride = ink.Pose(stride.lean * 0.5, stride.tilt, pose.back_arm, pose.front_arm,
-                                  stride.back_leg, stride.front_leg)
+            if self.holding(actor, t):  # carrying: legs walk, arms keep holding
+                stride = ink.Pose(
+                    stride.lean * 0.5, stride.tilt, pose.back_arm, pose.front_arm, stride.back_leg, stride.front_leg
+                )
             pose = stride
         else:
             act = self.acting(actor, t)
@@ -749,9 +839,14 @@ class InkComposer:
             current = a.blend(b, ink.spring(min(1.0, (t - start) / POSE_TIME), 0.5, 1.6))
             if name == "wave":
                 wave = math.sin((t - start) * 2 * math.pi * 2.2) * 22
-                current = ink.Pose(current.lean, current.tilt, current.back_arm,
-                                   (current.front_arm[0], current.front_arm[1] + wave),
-                                   current.back_leg, current.front_leg)
+                current = ink.Pose(
+                    current.lean,
+                    current.tilt,
+                    current.back_arm,
+                    (current.front_arm[0], current.front_arm[1] + wave),
+                    current.back_leg,
+                    current.front_leg,
+                )
         return current
 
     def world_box(self, thing: Thing, t: float) -> tuple[float, float, float, float]:
@@ -766,7 +861,7 @@ class InkComposer:
     def body_box(self, thing: Thing, t: float) -> tuple[float, float, float, float]:
         """The part of the page the drawing itself covers: what hands reach for and circles go round."""
         x0, y0, x1, y1 = self.world_box(thing, t)
-        if thing.kind == "photo" and thing.line.size != "full":     # the picture, inside its border
+        if thing.kind == "photo" and thing.line.size != "full":  # the picture, inside its border
             mx, my = (x1 - x0) * 0.1, (y1 - y0) * 0.12
             return x0 + mx, y0 + my, x1 - mx, y1 - my
         if thing.kind != "prop":
@@ -825,8 +920,12 @@ class InkComposer:
                 if not first and not outside and last_t is not None and t - last_t < 3.0:
                     continue
                 view = self._frame(i, t, lo, hi)
-                if last and abs(view[0] - last[0]) < self.W * 0.12 and abs(view[1] - last[1]) < self.H * 0.12 \
-                        and abs(view[2] - last[2]) < 0.12:
+                if (
+                    last
+                    and abs(view[0] - last[0]) < self.W * 0.12
+                    and abs(view[1] - last[1]) < self.H * 0.12
+                    and abs(view[2] - last[2]) < 0.12
+                ):
                     continue
                 keys.append((begin if first else max(self.starts[i], t - 0.25), duration if first else 1.3, view, i))
                 last, last_t = view, t
@@ -853,7 +952,7 @@ class InkComposer:
         cx, cy, zoom = view
         lay = self.layout
         top = cy + (lay.stage_top * self.H - self.H / 2) / zoom
-        bottom = cy + (lay.stage_bottom * self.H - self.H / 2) / zoom
+        bottom = cy + (self.stage_bottom * self.H - self.H / 2) / zoom
         left, right = cx - self.W / 2 / zoom, cx + self.W / 2 / zoom
         for x in self.things:
             if x.kind in BODIES and abs(x.born - t) < 0.06 and self._shot_of(x, t) == shot:
@@ -874,7 +973,7 @@ class InkComposer:
     def _caption_lift(self, zoom: float) -> float:
         """On a Short, the middle of the stage sits above the captions: shift the view down to match."""
         lay = self.layout
-        middle = (lay.stage_top + lay.stage_bottom) / 2
+        middle = (lay.stage_top + self.stage_bottom) / 2
         return (0.5 - middle) * self.H / zoom
 
     def _frame(self, shot: int, t: float, lo: float, hi: float) -> tuple[float, float, float]:
@@ -894,7 +993,7 @@ class InkComposer:
         x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
         x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
         pad_x, pad_y = self.W * 0.09, self.H * 0.08
-        stage_h = self.H * (self.layout.stage_bottom - self.layout.stage_top)
+        stage_h = self.H * (self.stage_bottom - self.layout.stage_top)
         zoom = min(self.W / (x1 - x0 + 2 * pad_x), stage_h / (y1 - y0 + 2 * pad_y), hi)
         zoom = max(lo, zoom)
         cx = min(max((x0 + x1) / 2, ox + self.W * 0.3), ox + self.W * 0.7)
@@ -973,7 +1072,7 @@ class InkComposer:
         if p <= 0:
             return None
         if self.look.pop and thing.kind in looks.POPPED:
-            p = 1.0      # cut-out pieces are whole from the start: they pop on instead
+            p = 1.0  # cut-out pieces are whole from the start: they pop on instead
         pq = round(p, 2)
         if thing.kind == "prop":
             _, _, w, h = thing.box
@@ -988,12 +1087,13 @@ class InkComposer:
                     return image
                 size = int(self.sizes["text"]["small"] * thing.scale * zq * 0.85)
                 label = ink.render(ink.text_svg([thing.line.text], size, ink.INK, (p - 0.6) / 0.4))
-                if self.look.cartoon:            # a label reads over a busy place only on a card
+                if self.look.cartoon:  # a label reads over a busy place only on a card
                     label = looks.cutout(label, max(5, round(self.H / 110 * zq)))
                 out = Image.new("RGBA", (max(image.width, label.width), image.height + label.height), (0, 0, 0, 0))
                 out.alpha_composite(image, ((out.width - image.width) // 2, 0))
                 out.alpha_composite(label, ((out.width - label.width) // 2, image.height))
                 return out
+
             image = self._cached(("p", thing.id, thing.order, pq, zq), make)
             return image, (cx - image.width / zq / 2, cy - h / 2)
         if thing.kind == "photo":
@@ -1007,8 +1107,9 @@ class InkComposer:
                 pw = thing.size_px * thing.scale
                 aspect = (found.get("width") or 4) / (found.get("height") or 3)
                 ph = min(pw / aspect, h)
-            image = photos.photo_image(found.get("path"), thing.line.text, int(pw * zq), int(ph * zq), p,
-                                       t - thing.born, thing.order, full)
+            image = photos.photo_image(
+                found.get("path"), thing.line.text, int(pw * zq), int(ph * zq), p, t - thing.born, thing.order, full
+            )
             return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
         if thing.kind == "data":
             card = self.data_cards.get(thing.line.who)
@@ -1025,36 +1126,50 @@ class InkComposer:
             _, _, w, h = thing.box
             width = max(40, int(w * zq))
             if thing.kind == "flag":
-                image = self._cached(("f", thing.id, thing.order, pq, zq),
-                                     lambda: geo.flag_image(thing.line.who, int(width / 1.1), p))
+                image = self._cached(
+                    ("f", thing.id, thing.order, pq, zq), lambda: geo.flag_image(thing.line.who, int(width / 1.1), p)
+                )
             elif thing.kind == "map":
                 first = {thing.line.extra[0]: thing.line.color} if thing.line.color else None
-                image = self._cached(("map", thing.id, thing.order, pq, zq),
-                                     lambda: geo.map_image(thing.line.extra, width, p, first))
+                image = self._cached(
+                    ("map", thing.id, thing.order, pq, zq), lambda: geo.map_image(thing.line.extra, width, p, first)
+                )
             else:
-                image = self._cached(("tl", thing.id, thing.order, pq, zq),
-                                     lambda: geo.timeline_image(thing.line.extra, width, p, thing.color))
+                image = self._cached(
+                    ("tl", thing.id, thing.order, pq, zq),
+                    lambda: geo.timeline_image(thing.line.extra, width, p, thing.color),
+                )
             return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
         if thing.kind == "tag":
             owner = thing.owner
             fx, fy = self.position(owner, t)
             size = int(self.sizes["text"]["small"] * 0.8 * zq)
-            image = self._cached(("tag", thing.id, pq, zq), lambda: ink.render(
-                ink.text_svg([thing.line.text], size, ink.INK, p, underline=ink.COLORS["warm"])))
+            image = self._cached(
+                ("tag", thing.id, pq, zq),
+                lambda: ink.render(ink.text_svg([thing.line.text], size, ink.INK, p, underline=ink.COLORS["warm"])),
+            )
             return image, (fx - image.width / zq / 2, fy + 6)
         if thing.kind == "text":
             cx, cy = self.centre(thing, t)
             size = int(thing.size_px * thing.scale * zq)
             underline = (ink.INK if thing.color != ink.INK else ink.COLORS["warm"]) if thing.line.big else None
-            image = self._cached(("t", thing.id, thing.order, pq, zq), lambda: ink.render(
-                ink.text_svg(thing.lines, size, thing.color, p, underline)))
+            image = self._cached(
+                ("t", thing.id, thing.order, pq, zq),
+                lambda: ink.render(ink.text_svg(thing.lines, size, thing.color, p, underline)),
+            )
             return image, (cx - image.width / zq / 2, cy - image.height / zq / 2)
         if thing.kind in ("arrow", "mark"):
             if not thing.strokes:
                 return None
             x0, y0, x1, y1 = ink.strokes_bounds(thing.strokes)
-            image = self._cached(("m", thing.id, pq, zq), lambda: ink.render(ink.svg_doc(
-                ink.strokes_svg(thing.strokes, p), (x1 - x0) * zq, (y1 - y0) * zq, (x0, y0, x1 - x0, y1 - y0))))
+            image = self._cached(
+                ("m", thing.id, pq, zq),
+                lambda: ink.render(
+                    ink.svg_doc(
+                        ink.strokes_svg(thing.strokes, p), (x1 - x0) * zq, (y1 - y0) * zq, (x0, y0, x1 - x0, y1 - y0)
+                    )
+                ),
+            )
             return image, (x0, y0)
         # an actor
         pose, facing, k, hip = self.figure(thing, t)
@@ -1069,11 +1184,19 @@ class InkComposer:
         key = ("a", thing.id, pose.key(), expression, mouth, blink, facing, pq, zq, thing.line.who)
         variant = thing.line.who if thing.line.who in art.CHARACTERS else "person"
         if self.look.cartoon:
-            image = self._cached(key, lambda: ink.render(cartoon.figure_svg(
-                variant, pose, expression, mouth, blink, facing, k * zq, look=thing.look or None)))
+            image = self._cached(
+                key,
+                lambda: ink.render(
+                    cartoon.figure_svg(variant, pose, expression, mouth, blink, facing, k * zq, look=thing.look or None)
+                ),
+            )
         else:
-            image = self._cached(key, lambda: ink.render(ink.figure_svg(
-                variant, pose, expression, mouth, blink, facing, p, k * zq, look=thing.look or None)))
+            image = self._cached(
+                key,
+                lambda: ink.render(
+                    ink.figure_svg(variant, pose, expression, mouth, blink, facing, p, k * zq, look=thing.look or None)
+                ),
+            )
         return image, (hip[0] + ink.BOX[0] * k, hip[1] + ink.BOX[1] * k)
 
     def _resized(self, image: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -1097,8 +1220,11 @@ class InkComposer:
         """Where the feet of the shot's actors are on the page, to put the place's floor under them."""
         if shot not in self._place_ground:
             t = self.starts[shot] + 0.4
-            feet = [self.position(x, t)[1] for x in self.things if x.kind == "actor" and x.born <= t + 1.5
-                    and (x.gone is None or x.gone > t)]
+            feet = [
+                self.position(x, t)[1]
+                for x in self.things
+                if x.kind == "actor" and x.born <= t + 1.5 and (x.gone is None or x.gone > t)
+            ]
             self._place_ground[shot] = max(feet) if feet else None
         return self._place_ground[shot]
 
@@ -1108,8 +1234,11 @@ class InkComposer:
         picture = self._place_pictures.get(name)
         if picture is None:
             svg = self.place_svgs.get(name)
-            picture = np.asarray(cartoon.place_image(name if svg or name in cartoon.PLACES else "idea",
-                                                     self.W, self.H, svg).convert("RGBA"))
+            picture = np.asarray(
+                cartoon.place_image(name if svg or name in cartoon.PLACES else "idea", self.W, self.H, svg).convert(
+                    "RGBA"
+                )
+            )
             self._place_pictures[name] = picture
             while len(self._place_pictures) > 3:
                 self._place_pictures.popitem(last=False)
@@ -1120,21 +1249,25 @@ class InkComposer:
             run -= 1
         if run not in self._place_origin:
             self._place_origin[run] = self.camera(self.starts[run] + 0.01)[0]
-        dx = (cx - self._place_origin[run]) * zoom * 0.3                  # parallax: the place moves slower
+        dx = (cx - self._place_origin[run]) * zoom * 0.3  # parallax: the place moves slower
         x0 = int(min(max((pw - self.W) / 2 + dx, 0), pw - self.W))
         ground = self._ground(shot)
         screen = (ground - cy) * zoom + self.H / 2 if ground is not None else self.H * 0.8
         floor_at = min(max(screen - self.H * 0.07, self.H * 0.45), self.H * 0.85)
         y0 = int(min(max(ph * cartoon.FLOOR - floor_at, 0), ph - self.H))
-        return picture[y0:y0 + self.H, x0:x0 + self.W]
+        return picture[y0 : y0 + self.H, x0 : x0 + self.W]
 
     def _place(self, tq: float, t: float, cx: float, cy: float, zoom: float) -> Image.Image:
         """The drawn place behind this moment; a short dissolve when a gliding shot changes place."""
         shot = self.shot_at(t)
         out = self._crop(shot, cx, cy, zoom)
         age = t - self.starts[shot]
-        if shot > 0 and age < 0.45 and not self.shots[shot].get("cut") and \
-                self._place_name(shot - 1) != self._place_name(shot):
+        if (
+            shot > 0
+            and age < 0.45
+            and not self.shots[shot].get("cut")
+            and self._place_name(shot - 1) != self._place_name(shot)
+        ):
             before = self._crop(shot - 1, cx, cy, zoom)
             k = ink.ease(age / 0.45)
             out = (before.astype(np.float32) * (1 - k) + out.astype(np.float32) * k).astype(np.uint8)
@@ -1142,14 +1275,14 @@ class InkComposer:
 
     def _dress(self, kind: str, image: Image.Image, zq: float) -> Image.Image:
         """The sprite as the look wants it: cut out of card (paper), or in white lines (blueprint)."""
-        if self.look.line_profile in ("uniform", "rough") and kind not in looks.PASTED:
+        if self.look.line_profile in ("uniform", "rough", "glow") and kind not in looks.PASTED:
             how = self.look.line_profile
         elif self.look.recolour and kind not in looks.PASTED:
             how = "bp"
         elif self.look.cartoon and kind in ("text", "tag", "timeline"):
-            how = "card"                 # words on a card, so they read over a busy place
+            how = "card"  # words on a card, so they read over a busy place
         elif self.look.cartoon and kind == "map":
-            how = "board"                # a map on a board: its seas must not show the place through
+            how = "board"  # a map on a board: its seas must not show the place through
         elif self.look.shadow and kind not in looks.NO_EDGE:
             how = "cut"
         else:
@@ -1157,7 +1290,7 @@ class InkComposer:
         key = id(image)
         out = self._dressed.get(key)
         if out is None or out[0] is not image:
-            if how in ("uniform", "rough"):
+            if how in ("uniform", "rough", "glow"):
                 dressed = looks.profiled_sprite(image, self.look)
             elif how == "bp":
                 dressed = looks.blueprint_sprite(image)
@@ -1195,13 +1328,25 @@ class InkComposer:
         if self._last and self._last[0] == key:
             return self._last[1]
         layer = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
-        # a blueprint recolours its drawings; photos, flags and maps are pasted on a layer of their own
-        pasted = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0)) if self.look.recolour else None
+        # Blueprint recolours drawings and glow adds a blurred under-stroke.
+        # In both cases photos, flags and maps are composited separately so
+        # their source colours are never transformed or tinted.
+        pasted = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0)) if (self.look.recolour or self.look.glow) else None
         view = (cx - self.W / 2 / zoom, cy - self.H / 2 / zoom, cx + self.W / 2 / zoom, cy + self.H / 2 / zoom)
         zq = max(0.5, round(zoom * 10) / 10)
-        rank = {"photo": -1, "prop": 0, "text": 0, "flag": 0, "map": 0, "timeline": 0, "data": 0,
-                "actor": 1, "arrow": 2,
-                "mark": 2, "tag": 2}
+        rank = {
+            "photo": -1,
+            "prop": 0,
+            "text": 0,
+            "flag": 0,
+            "map": 0,
+            "timeline": 0,
+            "data": 0,
+            "actor": 1,
+            "arrow": 2,
+            "mark": 2,
+            "tag": 2,
+        }
         for thing in sorted(self.things, key=lambda x: (rank[x.kind], x.order)):
             if tq < thing.born or (thing.gone is not None and tq > thing.gone + ERASE_TIME):
                 continue
@@ -1220,11 +1365,12 @@ class InkComposer:
                 scale *= looks.pop_scale(tq - thing.born, None if thing.gone is None else tq - thing.gone, ERASE_TIME)
                 if scale <= 0.01:
                     continue
-            image = self._dress(thing.kind, image, zq)      # keeps the centre: any margin is added all round
+            image = self._dress(thing.kind, image, zq)  # keeps the centre: any margin is added all round
             factor = zoom / zq * scale
             if abs(factor - 1) > 0.004:
-                image = self._resized(image, (max(1, round(image.width * factor)),
-                                              max(1, round(image.height * factor))))
+                image = self._resized(
+                    image, (max(1, round(image.width * factor)), max(1, round(image.height * factor)))
+                )
             if angle:
                 image = image.rotate(angle, resample=Image.BILINEAR, expand=True)
             sx = (centre_x + dx - cx) * zoom + self.W / 2 - image.width / 2
@@ -1240,6 +1386,10 @@ class InkComposer:
             if at <= t < at + BANNER:
                 self._banner(layer, number, heading, tq - at)
         ground = self._place(tq, t, cx, cy, zoom) if self.look.cartoon else self.paper
+        if self.look.glow:
+            under = looks.glow_understroke(layer, max(0.5, zoom))
+            if under is not None:
+                ground = Image.alpha_composite(ground, under)
         if pasted is not None and pasted.getbbox():
             ground = Image.alpha_composite(ground, pasted)
         if self.look.shadow:
@@ -1258,9 +1408,14 @@ class InkComposer:
             x0, y0 = max(0, box[0] - pad), max(0, box[1] - pad)
             x1, y1 = min(self.W, box[2] + pad), min(self.H, box[3] + pad)
             warped = np.zeros((self.H, self.W, 4), np.uint8)
-            warped[y0:y1, x0:x1] = cv2.remap(np.asarray(layer), mx[y0:y1, x0:x1], my[y0:y1, x0:x1],
-                                             interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT,
-                                             borderValue=(0, 0, 0, 0))
+            warped[y0:y1, x0:x1] = cv2.remap(
+                np.asarray(layer),
+                mx[y0:y1, x0:x1],
+                my[y0:y1, x0:x1],
+                interpolation=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0, 0),
+            )
             out = np.asarray(Image.alpha_composite(ground, Image.fromarray(warped, "RGBA")))
         if not active_geo.single and active_geo.divider != "none":
             divided = Image.fromarray(out, "RGBA")
@@ -1268,19 +1423,24 @@ class InkComposer:
             width = 8 if active_geo.divider == "line" else 4
             if self.format == "long":
                 x = round((active_geo.lanes[0].x1 + active_geo.lanes[1].x0) / 2)
-                draw.line((x, 0, x, round(active_geo.caption_top)), fill=ink.INK, width=width)
+                divider_ink = (238, 242, 238) if self.look.glow else ink.INK
+                draw.line((x, 0, x, round(active_geo.caption_top)), fill=divider_ink, width=width)
                 centre = (x, active_geo.caption_top / 2)
             else:
                 y = round((active_geo.lanes[0].y1 + active_geo.lanes[1].y0) / 2)
-                draw.line((0, y, self.W, y), fill=ink.INK, width=width)
+                divider_ink = (238, 242, 238) if self.look.glow else ink.INK
+                draw.line((0, y, self.W, y), fill=divider_ink, width=width)
                 centre = (self.W / 2, y)
             if active_geo.divider == "vs":
                 font = ImageFont.truetype(str(self.font_path), max(28, round(self.H * 0.035)))
                 pad = round(self.H * 0.012)
                 box = draw.textbbox(centre, "VS", font=font, anchor="mm")
-                draw.rounded_rectangle((box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
-                                       radius=pad, fill=self.paper.getpixel((0, 0)))
-                draw.text(centre, "VS", font=font, fill=ink.INK, anchor="mm")
+                draw.rounded_rectangle(
+                    (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
+                    radius=pad,
+                    fill=self.paper.getpixel((0, 0)),
+                )
+                draw.text(centre, "VS", font=font, fill=divider_ink, anchor="mm")
             out = np.asarray(divided)
         self._last = (key, out)
         return out
@@ -1293,10 +1453,16 @@ class InkComposer:
         if p <= 0:
             return
         pq = round(p, 2)
-        small = self._cached(("bn", number, pq), lambda: ink.render(
-            ink.text_svg([f"Chapter {number}"], 34, ink.COLORS["warm"], min(1.0, p * 2))))
-        big = self._cached(("bh", heading, pq), lambda: ink.render(
-            ink.text_svg([heading], 52, ink.INK, p, underline=ink.INK)))
+        small = self._cached(
+            ("bn", number, pq),
+            lambda: ink.render(ink.text_svg([f"Chapter {number}"], 34, ink.COLORS["warm"], min(1.0, p * 2))),
+        )
+        big = self._cached(
+            ("bh", heading, pq), lambda: ink.render(ink.text_svg([heading], 52, ink.INK, p, underline=ink.INK))
+        )
+        if self.look.glow:
+            small = looks.profiled_sprite(small, self.look)
+            big = looks.profiled_sprite(big, self.look)
         animate._composite_clipped(layer, small, 40, 20)
         animate._composite_clipped(layer, big, 40, 20 + small.height - 6)
 
@@ -1311,8 +1477,17 @@ class InkComposer:
         for i in range(1, len(self.shots)):
             if not self.shots[i].get("cut"):
                 events.append((self.pan_start(i)[0], "pan"))
-        draws = {"actor": "scribble", "prop": "scribble", "text": "scribble", "arrow": "scribble",
-                 "circle": "scribble", "underline": "scribble", "cross": "cross", "tick": "tick", "photo": "glide"}
+        draws = {
+            "actor": "scribble",
+            "prop": "scribble",
+            "text": "scribble",
+            "arrow": "scribble",
+            "circle": "scribble",
+            "underline": "scribble",
+            "cross": "cross",
+            "tick": "tick",
+            "photo": "glide",
+        }
         for x in self.things:
             verb = x.line.verb if x.kind in ("arrow", "mark") else x.kind
             events.append((x.born, draws.get(verb, "scribble")))
@@ -1334,7 +1509,7 @@ class InkComposer:
                     events.append((start + 0.1, "creak"))
             for start, name in x.acts:
                 events += [(start + at, kind) for at, kind in ink.move_cues(name)]
-            for start, end, gait in x.gaits:          # a step for every footfall of the recorded stride
+            for start, end, gait in x.gaits:  # a step for every footfall of the recorded stride
                 half = ink.moves()[gait]["stride"] / 2
                 last = 0
                 t = start
@@ -1347,7 +1522,7 @@ class InkComposer:
         kept: list[tuple[float, str]] = []
         for t, kind in sorted((t, kind) for t, kind in events if 0 <= t < self.duration):
             if kept and kept[-1][1] == kind and t - kept[-1][0] < 0.15:
-                continue                          # things drawn together share one scratch of the pen
+                continue  # things drawn together share one scratch of the pen
             kept.append((t, kind))
         return kept
 
@@ -1356,7 +1531,7 @@ class InkComposer:
 
         composed = self._compose(t)
         if observer is not None:
-            observer.observe(t, composed[..., :3])       # intentionally before captions
+            observer.observe(t, composed[..., :3])  # intentionally before captions
         frame = cv2.cvtColor(composed, cv2.COLOR_RGBA2BGR)
         if self.captions is not None:
             self.captions.draw(frame, t)

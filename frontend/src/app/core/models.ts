@@ -934,7 +934,7 @@ export interface HoldCheck {
 }
 
 /** How an ink storyboard is drawn. Changing it needs a render, not a new plan. */
-export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon' | 'clean_doodle' | 'rough_paint';
+export type InkLook = 'ink' | 'paper' | 'blueprint' | 'cartoon' | 'clean_doodle' | 'rough_paint' | 'glow';
 /** How a film storyboard (the documentary wall) is drawn. */
 export type FilmLook = 'wall' | 'studio';
 export type Look = InkLook | FilmLook;
@@ -948,6 +948,7 @@ export const INK_LOOKS: { value: InkLook; label: string; hint: string }[] = [
   { value: 'cartoon', label: 'Cartoon', hint: 'colour characters in drawn places, one per setting' },
   { value: 'clean_doodle', label: 'Clean doodle', hint: 'thin steady lines and a small flat palette on near-white' },
   { value: 'rough_paint', label: 'Rough paint', hint: 'heavy uneven outlines, hand jitter and sparse colour' },
+  { value: 'glow', label: 'Glow', hint: 'crisp bright drawings with restrained cyan, magenta and gold halos on charcoal' },
 ];
 
 export const FILM_LOOKS: { value: FilmLook; label: string; hint: string }[] = [

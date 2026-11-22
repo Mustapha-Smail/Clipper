@@ -31,10 +31,10 @@ from . import script as script_mod
 from . import voice as voice_mod
 
 FPS = 24
-ENTER = 0.32          # seconds an entrance takes
+ENTER = 0.32  # seconds an entrance takes
 SIDE_SLOTS = {"left", "right", "top_left", "top_right", "bottom_left", "bottom_right"}
-BANNER = 3.2          # seconds a chapter banner stays on screen
-MARGIN = 0.03         # of the frame width, kept clear at the edges
+BANNER = 3.2  # seconds a chapter banner stays on screen
+MARGIN = 0.03  # of the frame width, kept clear at the edges
 
 
 @dataclass(frozen=True)
@@ -42,40 +42,91 @@ class Layout:
     width: int
     height: int
     slots: dict
-    character: dict       # size -> sprite height
-    prop: dict            # size -> sprite box
-    text: dict            # size -> font size
+    character: dict  # size -> sprite height
+    prop: dict  # size -> sprite box
+    text: dict  # size -> font size
     floor_y: float
     captions: bool
-    stage_bottom: float   # elements stay above this (the captions live below it)
-    stage_top: float      # and below this (long videos keep the chapter banner's corner clear)
+    stage_bottom: float  # elements stay above this (the captions live below it)
+    stage_top: float  # and below this (long videos keep the chapter banner's corner clear)
 
 
 LAYOUTS = {
-    "short": Layout(1080, 1920, {
-        "top_left": (0.26, 0.16), "top": (0.5, 0.16), "top_right": (0.74, 0.16),
-        "left": (0.26, 0.39), "center": (0.5, 0.39), "right": (0.74, 0.39),
-        "bottom_left": (0.26, 0.58), "bottom": (0.5, 0.58), "bottom_right": (0.74, 0.58),
-    }, {"small": 420, "medium": 620, "large": 860}, {"small": 300, "medium": 470, "large": 680},
-        {"small": 72, "medium": 104, "large": 146}, 0.62, True, 0.665, 0.018),
-    "long": Layout(1920, 1080, {
-        "top_left": (0.2, 0.22), "top": (0.5, 0.21), "top_right": (0.8, 0.22),
-        "left": (0.22, 0.56), "center": (0.5, 0.56), "right": (0.78, 0.56),
-        "bottom_left": (0.22, 0.85), "bottom": (0.5, 0.85), "bottom_right": (0.78, 0.85),
-    }, {"small": 300, "medium": 470, "large": 680}, {"small": 230, "medium": 360, "large": 520},
-        {"small": 60, "medium": 88, "large": 124}, 0.78, False, 0.97, 0.12),
+    "short": Layout(
+        1080,
+        1920,
+        {
+            "top_left": (0.26, 0.16),
+            "top": (0.5, 0.16),
+            "top_right": (0.74, 0.16),
+            "left": (0.26, 0.39),
+            "center": (0.5, 0.39),
+            "right": (0.74, 0.39),
+            "bottom_left": (0.26, 0.58),
+            "bottom": (0.5, 0.58),
+            "bottom_right": (0.74, 0.58),
+        },
+        {"small": 420, "medium": 620, "large": 860},
+        {"small": 300, "medium": 470, "large": 680},
+        {"small": 72, "medium": 104, "large": 146},
+        0.62,
+        True,
+        0.665,
+        0.018,
+    ),
+    "long": Layout(
+        1920,
+        1080,
+        {
+            "top_left": (0.2, 0.22),
+            "top": (0.5, 0.21),
+            "top_right": (0.8, 0.22),
+            "left": (0.22, 0.56),
+            "center": (0.5, 0.56),
+            "right": (0.78, 0.56),
+            "bottom_left": (0.22, 0.85),
+            "bottom": (0.5, 0.85),
+            "bottom_right": (0.78, 0.85),
+        },
+        {"small": 300, "medium": 470, "large": 680},
+        {"small": 230, "medium": 360, "large": 520},
+        {"small": 60, "medium": 88, "large": 124},
+        0.78,
+        False,
+        0.97,
+        0.12,
+    ),
 }
 
 
 def mouth_levels(wav: Path, start: float, duration: float, fps: int = FPS) -> np.ndarray:
     """0, 1 or 2 per frame: how open a talking mouth is, from the loudness of the voice."""
-    proc = subprocess.run([require("ffmpeg"), "-v", "error", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}",
-                           "-i", str(wav), "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
-                          capture_output=True, check=True)
+    proc = subprocess.run(
+        [
+            require("ffmpeg"),
+            "-v",
+            "error",
+            "-ss",
+            f"{start:.3f}",
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(wav),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "f32le",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
     audio = np.frombuffer(proc.stdout, dtype=np.float32)
     per = 16000 // fps
     frames = max(1, math.ceil(duration * fps))
-    audio = np.pad(audio, (0, max(0, frames * per - len(audio))))[:frames * per]
+    audio = np.pad(audio, (0, max(0, frames * per - len(audio))))[: frames * per]
     rms = np.sqrt((audio.reshape(frames, per) ** 2).mean(axis=1))
     loud = rms[rms > rms.max() * 0.05] if rms.max() > 0 else rms
     ref = np.percentile(loud, 90) if len(loud) else 1.0
@@ -98,23 +149,32 @@ class Composer:
         self.mouths = mouths
         self.font_path = resolve_font(settings)
         self.words = board["words"]
-        self.scenes = board["scenes"] or [{"start_word": 0, "background": "paper", "camera": "still",
-                                           "elements": [], "note": ""}]
+        self.scenes = board["scenes"] or [
+            {"start_word": 0, "background": "paper", "camera": "still", "elements": [], "note": ""}
+        ]
         self.starts = [self.word_time(s["start_word"]) for s in self.scenes]
         self.starts[0] = 0.0
         self.duration = board["end"] - board["start"]
         self.captions = self.captions_on_yellow = None
-        if self.layout.captions and settings.captions_enabled and self.words:
+        if (
+            captions_mod.resolved_mode(board["format"], board.get("caption_mode"), settings.captions_enabled)
+            and self.words
+        ):
             groups = captions_mod.group_words(self.words, 0.0, self.duration)
             highlight = hex_to_rgb(settings.highlight_color)
-            self.captions = captions_mod.CaptionRenderer(groups, self.font_path, highlight)
+            fmt = captions_mod.studio_format(board["format"])
+            self.captions = captions_mod.CaptionRenderer(groups, self.font_path, highlight, fmt=fmt)
             # A yellow highlight vanishes on a yellow background: those scenes highlight in red.
             self.captions_on_yellow = captions_mod.CaptionRenderer(
-                captions_mod.group_words(self.words, 0.0, self.duration), self.font_path,
-                hex_to_rgb(art.PALETTE["red"]))
-        self.compositions = [composition.geometry(board["format"], scene.get("composition"),
-                                                   captions=self.captions is not None)
-                             for scene in self.scenes]
+                captions_mod.group_words(self.words, 0.0, self.duration),
+                self.font_path,
+                hex_to_rgb(art.PALETTE["red"]),
+                fmt=fmt,
+            )
+        self.compositions = [
+            composition.geometry(board["format"], scene.get("composition"), captions=self.captions is not None)
+            for scene in self.scenes
+        ]
         self._sprites: dict = {}
         self._fonts: dict = {}
         # Long videos show a banner when a new chapter (script section) starts.
@@ -147,8 +207,14 @@ class Composer:
     def character(self, e: dict, mouth: int, blink: bool) -> Image.Image:
         height = self.layout.character[e["size"]] * (0.75 if e["name"] == "kid" else 1.0)
         key = ("c", e["name"], e["pose"], e["expression"], mouth, blink, e["facing"], int(height))
-        return self.sprite(key, lambda: art.soft_shadow(art.rasterize(
-            art.character_svg(e["name"], e["pose"], e["expression"], mouth, blink, e["facing"]), height)))
+        return self.sprite(
+            key,
+            lambda: art.soft_shadow(
+                art.rasterize(
+                    art.character_svg(e["name"], e["pose"], e["expression"], mouth, blink, e["facing"]), height
+                )
+            ),
+        )
 
     def prop(self, e: dict) -> Image.Image:
         box = self.layout.prop[e["size"]]
@@ -157,12 +223,13 @@ class Composer:
         def make() -> Image.Image:
             svg = self.props.get(e["name"]) or art.placeholder_svg(e["name"])
             image = art.rasterize(svg, box)
-            if image.width > box:   # wide drawings: fit the width instead
+            if image.width > box:  # wide drawings: fit the width instead
                 image = image.resize((box, max(1, round(image.height * box / image.width))), Image.LANCZOS)
             image = art.soft_shadow(image)
             if e.get("text"):
                 image = self._with_label(image, e["text"])
             return image
+
         return self.sprite(key + (e.get("text", ""),), make)
 
     def font(self, size: int) -> ImageFont.FreeTypeFont:
@@ -179,8 +246,9 @@ class Composer:
         out.alpha_composite(image, ((out.width - image.width) // 2, 0))
         draw = ImageDraw.Draw(out)
         x = (out.width - w) // 2
-        draw.rounded_rectangle((x, image.height + 4, x + w, image.height + h - 4), radius=14,
-                               fill="#ffffff", outline=art.INK, width=5)
+        draw.rounded_rectangle(
+            (x, image.height + 4, x + w, image.height + h - 4), radius=14, fill="#ffffff", outline=art.INK, width=5
+        )
         draw.text((out.width / 2, image.height + h / 2), text, font=font, fill=art.INK, anchor="mm")
         return out
 
@@ -212,9 +280,17 @@ class Composer:
             fill = art.PALETTE["yellow"] if number else ("#ffffff" if dark else art.INK)
             outline = art.INK if (number or dark) else art.PAPER
             for i, text in enumerate(lines):
-                draw.text((w / 2, stroke + 4 + i * line_h + line_h / 2), text, font=font, fill=fill,
-                          anchor="mm", stroke_width=stroke if (number or dark) else stroke // 2, stroke_fill=outline)
+                draw.text(
+                    (w / 2, stroke + 4 + i * line_h + line_h / 2),
+                    text,
+                    font=font,
+                    fill=fill,
+                    anchor="mm",
+                    stroke_width=stroke if (number or dark) else stroke // 2,
+                    stroke_fill=outline,
+                )
             return image
+
         return self.sprite(key, make)
 
     def data_card(self, e: dict) -> Image.Image | None:
@@ -259,16 +335,24 @@ class Composer:
         for e in scene["elements"]:
             lane = e.get("lane") or ("a" if not geo.single else "")
             view = geo.viewport(lane)
-            cx, cy = ((lay.slots[e["slot"]][0] * lay.width, lay.slots[e["slot"]][1] * lay.height)
-                      if geo.single else composition.slot(self.board["format"], e["slot"], view))
+            cx, cy = (
+                (lay.slots[e["slot"]][0] * lay.width, lay.slots[e["slot"]][1] * lay.height)
+                if geo.single
+                else composition.slot(self.board["format"], e["slot"], view)
+            )
             sprite = self.base_sprite(e, dark)
             w, h = (sprite.width, sprite.height) if sprite else (0, 0)
             items.append([cx, cy, 1.0, w, h])
             groups.setdefault(lane, []).append(len(items) - 1)
         result = [(x[0], x[1], x[2]) for x in items]
         if geo.single:
-            result = separate(items, lay.width * MARGIN, lay.width * (1 - MARGIN), lay.height * lay.stage_top,
-                              lay.height * lay.stage_bottom)
+            result = separate(
+                items,
+                lay.width * MARGIN,
+                lay.width * (1 - MARGIN),
+                lay.height * lay.stage_top,
+                min(geo.caption_top, lay.height * lay.stage_bottom),
+            )
         else:
             # Run the established collision solver independently in each lane;
             # no pair can push content across the divider or into captions.
@@ -276,8 +360,7 @@ class Composer:
                 view = geo.viewport(lane)
                 local = [items[i] for i in indices]
                 margin = min(view.width, view.height) * MARGIN
-                placed = separate(local, view.x0 + margin, view.x1 - margin,
-                                  view.y0 + margin, view.y1 - margin)
+                placed = separate(local, view.x0 + margin, view.x1 - margin, view.y0 + margin, view.y1 - margin)
                 for i, value in zip(indices, placed, strict=True):
                     result[i] = value
         self._sprites[key] = result
@@ -310,27 +393,31 @@ class Composer:
             draw = ImageDraw.Draw(canvas)
             if self.board["format"] == "long":
                 x = round((geo.lanes[0].x1 + geo.lanes[1].x0) / 2)
-                draw.line((x, 0, x, round(geo.caption_top)), fill=art.INK,
-                          width=8 if geo.divider == "line" else 4)
+                draw.line((x, 0, x, round(geo.caption_top)), fill=art.INK, width=8 if geo.divider == "line" else 4)
                 if geo.divider == "vs":
                     draw.text((x, geo.caption_top / 2), "VS", font=self.font(42), fill=art.INK, anchor="mm")
             else:
                 y = round((geo.lanes[0].y1 + geo.lanes[1].y0) / 2)
-                draw.line((0, y, lay.width, y), fill=art.INK,
-                          width=8 if geo.divider == "line" else 4)
+                draw.line((0, y, lay.width, y), fill=art.INK, width=8 if geo.divider == "line" else 4)
                 if geo.divider == "vs":
                     draw.text((lay.width / 2, y), "VS", font=self.font(42), fill=art.INK, anchor="mm")
 
         for n, e in enumerate(scene["elements"]):
-            appear = max(scene_start, self.word_time(e.get("enter_word"))) if e.get("enter_word") is not None \
+            appear = (
+                max(scene_start, self.word_time(e.get("enter_word")))
+                if e.get("enter_word") is not None
                 else scene_start
+            )
             age = t - appear
             if age < 0:
                 continue
             seed = n * 1.7 + index
             view = geo.viewport(e.get("lane") or "a")
-            cx = (lay.slots[e["slot"]][0] if geo.single else
-                  composition.slot(self.board["format"], e["slot"], view)[0] / lay.width)
+            cx = (
+                lay.slots[e["slot"]][0]
+                if geo.single
+                else composition.slot(self.board["format"], e["slot"], view)[0] / lay.width
+            )
             x, y, scale = places[n]
             alpha, angle = 1.0, 0.0
             p = min(1.0, age / ENTER) if e["enter"] != "none" else 1.0
@@ -386,7 +473,7 @@ class Composer:
                 shift = (progress - 0.5) * 0.04 * lay.width * (1 if camera == "pan_left" else -1)
             w, h = lay.width / zoom, lay.height / zoom
             left = (lay.width - w) / 2 + shift
-            top = (lay.height - h) / 2 - (lay.height * 0.08 * (zoom - 1) if lay.captions else 0)
+            top = (lay.height - h) / 2 - (lay.height * 0.08 * (zoom - 1) if self.captions is not None else 0)
             canvas = canvas.resize((lay.width, lay.height), Image.BILINEAR, box=(left, top, left + w, top + h))
         for at, number, heading in self.chapters:
             if at <= t < at + BANNER:
@@ -412,20 +499,29 @@ class Composer:
         width = int(max(small.getlength(label), big.getlength(heading))) + 48
         image = Image.new("RGBA", (width + 8, 100), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle((6, 6, width + 6, 98), radius=16, fill=art.INK)        # offset shadow
+        draw.rounded_rectangle((6, 6, width + 6, 98), radius=16, fill=art.INK)  # offset shadow
         draw.rounded_rectangle((0, 0, width, 92), radius=16, fill="#ffffff", outline=art.INK, width=5)
         draw.text((24, 14), label, font=small, fill=art.PALETTE["red"])
         draw.text((24, 40), heading, font=big, fill=art.INK)
         return image
 
     @staticmethod
-    def _paste(canvas: Image.Image, sprite: Image.Image, x: float, y: float, scale: float, alpha: float,
-               angle: float, bounds: tuple[float, float, float, float] | None = None) -> None:
+    def _paste(
+        canvas: Image.Image,
+        sprite: Image.Image,
+        x: float,
+        y: float,
+        scale: float,
+        alpha: float,
+        angle: float,
+        bounds: tuple[float, float, float, float] | None = None,
+    ) -> None:
         if scale <= 0.02 or alpha <= 0.01:
             return
         if abs(scale - 1) > 0.01:
-            sprite = sprite.resize((max(1, round(sprite.width * scale)), max(1, round(sprite.height * scale))),
-                                   Image.BILINEAR)
+            sprite = sprite.resize(
+                (max(1, round(sprite.width * scale)), max(1, round(sprite.height * scale))), Image.BILINEAR
+            )
         if angle:
             sprite = sprite.rotate(angle, resample=Image.BILINEAR, expand=True)
         if alpha < 1:
@@ -452,16 +548,18 @@ class Composer:
         draw.line((sx, sy, ex, ey), fill=colour, width=width, joint="curve")
         angle = math.atan2(ey - sy, ex - sx)
         head = width * 3.2
-        points = [(ex + math.cos(angle) * head * 0.6, ey + math.sin(angle) * head * 0.6),
-                  (ex + math.cos(angle + 2.5) * head, ey + math.sin(angle + 2.5) * head),
-                  (ex + math.cos(angle - 2.5) * head, ey + math.sin(angle - 2.5) * head)]
+        points = [
+            (ex + math.cos(angle) * head * 0.6, ey + math.sin(angle) * head * 0.6),
+            (ex + math.cos(angle + 2.5) * head, ey + math.sin(angle + 2.5) * head),
+            (ex + math.cos(angle - 2.5) * head, ey + math.sin(angle - 2.5) * head),
+        ]
         draw.polygon(points, fill=colour)
 
     def bgr(self, t: float, observer: visual_qa.FrameObserver | None = None) -> np.ndarray:
         """The finished frame, captions included, as BGR for the encoder."""
         image = self.frame(t).convert("RGB")
         if observer is not None:
-            observer.observe(t, image)       # intentionally before captions
+            observer.observe(t, image)  # intentionally before captions
         frame = np.ascontiguousarray(np.asarray(image)[:, :, ::-1])
         if self.captions is not None:
             yellow = self.scenes[self.scene_at(t)]["background"] == "yellow"
@@ -469,8 +567,15 @@ class Composer:
         return frame
 
 
-def separate(items: list[list[float]], left: float, right: float, top: float, bottom: float,
-             gap: float = 6, pairs: set[tuple[int, int]] | None = None) -> list[tuple[float, float, float]]:
+def separate(
+    items: list[list[float]],
+    left: float,
+    right: float,
+    top: float,
+    bottom: float,
+    gap: float = 6,
+    pairs: set[tuple[int, int]] | None = None,
+) -> list[tuple[float, float, float]]:
     """Lay out boxes [x, y, scale, w, h] (centres) inside the stage without overlaps.
 
     Boxes start where they were asked to be and are kept inside the stage;
@@ -479,6 +584,7 @@ def separate(items: list[list[float]], left: float, right: float, top: float, bo
     Only the `pairs` (i < j) given are kept apart, when given: things that are
     never on screen together may overlap. Returns (x, y, scale) for each box.
     """
+
     def clamp(item) -> bool:
         """Keep inside the stage; shrink when it cannot fit. True if it had to move."""
         x, y, s, w, h = item
@@ -503,7 +609,7 @@ def separate(items: list[list[float]], left: float, right: float, top: float, bo
                 if ox <= gap or oy <= gap:
                     continue
                 settled = False
-                if ox < oy:   # side by side: push apart horizontally
+                if ox < oy:  # side by side: push apart horizontally
                     sign = 1 if a[0] <= b[0] else -1
                     a[0] -= sign * (ox / 2 + 8)
                     b[0] += sign * (ox / 2 + 8)
@@ -512,7 +618,7 @@ def separate(items: list[list[float]], left: float, right: float, top: float, bo
                     a[1] -= sign * (oy / 2 + 8)
                     b[1] += sign * (oy / 2 + 8)
                 stuck = clamp(a) | clamp(b)
-                if stuck:   # the frame edge got in the way: make the bigger one smaller
+                if stuck:  # the frame edge got in the way: make the bigger one smaller
                     big = a if a[3] * a[4] * a[2] >= b[3] * b[4] * b[2] else b
                     big[2] = max(0.55, big[2] * 0.92)
                     clamp(big)
@@ -521,14 +627,18 @@ def separate(items: list[list[float]], left: float, right: float, top: float, bo
     return [(x, y, s) for x, y, s, _, _ in items]
 
 
-def _composite_clipped(canvas: Image.Image, sprite: Image.Image, left: int, top: int,
-                       bounds: tuple[float, float, float, float] | None = None) -> None:
+def _composite_clipped(
+    canvas: Image.Image,
+    sprite: Image.Image,
+    left: int,
+    top: int,
+    bounds: tuple[float, float, float, float] | None = None,
+) -> None:
     """Alpha-composite a sprite, clipped to the frame and optionally one semantic lane."""
     x0, y0, x1, y1 = bounds or (0, 0, canvas.width, canvas.height)
     x0, y0 = max(0, round(x0)), max(0, round(y0))
     x1, y1 = min(canvas.width, round(x1)), min(canvas.height, round(y1))
-    box = (max(0, x0 - left), max(0, y0 - top),
-           min(sprite.width, x1 - left), min(sprite.height, y1 - top))
+    box = (max(0, x0 - left), max(0, y0 - top), min(sprite.width, x1 - left), min(sprite.height, y1 - top))
     if box[2] <= box[0] or box[3] <= box[1]:
         return
     canvas.alpha_composite(sprite.crop(box), (max(x0, left), max(y0, top)))
@@ -536,29 +646,52 @@ def _composite_clipped(canvas: Image.Image, sprite: Image.Image, left: int, top:
 
 # --- loading and rendering -----------------------------------------------------------------
 
+
 def load(storyboard_id: int) -> tuple[dict, dict[str, str | None], Path | None]:
     with session_scope() as db:
         board = db.get(Storyboard, storyboard_id)
         if board is None:
             raise RuntimeError(f"Storyboard {storyboard_id} no longer exists")
-        data = {"id": board.id, "script_id": board.script_id, "format": board.format, "style": board.style,
-                "look": board.look,
-                "title": board.title,
-                "start": board.start, "end": board.end, "words": list(board.words), "scenes": list(board.scenes),
-                "headings": {s["key"]: s["heading"] for s in board.script.sections},
-                "sections": list(board.script.sections), "hold": board.script.hold,
-                "effects": board.effects, "starter_mode": board.starter_mode, "riser_mode": board.riser_mode,
-                "music_db": board.music_db,
-                "music": board.music.path if board.music and Path(board.music.path).is_file() else None}
+        data = {
+            "id": board.id,
+            "script_id": board.script_id,
+            "format": board.format,
+            "style": board.style,
+            "look": board.look,
+            "title": board.title,
+            "start": board.start,
+            "end": board.end,
+            "words": list(board.words),
+            "scenes": list(board.scenes),
+            "headings": {s["key"]: s["heading"] for s in board.script.sections},
+            "sections": list(board.script.sections),
+            "hold": board.script.hold,
+            "effects": board.effects,
+            "starter_mode": board.starter_mode,
+            "riser_mode": board.riser_mode,
+            "music_db": board.music_db,
+            "music": board.music.path if board.music and Path(board.music.path).is_file() else None,
+        }
         data["data_cards"] = data_graphics.stored(board.script.story_map)
-        names = beats.prop_names(board.scenes) if board.style == "ink" else set() if board.style == "film" else \
-            {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
+        names = (
+            beats.prop_names(board.scenes)
+            if board.style == "ink"
+            else set()
+            if board.style == "film"
+            else {e["name"] for s in board.scenes for e in s["elements"] if e["kind"] == "prop"}
+        )
         props = {a.name: a.svg for a in db.query(StudioAsset).filter(StudioAsset.name.in_(names))} if names else {}
         wav = Path(board.take.path) if board.take_id and board.take and board.take.path else None
         if board.style in ("ink", "film"):
             queries = film.photo_searches(board.style, board.scenes)
-            data["photos"] = {p.query: {"path": p.path, "width": p.width, "height": p.height}
-                              for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))} if queries else {}
+            data["photos"] = (
+                {
+                    p.query: {"path": p.path, "width": p.width, "height": p.height}
+                    for p in db.query(StudioPhoto).filter(StudioPhoto.query.in_(queries))
+                }
+                if queries
+                else {}
+            )
             if board.look == "cartoon":
                 from . import places as places_mod
 
@@ -571,9 +704,11 @@ def composer_for(board: dict, props: dict[str, str | None], settings: Settings, 
     """The renderer for the storyboard's style."""
     if board.get("style") == "ink":
         from .stage import InkComposer
+
         return InkComposer(board, props, settings, mouths)
     if board.get("style") == "film":
         from .wall import FilmComposer
+
         return FilmComposer(board, props, settings, mouths)
     return Composer(board, props, settings, mouths)
 
@@ -616,8 +751,9 @@ def attention_events(board: dict, word_time, settings: Settings) -> tuple[list[t
     events, notes = [], []
     resolved = attention_state(board, settings)
     if not board.get("effects", True):
-        wanted = effective_attention(board.get("starter_mode", "default"), settings.sound_starter) \
-            or effective_attention(board.get("riser_mode", "default"), settings.sound_riser)
+        wanted = effective_attention(
+            board.get("starter_mode", "default"), settings.sound_starter
+        ) or effective_attention(board.get("riser_mode", "default"), settings.sound_riser)
         return [], ["sound effects are off for this video, so attention sounds are suppressed"] if wanted else []
     if resolved["starter"]:
         events.append((0.0, "starter"))
@@ -652,14 +788,19 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
 
     board, props, _ = load(storyboard_id)
     # A page of stills asks for many frames of one board: keep its composer while the board is unchanged.
-    key = (storyboard_id, board.get("look"), repr(board["scenes"]), repr(sorted(board.get("place_svgs", {}))),
-           tuple(sorted((k, hash(v)) for k, v in props.items())))
+    key = (
+        storyboard_id,
+        board.get("look"),
+        repr(board["scenes"]),
+        repr(sorted(board.get("place_svgs", {}))),
+        tuple(sorted((k, hash(v)) for k, v in props.items())),
+    )
     with _still_lock:
         composer = _still_cache.get(key)
         if composer is None:
             _still_cache.clear()
             composer = composer_for(board, props, settings, None)
-            composer.cache_limit = 40 * 1024 * 1024    # previews: one frame here and there, not a whole video
+            composer.cache_limit = 40 * 1024 * 1024  # previews: one frame here and there, not a whole video
             _still_cache[key] = composer
         image = composer.frame(max(0.0, min(t, composer.duration - 0.01))).convert("RGB")
     image = image.resize((width, round(image.height * width / image.width)), Image.LANCZOS)
@@ -668,8 +809,9 @@ def still(storyboard_id: int, t: float, settings: Settings, width: int = 540) ->
     return out.getvalue()
 
 
-def preview_mix(board, voice_path: str, music_path: str | None, music_db: float, effects: bool,
-                start: float, seconds: float) -> bytes:
+def preview_mix(
+    board, voice_path: str, music_path: str | None, music_db: float, effects: bool, start: float, seconds: float
+) -> bytes:
     """Voice, effects and music for [start, start + seconds) of a storyboard, as AAC audio."""
     import tempfile
 
@@ -683,11 +825,16 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
             data["effects"] = effects
             composer = composer_for(data, props, Settings(), None)
             extra, _ = attention_events(data, composer.word_time, load_settings())
-            events = [(at - start, kind) for at, kind in effect_events(composer, duration, extra)
-                      if start <= at < start + seconds]
-            assigned = [{**item, "at": float(item["at"]) - start}
-                        for item in sfx.assignments(board.id)
-                        if start <= float(item["at"]) < start + seconds]
+            events = [
+                (at - start, kind)
+                for at, kind in effect_events(composer, duration, extra)
+                if start <= at < start + seconds
+            ]
+            assigned = [
+                {**item, "at": float(item["at"]) - start}
+                for item in sfx.assignments(board.id)
+                if start <= float(item["at"]) < start + seconds
+            ]
             fx = Path(tmp) / "fx.wav"
             sound.write_effects(events, seconds, fx, seed=board.id, assets=assigned)
             inputs += ["-i", str(fx)]
@@ -697,9 +844,33 @@ def preview_mix(board, voice_path: str, music_path: str | None, music_db: float,
         graph, mixed = sound.mix_graph(seconds, effects, bool(music_path), music_db)
         # mix_graph numbers the voice as input 1 (input 0 is the video when rendering): add a silent input 0.
         out = Path(tmp) / "preview.m4a"
-        proc = subprocess.run([require("ffmpeg"), "-v", "error", "-f", "lavfi", "-t", "0.1", "-i", "anullsrc",
-                               *inputs, "-filter_complex", graph, "-map", mixed, "-t", f"{seconds:.3f}",
-                               "-c:a", "aac", "-b:a", "128k", str(out)], capture_output=True, text=True)
+        proc = subprocess.run(
+            [
+                require("ffmpeg"),
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-t",
+                "0.1",
+                "-i",
+                "anullsrc",
+                *inputs,
+                "-filter_complex",
+                graph,
+                "-map",
+                mixed,
+                "-t",
+                f"{seconds:.3f}",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                str(out),
+            ],
+            capture_output=True,
+            text=True,
+        )
         if proc.returncode != 0:
             raise RuntimeError(f"Could not mix the preview: {proc.stderr[-400:]}")
         return out.read_bytes()
@@ -709,8 +880,9 @@ def video_path(board: dict) -> Path:
     return voice_mod.script_media_dir(board["script_id"]) / f"storyboard-{board['id']}" / f"{board['format']}.mp4"
 
 
-def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | None = None,
-                    sound_effects: dict | None = None) -> dict:
+def render_snapshot(
+    board: Storyboard, settings: Settings, visual_qa: dict | None = None, sound_effects: dict | None = None
+) -> dict:
     """Immutable craft facts for a successful render. Live settings are resolved here, once."""
     from . import hold, story_map
 
@@ -718,20 +890,28 @@ def render_snapshot(board: Storyboard, settings: Settings, visual_qa: dict | Non
     alignment = take.alignment if take is not None else None
     wpm = alignment.get("wpm") if alignment else None
     hold_result = None
-    if (board.format == script.video and script.hold and take is not None
-            and take.script_hash == script.hold.get("hash")):
-        hold_result = hold.score(script.sections or [], script.hold, script.video,
-                                 wpm=round(wpm) if wpm else script_mod.WORDS_PER_MINUTE,
-                                 timing="measured" if wpm else "estimated")
+    if (
+        board.format == script.video
+        and script.hold
+        and take is not None
+        and take.script_hash == script.hold.get("hash")
+    ):
+        hold_result = hold.score(
+            script.sections or [],
+            script.hold,
+            script.video,
+            wpm=round(wpm) if wpm else script_mod.WORDS_PER_MINUTE,
+            timing="measured" if wpm else "estimated",
+        )
     current_map = script.story_map if script.story_map and story_map.status(script)[0] else None
     fixed_cards = data_graphics.stored(current_map)
     opening = (current_map or {}).get("opening", {})
     shape = " > ".join(name for name in ("context", "lean", "turn") if opening.get(name)) or None
-    state = attention_state({"effects": board.effects, "starter_mode": board.starter_mode,
-                             "riser_mode": board.riser_mode}, settings)
+    state = attention_state(
+        {"effects": board.effects, "starter_mode": board.starter_mode, "riser_mode": board.riser_mode}, settings
+    )
     stats = hold_result.get("stats", {}) if hold_result else {}
-    hold_checkpoints = (hold.checkpoints(script.sections or [], script.hold, board.words)
-                        if hold_result else [])
+    hold_checkpoints = hold.checkpoints(script.sections or [], script.hold, board.words) if hold_result else []
     return {
         "version": 1,
         "at": utcnow().isoformat(),
@@ -773,7 +953,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     lay = LAYOUTS[board["format"]]
     composer = composer_for(board, props, settings, mouth_levels(wav, board["start"], duration))
     voiced = duration
-    tail = getattr(composer, "tail", 0.0)      # the film style holds a closing shot after the voice ends
+    tail = getattr(composer, "tail", 0.0)  # the film style holds a closing shot after the voice ends
     duration = voiced + tail
     total = math.ceil(duration * FPS)
     observer = visual_qa.Observer(board.get("words", []), voiced)
@@ -793,8 +973,7 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         detail = f"; {fx_status['licensed']} licensed local, {fx_status['synthesized']} synthesized"
         if fx_status["missing"]:
             rep.warn(f"{fx_status['missing']} selected sound file(s) missing; synthesized fallback used")
-        rep.info(f"{len(events) + len(assigned)} sound effects{detail}"
-                 + (f"; {'; '.join(notes)}" if notes else ""))
+        rep.info(f"{len(events) + len(assigned)} sound effects{detail}" + (f"; {'; '.join(notes)}" if notes else ""))
     elif notes:
         rep.info("; ".join(notes))
     elif not board["effects"]:
@@ -803,11 +982,41 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
         audio_inputs += ["-stream_loop", "-1", "-i", board["music"]]
         rep.info(f"Music under the voice at {board['music_db']:g} dB, lowered while the voice speaks")
     graph, mixed = sound.mix_graph(duration, board["effects"], bool(board["music"]), board["music_db"], tail)
-    cmd = [require("ffmpeg"), "-y", "-v", "error",
-           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{lay.width}x{lay.height}", "-r", str(FPS), "-i", "-",
-           *audio_inputs, "-filter_complex", graph,
-           "-map", "0:v", "-map", mixed, *options.encoder_args(), "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-b:a", "192k", "-t", f"{duration:.3f}", "-movflags", "+faststart", str(partial)]
+    cmd = [
+        require("ffmpeg"),
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "bgr24",
+        "-s",
+        f"{lay.width}x{lay.height}",
+        "-r",
+        str(FPS),
+        "-i",
+        "-",
+        *audio_inputs,
+        "-filter_complex",
+        graph,
+        "-map",
+        "0:v",
+        "-map",
+        mixed,
+        *options.encoder_args(),
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-t",
+        f"{duration:.3f}",
+        "-movflags",
+        "+faststart",
+        str(partial),
+    ]
     rep.info(f"Rendering {total} frames ({duration:.0f} s at {FPS} fps, {lay.width}x{lay.height}, {options.encoder})")
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -829,6 +1038,6 @@ def render(storyboard_id: int, settings: Settings, rep: Reporter) -> None:
     with session_scope() as db:
         row = db.get(Storyboard, storyboard_id)
         row.video_path, row.rendered_at, row.review = str(out), utcnow(), "pending"
-        row.review_at = row.expired_at = row.published_at = None   # new render starts review and publication again
+        row.review_at = row.expired_at = row.published_at = None  # new render starts review and publication again
         row.render_meta = render_snapshot(row, settings, qa_result, fx_status)
     rep.info(f"Rendered {out.name}: {out.stat().st_size / 1e6:.1f} MB. It waits for your review.")

@@ -15,9 +15,9 @@ are pasted as they are in every look.
 from dataclasses import dataclass
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
-LOOK_NAMES = ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint")
+LOOK_NAMES = ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow")
 
 Palette = tuple[tuple[int, int, int], ...]
 
@@ -32,6 +32,7 @@ class Look:
     fill_mode: str = "wash"               # wash, native_flat, blueprint, cartoon or locked_flat
     palette: Palette = ()
     shadow: bool = False         # a drop shadow under every piece
+    glow: bool = False           # blurred colour under-strokes beneath normal vector strokes
     entrance_mode: str = "draw"           # draw or pop
     scene_mode: str = "page"               # page or place
 
@@ -71,6 +72,8 @@ LOOKS = {
     "rough_paint": Look("rough_paint", background_kind="white", line_profile="rough",
                         line_width=1.8, jitter=2.0, fill_mode="locked_flat",
                         palette=((230, 88, 67), (35, 118, 156), (238, 184, 50))),
+    "glow": Look("glow", background_kind="dark_neutral", line_profile="glow", jitter=0.35,
+                 fill_mode="locked_flat", palette=((64, 224, 226), (226, 91, 181), (235, 190, 73)), glow=True),
 }
 POPPED = ("actor", "prop", "photo", "flag", "map", "text", "timeline")   # what pops on in a cut-out look
 
@@ -131,6 +134,12 @@ def background(look: Look, width: int, height: int, ink_paper) -> np.ndarray:
         return out
     if look.background_kind == "white":
         return np.full((height, width, 3), 255, np.uint8)
+    if look.background_kind == "dark_neutral":
+        # A near-black charcoal rather than coloured "cyber" background keeps
+        # the cyan/magenta/gold strokes restrained and text contrast high.
+        out = np.empty((height, width, 3), np.uint8)
+        out[:] = (20, 23, 27)
+        return out
     return ink_paper(width, height)
 
 
@@ -160,7 +169,7 @@ def profiled_sprite(image: Image.Image, look: Look) -> Image.Image:
     The established profiles are returned byte-for-byte. The two opt-in profiles
     flatten drawn washes into a locked palette and make line weight explicit.
     """
-    if look.line_profile not in ("uniform", "rough"):
+    if look.line_profile not in ("uniform", "rough", "glow"):
         return image
 
     import cv2
@@ -190,7 +199,13 @@ def profiled_sprite(image: Image.Image, look: Look) -> Image.Image:
     line_mask = line > 0
     fill = visible & ~line_mask
     out = np.zeros_like(source)
-    out[..., :3] = (35, 35, 33) if look.line_profile == "uniform" else (30, 27, 25)
+    if look.line_profile == "glow":
+        # Keep a crisp, high-contrast vector stroke.  The coloured blur is
+        # composited separately by the stage; this operation never changes a
+        # sprite's size or timing.
+        out[..., :3] = (238, 242, 238)
+    else:
+        out[..., :3] = (35, 35, 33) if look.line_profile == "uniform" else (30, 27, 25)
     out[..., 3] = np.where(line_mask, np.maximum(alpha, 230), 0)
     if fill.any() and look.palette:
         palette = np.asarray(look.palette, np.int32)
@@ -205,6 +220,25 @@ def profiled_sprite(image: Image.Image, look: Look) -> Image.Image:
         out[fill, :3] = chosen[fill]
         out[fill, 3] = alpha[fill]
     return Image.fromarray(out, "RGBA")
+
+
+def glow_understroke(image: Image.Image, scale: float = 1.0) -> Image.Image | None:
+    """A restrained cyan/magenta halo below a normal vector layer.
+
+    Callers pass only drawn vectors, never archive photos, flags or maps.  It
+    deliberately derives from alpha so it cannot invent a second scene or
+    change its timing/geometry.
+    """
+    alpha = image.getchannel("A")
+    if alpha.getbbox() is None:
+        return None
+    radius = max(4, round(13 * scale))
+    blur = alpha.filter(ImageFilter.GaussianBlur(radius))
+    cyan = Image.new("RGBA", image.size, (64, 224, 226, 0))
+    cyan.putalpha(blur.point(lambda a: round(a * 0.34)))
+    magenta = Image.new("RGBA", image.size, (226, 91, 181, 0))
+    magenta.putalpha(alpha.filter(ImageFilter.GaussianBlur(max(2, radius // 2))).point(lambda a: round(a * 0.14)))
+    return Image.alpha_composite(cyan, magenta)
 
 
 CARD = (250, 246, 236)

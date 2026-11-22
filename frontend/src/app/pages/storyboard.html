@@ -58,22 +58,22 @@
               <p class="small muted">Not rendered yet. Edit the shots in Scenes and the sound in Sound, then render.</p>
             }
           }
-          @if (beats()) {
-            <div class="sound look-row">
+          <div class="sound look-row">
+            @if (beats()) {
               <label class="field"><span>Look</span>
                 <select [ngModel]="b.look" (ngModelChange)="setLook($event)" [disabled]="busy()">
                   @for (l of looks(); track l.value) { <option [ngValue]="l.value">{{ l.label }}</option> }
                 </select>
                 <small>{{ lookHint(b.look) }}. Same plan: render again to see it.</small>
               </label>
+            }
               <label class="field"><span>Captions</span>
                 <select [ngModel]="b.caption_mode" (ngModelChange)="setCaptionMode($event)" [disabled]="busy()">
                   <option value="default">Default for this form</option><option value="on">Always on</option><option value="off">Always off</option>
                 </select>
                 <small>Render again to apply this setting.</small>
               </label>
-            </div>
-          }
+          </div>
           @if (b.missing_props.length) {
             <div class="notice small"><span>Props not drawn yet: {{ b.missing_props.join(', ') }}. They are drawn when you render,
               or now from <a routerLink="/props">Props</a>.</span></div>
