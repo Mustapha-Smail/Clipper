@@ -35,7 +35,7 @@ def test_looks_redraw_sprites_without_moving_them():
 
 
 def test_look_profiles_centralize_every_render_choice():
-    assert looks.LOOK_NAMES == ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint")
+    assert looks.LOOK_NAMES == ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow")
     old = {name: looks.get(name) for name in ("ink", "paper", "blueprint", "cartoon")}
     assert (old["ink"].background_kind, old["ink"].line_profile, old["ink"].fill_mode,
             old["ink"].jitter, old["ink"].entrance_mode) == ("ink_paper", "brush", "wash", 1, "draw")

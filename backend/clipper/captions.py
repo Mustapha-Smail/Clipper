@@ -42,8 +42,31 @@ LAYOUTS = {
     "vertical": TextLayout(*FORMATS["vertical"], caption_size=86, caption_stroke=10, caption_max_w=940,
                            caption_y=0.72, hook_size=62, hook_max_w=880, hook_y=0.15),
     "horizontal": TextLayout(*FORMATS["horizontal"], caption_size=70, caption_stroke=8, caption_max_w=1500,
-                             caption_y=0.84, hook_size=52, hook_max_w=1300, hook_y=0.11),
+                             caption_y=0.88, hook_size=52, hook_max_w=1300, hook_y=0.11),
 }
+
+
+def resolved_mode(format: str, caption_mode: str | None, captions_enabled: bool) -> bool:
+    """Whether a Studio board burns captions for this render.
+
+    ``default`` deliberately keeps the pre-override contract: the global
+    setting can disable captions, Shorts otherwise have them and long videos
+    do not.  An explicit ``on`` adds the appropriate safe layout to either
+    shape; ``off`` only affects pixels in the video, never subtitle export.
+    Unknown/legacy values are treated as ``default`` rather than making an old
+    board suddenly captioned.
+    """
+    mode = caption_mode if caption_mode in {"default", "on", "off"} else "default"
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    return bool(captions_enabled and format == "short")
+
+
+def studio_format(format: str) -> str:
+    """Caption layout for a Studio output shape."""
+    return "vertical" if format == "short" else "horizontal"
 
 
 def group_words(words: list[dict], start: float, end: float) -> list[dict]:

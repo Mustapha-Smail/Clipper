@@ -134,7 +134,7 @@ def board_out(board: Storyboard, job: Job | None, db: Session) -> s.StoryboardOu
                            data_cards=list(cards.values()))
 
 
-LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint"),
+LOOKS = {"ink": ("ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow"),
          "film": ("wall", "studio"), "flat": ("ink",)}
 
 
@@ -402,8 +402,11 @@ def update_storyboard(body: s.StoryboardPatch, board: Storyboard = Depends(get_b
                 summary += f" (currently {'on' if inherited else 'off'} in Settings)"
             compliance.record(db, board.script_id, "sound", "you", summary, storyboard_id=board.id)
             setattr(board, field, value)
-    if body.caption_mode is not None:
+    if body.caption_mode is not None and body.caption_mode != board.caption_mode:
+        _idle(db, board)
         board.caption_mode = body.caption_mode
+        compliance.record(db, board.script_id, "captions", "you",
+                          f"Set burned captions to {body.caption_mode}", storyboard_id=board.id)
     db.flush()
     return board_out(board, _board_jobs(db).get(board.id), db)
 

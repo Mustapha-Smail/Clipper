@@ -561,8 +561,6 @@ class FilmComposer:
         self.layout = animate.LAYOUTS[self.format]
         self.W, self.H = self.layout.width, self.layout.height
         self.short = self.format == "short"
-        self.hero_y = 0.40 if self.short else 0.5          # Shorts keep the hero above the captions
-        self.fit = (0.82, 0.46) if self.short else (0.6, 0.72)
         self.words = board["words"]
         self.duration = board["end"] - board["start"]
         self.photos: dict[str, dict] = board.get("photos") or {}
@@ -572,9 +570,19 @@ class FilmComposer:
         self.tail = TAIL if self.duration > 15 else 0.6
         self.shots = board["scenes"] or [{"start_word": 0, "lines": []}]
         self.captions = None
-        if self.layout.captions and settings.captions_enabled and self.words:
+        if captions_mod.resolved_mode(self.format, board.get("caption_mode"), settings.captions_enabled) and self.words:
             self.captions = captions_mod.CaptionRenderer(captions_mod.group_words(self.words, 0.0, self.duration),
-                                                         self.font_path, hex_to_rgb(settings.highlight_color))
+                                                         self.font_path, hex_to_rgb(settings.highlight_color),
+                                                         fmt=captions_mod.studio_format(self.format))
+        # The film camera has no separate stage rectangle.  These values make
+        # its hero and fit window honour exactly the same lower caption reserve
+        # as the shared lane geometry, while retaining legacy long framing.
+        if self.short:
+            self.hero_y, self.fit = 0.40, (0.82, 0.46)
+        elif self.captions is not None:
+            self.hero_y, self.fit = 0.41, (0.6, 0.56)
+        else:
+            self.hero_y, self.fit = 0.5, (0.6, 0.72)
         self.compositions = [composition.geometry(self.format, shot.get("composition"),
                                                    captions=self.captions is not None)
                              for shot in self.shots]

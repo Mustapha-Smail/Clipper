@@ -17,6 +17,7 @@ class Model(BaseModel):
 
 # --- jobs ----------------------------------------------------------------------
 
+
 class JobOut(Model):
     id: int
     kind: str
@@ -55,6 +56,7 @@ class ActivityEvent(JobEventOut):
 
 # --- clips and moments ---------------------------------------------------------------
 
+
 class ComplianceCheck(BaseModel):
     requirement: str
     status: Literal["pass", "fail", "manual"]
@@ -89,7 +91,7 @@ class ClipListItem(ClipOut):
     title: str
     hook: str
     caption: str
-    score: int | None = None        # the moment's score, 1 to 10
+    score: int | None = None  # the moment's score, 1 to 10
 
 
 class MomentOut(Model):
@@ -124,8 +126,18 @@ class ClipPatch(BaseModel):
 
 # --- campaigns -------------------------------------------------------------------
 
-COMPUTED_CAMPAIGN_FIELDS = {"net_rate", "rate_platform", "best_max_payout", "payout_100k", "score", "joinable",
-                            "breakdown", "flags", "brief", "video_count"}
+COMPUTED_CAMPAIGN_FIELDS = {
+    "net_rate",
+    "rate_platform",
+    "best_max_payout",
+    "payout_100k",
+    "score",
+    "joinable",
+    "breakdown",
+    "flags",
+    "brief",
+    "video_count",
+}
 
 
 class ScoreLine(BaseModel):
@@ -162,7 +174,7 @@ class CampaignOut(Model):
     theme_reason: str
     decision: Literal["new", "interested", "joined", "skipped"]
     notes: str
-    read_by: str = "ai"                          # ai | page (the scout, without AI) | waiting (for the AI)
+    read_by: str = "ai"  # ai | page (the scout, without AI) | waiting (for the AI)
     first_seen: UtcDatetime
     last_seen: UtcDatetime
     # Computed for the current settings:
@@ -255,7 +267,7 @@ class IdeaOut(Model):
     breakdown: list[ScoreLine]
     flags: list[str]
     demand: IdeaDemand | None
-    length: dict | None = None      # after a check: {video, minutes, seconds, reason}
+    length: dict | None = None  # after a check: {video, minutes, seconds, reason}
     script_id: int | None = None
 
 
@@ -327,6 +339,7 @@ class IdeaLineage(Model):
 
 # --- videos ---------------------------------------------------------------------
 
+
 class CostLine(BaseModel):
     step: str
     task: str
@@ -364,7 +377,7 @@ class VideoSummary(Model):
     approved_count: int
     has_file: bool
     busy: bool
-    failed: bool = False               # its latest job failed and it has no clip yet
+    failed: bool = False  # its latest job failed and it has no clip yet
     error: str = ""
     failed_job_id: int | None = None
 
@@ -390,7 +403,8 @@ class VideoCreate(BaseModel):
     brief: str = ""
     campaign_id: int | None = Field(None, description="Clip this video for a campaign; its rules become the brief")
     clip_format: Literal["vertical", "horizontal"] | None = Field(
-        None, description="Shape of this video's clips; leave out to use the setting")
+        None, description="Shape of this video's clips; leave out to use the setting"
+    )
 
 
 class VideoPatch(BaseModel):
@@ -424,11 +438,12 @@ class UploadOut(BaseModel):
 
 # --- scheduled posts (Buffer) ------------------------------------------------------------
 
+
 class PostingStatus(BaseModel):
     ready: bool
     buffer_key: bool
     hosting: bool
-    missing: list[str]              # names of the .env variables still to set
+    missing: list[str]  # names of the .env variables still to set
     services: list[str]
 
 
@@ -438,16 +453,16 @@ class ChannelOut(BaseModel):
     name: str
     type: str
     timezone: str
-    weekly_slots: int               # posting times set in Buffer for this channel, per week
-    schedule: list[dict] = []       # [{day: "mon", times: ["18:35", ...]}], in the channel's timezone
+    weekly_slots: int  # posting times set in Buffer for this channel, per week
+    schedule: list[dict] = []  # [{day: "mon", times: ["18:35", ...]}], in the channel's timezone
     disconnected: bool
     locked: bool
     queue_paused: bool
 
 
 class ChannelsOut(BaseModel):
-    channels: list[ChannelOut]      # supported channels from this feature's Buffer account
-    others: list[str]               # connected networks the app does not post to yet
+    channels: list[ChannelOut]  # supported channels from this feature's Buffer account
+    others: list[str]  # connected networks the app does not post to yet
     fetched_at: UtcDatetime
 
 
@@ -465,6 +480,7 @@ class PostCreate(BaseModel):
 
 class PostDraft(BaseModel):
     """What the Schedule panel starts from, and whether this video may be scheduled."""
+
     text: str
     youtube_text: str
     title: str
@@ -472,7 +488,7 @@ class PostDraft(BaseModel):
     short: bool
     allowed: bool
     reason: str = ""
-    channels: list[str] = []        # the theme's default Buffer channels, if it has some
+    channels: list[str] = []  # the theme's default Buffer channels, if it has some
 
 
 class PostOut(Model):
@@ -494,7 +510,7 @@ class PostOut(Model):
     sent_at: UtcDatetime | None
     checked_at: UtcDatetime | None
     created_at: UtcDatetime
-    hosted: bool = False            # a copy of the video is online for Buffer
+    hosted: bool = False  # a copy of the video is online for Buffer
 
 
 class UndoRequest(BaseModel):
@@ -504,12 +520,14 @@ class UndoRequest(BaseModel):
 
 class UndoOut(BaseModel):
     """What an undo did: posts taken back, those Buffer refused, and those already out (untouched)."""
+
     undone: list[PostOut]
     failed: list[str] = []
     sent: list[PostOut] = []
 
 
 # --- settings and system ---------------------------------------------------------------
+
 
 class FontChoice(BaseModel):
     value: str
@@ -530,10 +548,10 @@ class SystemStatus(BaseModel):
     elevenlabs_key: bool
     openai_key: bool
     openai_base_url: str
-    claude_cli: bool            # the Claude CLI is installed here
-    claude_cli_token: bool      # CLAUDE_CODE_OAUTH_TOKEN is set (a server needs it; the Mac has its own login)
-    codex_cli: bool             # the Codex CLI is installed here
-    ai_providers: list[str]     # the providers the three tiers use now
+    claude_cli: bool  # the Claude CLI is installed here
+    claude_cli_token: bool  # CLAUDE_CODE_OAUTH_TOKEN is set (a server needs it; the Mac has its own login)
+    codex_cli: bool  # the Codex CLI is installed here
+    ai_providers: list[str]  # the providers the three tiers use now
     in_docker: bool
     database: str
     data_dir: str
@@ -548,10 +566,11 @@ class SystemStatus(BaseModel):
     running: int
     features: dict[str, bool] = {}
     posting: PostingStatus | None = None
-    ai: dict = {}                    # {ok, message, since}: the latest AI call failed because the AI is unavailable
+    ai: dict = {}  # {ok, message, since}: the latest AI call failed because the AI is unavailable
 
 
 # --- studio scripts ------------------------------------------------------------------
+
 
 class ScriptSection(BaseModel):
     key: str | None = Field(None, max_length=16, description="Omit for a new section")
@@ -699,21 +718,29 @@ class ScriptOut(ScriptSummary):
     sections: list[ScriptSection]
     claims: list[ScriptClaim] | None
     can_undo_rewrite: bool = False
-    plain: dict | None = Field(None, description="How easy the narration is to follow for the audience in "
-                                                 "Settings: 0-100, every deduction explained. Advice only")
-    hold: dict | None = Field(None, description="How the narration holds attention: 0-100 from the sentence roles, "
-                                                "every deduction explained; current false when the text changed "
-                                                "since the check. Advice only")
+    plain: dict | None = Field(
+        None,
+        description="How easy the narration is to follow for the audience in "
+        "Settings: 0-100, every deduction explained. Advice only",
+    )
+    hold: dict | None = Field(
+        None,
+        description="How the narration holds attention: 0-100 from the sentence roles, "
+        "every deduction explained; current false when the text changed "
+        "since the check. Advice only",
+    )
 
 
 class ScriptCreate(BaseModel):
     target_minutes: int | None = Field(None, ge=1, le=30, description="Defaults to 6 for one topic, 10 for a list")
     video: Literal["long", "short"] | None = Field(None, description="Defaults to the idea's choice")
     form: IdeaForm | None = Field(
-        None, description="Defaults to the idea's form; micro_short remains a compatibility Short")
+        None, description="Defaults to the idea's form; micro_short remains a compatibility Short"
+    )
     story_shape: StoryShape | None = Field(None, description="Defaults to the idea's editorial story shape")
     target_seconds: int | None = Field(
-        None, ge=12, le=90, description="For a Short; micro-Shorts require 12–18 seconds, others 15–90")
+        None, ge=12, le=90, description="For a Short; micro-Shorts require 12–18 seconds, others 15–90"
+    )
 
 
 class ScriptPatch(BaseModel):
@@ -740,6 +767,7 @@ class SectionRewriteOut(BaseModel):
 
 # --- studio voice ------------------------------------------------------------------------
 
+
 class VoiceChoice(BaseModel):
     id: str
     label: str
@@ -757,7 +785,7 @@ class VoiceOptions(BaseModel):
     kokoro: list[VoiceChoice]
     kokoro_downloaded: bool
     chatterbox: list[VoiceChoice]
-    chatterbox_ready: bool         # installed; else the first take installs it (about 2.5 GB in all)
+    chatterbox_ready: bool  # installed; else the first take installs it (about 2.5 GB in all)
     elevenlabs: list[VoiceChoice]
     elevenlabs_available: bool
     elevenlabs_error: str | None
@@ -806,9 +834,9 @@ class TakeOut(Model):
     alignment: TakeAlignment | None
     # Computed:
     ready: bool
-    current: bool          # made from the script as it is now
+    current: bool  # made from the script as it is now
     job: JobOut | None
-    failure: str | None = None    # why the last attempt to make or time it failed
+    failure: str | None = None  # why the last attempt to make or time it failed
 
 
 class AiTakeCreate(BaseModel):
@@ -820,16 +848,20 @@ class AiTakeCreate(BaseModel):
 
 # --- studio storyboards and assets ---------------------------------------------------------
 
+
 class StoryboardCreate(BaseModel):
     format: Literal["short", "long"] = "short"
     style: Literal["ink", "flat", "film"] = Field(
-        "ink", description="ink: beats on one page; film: a documentary on an evidence wall; flat: the first style")
-    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"] = Field(
-        "ink", description="How it is drawn. Ink looks change drawing only; film style uses wall or studio")
+        "ink", description="ink: beats on one page; film: a documentary on an evidence wall; flat: the first style"
+    )
+    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] = (
+        Field("ink", description="How it is drawn. Ink looks change drawing only; film style uses wall or studio")
+    )
     section_key: str | None = Field(None, description="Required for a Short: the section it tells")
     take_id: int | None = Field(None, description="Defaults to the take marked for the video")
     caption_mode: CaptionMode = Field(
-        "default", description="default keeps Shorts captioned and long videos uncaptioned")
+        "default", description="default keeps Shorts captioned and long videos uncaptioned"
+    )
 
 
 class StoryboardSummary(Model):
@@ -841,17 +873,19 @@ class StoryboardSummary(Model):
     story_shape: StoryShape | None = None
     caption_mode: CaptionMode = "default"
     style: Literal["ink", "flat", "film"]
-    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"] = "ink"
+    look: Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] = (
+        "ink"
+    )
     section_key: str | None
     title: str
     review: Literal["pending", "approved", "rejected"]
     rendered_at: UtcDatetime | None
     # Set when the render was deleted for not being approved in time; the plan is kept.
     expired_at: UtcDatetime | None = None
-    review_at: UtcDatetime | None = None      # when the verdict last changed
-    published_at: UtcDatetime | None = None   # long video marked as uploaded/scheduled manually
-    published_url: str | None = None          # its public link, for statistics
-    stats: dict | None = None                 # {views, likes, comments, at} from YouTube's Data API
+    review_at: UtcDatetime | None = None  # when the verdict last changed
+    published_at: UtcDatetime | None = None  # long video marked as uploaded/scheduled manually
+    published_url: str | None = None  # its public link, for statistics
+    stats: dict | None = None  # {views, likes, comments, at} from YouTube's Data API
     created_at: UtcDatetime
     music_id: int | None
     music_db: float
@@ -895,6 +929,7 @@ class YoutubeText(BaseModel):
 
 class ExportInfo(BaseModel):
     """The last copy of an approved video in the output folder."""
+
     folder: str
     files: list[str]
     at: str
@@ -909,8 +944,8 @@ class StoryboardOut(StoryboardSummary):
     missing_props: list[str]
     music_credit: str = ""
     photos: list[PhotoOut] = []
-    photo_searches_missing: list[str] = []       # searches with no picture yet (found when it renders)
-    credits: str = ""                            # every credit line the description needs
+    photo_searches_missing: list[str] = []  # searches with no picture yet (found when it renders)
+    credits: str = ""  # every credit line the description needs
     score: dict | None = Field(None, description="Ink style: how lively the plan is, every deduction explained")
     youtube: YoutubeText | None = None
     director: dict | None = Field(None, description="The AI director's last pass: notes per shot, kept or refused")
@@ -919,14 +954,17 @@ class StoryboardOut(StoryboardSummary):
     render_meta: dict | None = Field(None, description="The craft settings and measurements of the current render")
     sound_starter_default: bool = False
     sound_riser_default: bool = False
-    continuity: list[str] = Field(default_factory=list,
-                                  description="Deterministic continuity advice for the saved plan")
-    data_cards: list[StoryMapDataCard] = Field(default_factory=list,
-                                                description="Cited fixed graphics available to this plan")
+    continuity: list[str] = Field(
+        default_factory=list, description="Deterministic continuity advice for the saved plan"
+    )
+    data_cards: list[StoryMapDataCard] = Field(
+        default_factory=list, description="Cited fixed graphics available to this plan"
+    )
 
 
 class CompositionSpec(BaseModel):
     """Shared scene composition contract used by ink, flat and film renderers."""
+
     kind: Literal["single", "split", "lanes"] = "single"
     lanes: list[Literal["a", "b"]] = Field(default_factory=list)
     divider: Literal["none", "line", "vs"] = "none"
@@ -949,6 +987,7 @@ class ThumbnailEdit(BaseModel):
 
 class ThumbnailResult(BaseModel):
     """Creator-entered metadata; winner is never calculated from CTR or views."""
+
     selected_key: Literal["A", "B", "C"] | None = None
     winner_key: Literal["A", "B", "C"] | None = None
 
@@ -974,11 +1013,12 @@ class StoryboardScenes(BaseModel):
 class StoryboardPatch(BaseModel):
     review: Literal["pending", "approved", "rejected"] | None = None
     published: bool | None = Field(None, description="Long video was published or scheduled manually")
-    published_url: str | None = Field(None, max_length=300,
-                                      description="Its YouTube link, for statistics; empty to remove")
-    look: Literal[
-        "ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "wall", "studio"
-    ] | None = Field(None, description="Ink style: render again to see it")
+    published_url: str | None = Field(
+        None, max_length=300, description="Its YouTube link, for statistics; empty to remove"
+    )
+    look: (
+        Literal["ink", "paper", "blueprint", "cartoon", "clean_doodle", "rough_paint", "glow", "wall", "studio"] | None
+    ) = Field(None, description="Ink style: render again to see it")
     music_id: int | None = None
     music_suggested: bool = Field(False, description="The music_id is the AI's suggestion, taken as it is")
     music_db: float | None = Field(None, ge=-40, le=-6)
@@ -1006,8 +1046,8 @@ class SuggestedTrack(BaseModel):
     fit: int
     reason: str
     source: Literal["library", "online"]
-    track_id: int | None          # library tracks
-    openverse_id: str | None      # online tracks, to preview or add
+    track_id: int | None  # library tracks
+    openverse_id: str | None  # online tracks, to preview or add
     title: str
     creator: str
     license: str
@@ -1017,10 +1057,10 @@ class SuggestedTrack(BaseModel):
 
 
 class MusicSuggestion(BaseModel):
-    choice: str | None            # a ref from the ranking, or None for no music
+    choice: str | None  # a ref from the ranking, or None for no music
     reason: str
     level_db: int
-    searches: list[str]           # what was searched online
+    searches: list[str]  # what was searched online
     ranking: list[SuggestedTrack]
 
 
@@ -1160,13 +1200,13 @@ class AssetOut(Model):
 class PlaceOut(BaseModel):
     name: str
     description: str
-    built_in: bool                     # drawn by code, always there
-    wide: bool                         # a drawing for long videos exists
-    tall: bool                         # and one for Shorts
+    built_in: bool  # drawn by code, always there
+    wide: bool  # a drawing for long videos exists
+    tall: bool  # and one for Shorts
     origin: str
     updated_at: UtcDatetime | None = None
     used_in: int = 0
-    by_code: bool = False              # drawn by code now (a code place you have not redrawn or deleted)
+    by_code: bool = False  # drawn by code now (a code place you have not redrawn or deleted)
 
 
 class PlaceRedraw(BaseModel):
@@ -1259,13 +1299,13 @@ class ThemeBoardItem(BaseModel):
     idea_id: int | None
     words: int = 0
     voiced: bool = False
-    take: dict | None = None            # the chosen take: {source, voice, duration}
+    take: dict | None = None  # the chosen take: {source, voice, duration}
     storyboards: list[ThemeBoardStoryboard]
     job: JobOut | None = None
 
 
 class ProvenExample(BaseModel):
-    key: str                            # "video:12", "script:4", "idea:31": what to send back to choose it
+    key: str  # "video:12", "script:4", "idea:31": what to send back to choose it
     n: int
     kind: str
     id: int
@@ -1353,7 +1393,7 @@ class ThemeLearning(BaseModel):
     proven: list[dict]
     stats_sources: dict
     experiments: dict
-    unmatched: list[dict] = []          # videos on YouTube that cannot be matched to their analytics, with why
+    unmatched: list[dict] = []  # videos on YouTube that cannot be matched to their analytics, with why
 
 
 class YoutubeStatus(BaseModel):
@@ -1377,6 +1417,7 @@ class YoutubeConnect(BaseModel):
 
 
 # --- prompts ----------------------------------------------------------------------
+
 
 class PromptOut(BaseModel):
     name: str
