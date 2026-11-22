@@ -88,6 +88,20 @@ import { YoutubeConnect } from '../shared/youtube-connect';
                 <span>Allow new 3D explainer storyboards<small>Off by default. When off, the 3D choice is hidden when
                   making a new video, while existing 3D plans remain readable and editable. Save after the Blender worker
                   is deployed to enable new plans.</small></span></label>
+              <label class="field"><span>3D render size (%)</span>
+                <input type="number" min="25" max="100" step="5" [(ngModel)]="f.studio_3d_render_scale" />
+                <small>Blender draws the 3D layer at this share of the video size, then it is scaled up. Captions stay
+                  sharp. 50 renders about four times faster than 100; raise it if the worker has a GPU.</small>
+              </label>
+              <label class="field"><span>3D samples</span>
+                <input type="number" min="4" max="64" step="1" [(ngModel)]="f.studio_3d_samples" />
+                <small>Smoothing passes per frame. 16 is clean for these simple shapes; render time grows with it.</small>
+              </label>
+              <label class="field"><span>3D render time limit (minutes)</span>
+                <input type="number" min="5" max="240" step="5" [(ngModel)]="f.studio_3d_max_minutes" />
+                <small>After a few frames the job measures Blender's real speed. If the whole scene would take longer
+                  than this, it stops early and says how long it would have taken.</small>
+              </label>
             </div>
           </section>
 

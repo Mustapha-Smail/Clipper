@@ -303,9 +303,12 @@ class Scene:
         bpy.ops.wm.read_factory_settings(use_empty=True)
         scene = bpy.context.scene
         scene.render.engine = ENGINE
-        scene.render.resolution_x = int(self.render["width"])
-        scene.render.resolution_y = int(self.render["height"])
-        scene.render.resolution_percentage = int(self.render["resolution_percentage"])
+        # H.264 needs even sides, so the scaled size is rounded down to even
+        # pixels here rather than left to Blender's percentage.
+        percentage = int(self.render["resolution_percentage"])
+        scene.render.resolution_x = max(2, int(self.render["width"]) * percentage // 200 * 2)
+        scene.render.resolution_y = max(2, int(self.render["height"]) * percentage // 200 * 2)
+        scene.render.resolution_percentage = 100
         scene.render.fps = self.fps
         scene.render.image_settings.file_format = "FFMPEG"
         scene.render.ffmpeg.format = "MPEG4"
@@ -588,7 +591,14 @@ def main() -> None:
     if not source.is_file():
         fail("Blender did not produce its intermediate video")
     elapsed = time.monotonic() - started
+    try:  # Only known once Eevee has rendered: before that background mode has no GPU context.
+        import gpu
+
+        gpu_renderer = f"{gpu.platform.renderer_get()} ({gpu.platform.backend_type_get()})"
+    except Exception:  # noqa: BLE001 - a diagnostic must never fail a finished render
+        gpu_renderer = "unknown"
     manifest = {
+        "gpu_renderer": gpu_renderer,
         "contract_version": CONTRACT_VERSION,
         "blender_version": bpy.app.version_string,
         "engine": ENGINE,

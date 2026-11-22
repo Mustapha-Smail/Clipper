@@ -49,6 +49,12 @@ class Settings(BaseModel):
     # Beta: allow creation of validated 3D explainer plans. Existing 3D plans remain readable/editable when off;
     # rendering is enabled separately when the dedicated Blender worker is installed.
     studio_3d_enabled: bool = False
+    # The Blender layer is rendered at this share of the video size, then scaled up; captions are drawn
+    # afterwards at full size. Eevee without a GPU is slow: half size with 16 samples is about 8x faster
+    # than full size with 32. A render whose measured pace would pass the time limit stops early.
+    studio_3d_render_scale: int = Field(50, ge=25, le=100)
+    studio_3d_samples: int = Field(16, ge=4, le=64)
+    studio_3d_max_minutes: int = Field(60, ge=5, le=240)
     # Each new theme gets a banner drawn by the writing model (one call, a few cents; free on a plan).
     # Off: no banner is drawn and the option is hidden on the theme's page.
     theme_banners: bool = True

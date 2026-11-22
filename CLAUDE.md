@@ -200,7 +200,11 @@ Frontend commands need Node 24: `export PATH="$HOME/.nvm/versions/node/v24.22.3/
   target is checksum-pinned x86-64 Blender; API and migrate use the lean runtime
   target. Renderer paths stay inside the storyboard media folder, cancellation
   kills the process group and removes only renderer-owned partials, and failed
-  final renders preserve the last successful video and snapshot. Cached 3D
+  final renders preserve the last successful video and snapshot. The layer renders at
+  `Settings.studio_3d_render_scale` (even pixels) and `studio_3d_samples`, scaled up by the
+  composer; `blender_render.Pace` measures the real seconds per frame and stops a render
+  projected past `studio_3d_max_minutes`. The manifest names Blender's GPU and a software
+  renderer (llvmpipe) is warned about. Cached 3D
   intermediates/previews are disposable render-folder data; retention may remove
   that folder but must never follow a database path outside it. New packaged 3D
   assets need a recorded compatible licence or must be original code-owned

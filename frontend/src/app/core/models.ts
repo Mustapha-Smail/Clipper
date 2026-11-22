@@ -220,6 +220,9 @@ export interface AppSettings {
   director_pass: boolean;
   /** Beta: allow new Blender-backed 3D explainers. Existing 3D boards still round-trip when this is off. */
   studio_3d_enabled: boolean;
+  studio_3d_render_scale: number;
+  studio_3d_samples: number;
+  studio_3d_max_minutes: number;
   /** Optional effects: an attention sound at 0 s, and risers into the first twist and the payoff. */
   sound_starter: boolean;
   sound_riser: boolean;

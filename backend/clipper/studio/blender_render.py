@@ -38,6 +38,8 @@ DEFAULT_SAMPLES = 32
 DEFAULT_TIMEOUT = 60 * 60
 RUNNER = Path(__file__).parents[1] / "blender" / "render_scene.py"
 DIMENSIONS = {"short": (1080, 1920), "long": (1920, 1080)}
+# Mesa's CPU fallbacks: what Eevee reports when the container has no GPU.
+SOFTWARE_RENDERERS = ("llvmpipe", "softpipe", "swrast", "lavapipe")
 PREVIEW_WIDTH = 360
 SUPPORTED_VERBS = frozenset(
     {"add", "scale", "lift", "drop", "strike", "explode", "cutaway", "label", "cycle", "camera"}
@@ -243,6 +245,50 @@ def _cleanup_partials(root: Path) -> None:
         shutil.rmtree(frames)
 
 
+def _duration(seconds: float) -> str:
+    minutes = max(1, round(seconds / 60))
+    return f"{minutes} min" if minutes <= 60 else f"{minutes // 60} h {minutes % 60:02d} min"
+
+
+class Pace:
+    """Measure Blender's real speed and stop a render that cannot finish in time.
+
+    The first frame includes start-up and shader compilation, so the rate is
+    taken from the first written frame onwards and only trusted after
+    ``SETTLE`` more frames. It is cumulative, so one slow frame does not stop
+    a render; a scene that grows heavier is caught as soon as the average says so.
+    """
+
+    SETTLE = 5
+
+    def __init__(self, limit: float, rep: Reporter):
+        self.limit = limit
+        self.rep = rep
+        self.first: tuple[float, int] | None = None
+        self.announced = False
+
+    def frame(self, done: int, total: int, elapsed: float) -> str:
+        message = f"Rendering 3D frame {done} of {total}"
+        if self.first is None:
+            self.first = (elapsed, done)
+            return message
+        frames = done - self.first[1]
+        if frames < self.SETTLE:
+            return message
+        rate = (elapsed - self.first[0]) / frames
+        left = rate * max(0, total - done)
+        if elapsed + left > self.limit:
+            raise BlenderRenderError(
+                f"Stopped early: at {rate:.1f} s a frame, the {total} frames would take about "
+                f"{_duration(elapsed + left)}, past the {_duration(self.limit)} limit. Lower the 3D render size "
+                "or samples in Settings, raise the time limit, or give the worker a GPU."
+            )
+        if not self.announced:
+            self.announced = True
+            self.rep.info(f"Blender renders {rate:.1f} s a frame: about {_duration(elapsed + left)} for {total} frames")
+        return f"{message}, about {_duration(left)} left"
+
+
 def _failure_detail(tail: Iterable[str]) -> str:
     """The renderer's own error line when there is one, else Blender's last lines."""
     lines = list(tail)
@@ -284,6 +330,7 @@ def run_plan(
     cmd = command(blender, plan, root)
     _cleanup_partials(root)
     tail: deque[str] = deque(maxlen=16)
+    pace = Pace(timeout, rep)
     started = time.monotonic()
     try:
         proc = subprocess.Popen(
@@ -313,7 +360,8 @@ def run_plan(
                         tail.append(line)
                         if line.startswith("CLIPPER_PROGRESS "):
                             _, done, total = line.split(maxsplit=2)
-                            rep.progress(int(done) / max(1, int(total)), f"Rendering 3D frame {done} of {total}")
+                            message = pace.frame(int(done), int(total), time.monotonic() - started)
+                            rep.progress(int(done) / max(1, int(total)), message)
                 else:
                     rep.progress(None, "Rendering the 3D scene")
             # Drain the compact final diagnostics without ever blocking a live process.
@@ -351,10 +399,16 @@ def run_plan(
     manifest_path = _inside(root / "manifest.json", root)
     video_part.replace(video)
     manifest_part.replace(manifest_path)
+    gpu = str(manifest.get("gpu_renderer", "unknown"))
     rep.info(
-        f"Blender {manifest.get('blender_version', 'unknown')}, {manifest.get('engine', 'Eevee')}: "
+        f"Blender {manifest.get('blender_version', 'unknown')}, {manifest.get('engine', 'Eevee')} on {gpu}: "
         f"{manifest.get('frame_end', '?')} frames in {manifest.get('render_seconds', 0):.1f}s"
     )
+    if any(name in gpu.lower() for name in SOFTWARE_RENDERERS):
+        rep.warn(
+            f"Blender drew on the CPU ({gpu}): no GPU reached the worker, so 3D renders are slow. "
+            "Pass /dev/dri to the worker container to use the machine's graphics."
+        )
     return RenderResult(video=video, manifest=manifest, plan=plan)
 
 
@@ -384,7 +438,7 @@ def render_dir(board: Storyboard | dict[str, Any]) -> Path:
     return voice_mod.script_media_dir(script_id) / f"storyboard-{board_id}"
 
 
-def _plan_options(board: dict[str, Any]) -> dict[str, Any]:
+def _plan_options(board: dict[str, Any], settings: Any) -> dict[str, Any]:
     width, height = DIMENSIONS[board["format"]]
     duration = max(0.1, float(board["end"]) - float(board["start"]))
     return {
@@ -395,6 +449,10 @@ def _plan_options(board: dict[str, Any]) -> dict[str, Any]:
         # to the chosen take keeps its last operation aligned with the voice;
         # final captions and sound use the exact per-word timeline below.
         "words_per_minute": max(1.0, len(board["words"]) * 60.0 / duration),
+        # The composer scales the 3D layer to the final size and draws captions
+        # afterwards at full size, so a smaller render softens only the 3D shapes.
+        "resolution_percentage": settings.studio_3d_render_scale,
+        "samples": settings.studio_3d_samples,
     }
 
 
@@ -511,8 +569,11 @@ def build(storyboard_id: int, rep: Reporter) -> RenderResult:
         raise BlenderRenderError("The 3D storyboard has no timed narration words")
     if not board["scenes"]:
         raise BlenderRenderError("The 3D storyboard has no scenes")
+    from .. import settings as settings_mod
+
+    settings = settings_mod.load()
     root = render_dir(board)
-    options = _plan_options(board)
+    options = _plan_options(board, settings)
     plan = write_plan(board["scenes"], root, **options)
     from . import world3d
 
@@ -529,7 +590,13 @@ def build(storyboard_id: int, rep: Reporter) -> RenderResult:
     )
     result = _cached_result(plan, root)
     if result is None:
-        result = run_plan(plan, root, rep)
+        width, height = options["width"], options["height"]
+        scale = options["resolution_percentage"]
+        rep.info(
+            f"Rendering the 3D layer at {width * scale // 100}x{height * scale // 100} ({scale}% of the video), "
+            f"{options['samples']} samples, limit {_duration(settings.studio_3d_max_minutes * 60)}"
+        )
+        result = run_plan(plan, root, rep, timeout=settings.studio_3d_max_minutes * 60)
     else:
         rep.info(
             f"Reusing Blender {result.manifest.get('blender_version', 'unknown')} scene "

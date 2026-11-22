@@ -163,6 +163,30 @@ def test_success_promotes_partials_and_reads_measured_manifest(tmp_path):
     assert not (tmp_path / "scene.part.mp4").exists()
 
 
+def test_a_software_renderer_is_named_in_a_warning(tmp_path):
+    scenes, word_count = proof()
+    plan = blender_render.write_plan(scenes, tmp_path, word_count=word_count, width=540, height=960)
+    binary = fake_blender(tmp_path, """
+        import json, pathlib, sys
+        out = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])
+        plan = json.loads(pathlib.Path(sys.argv[sys.argv.index("--plan") + 1]).read_text())
+        (out / "scene.part.mp4").write_bytes(b"video")
+        manifest = {"plan_hash": plan["plan_hash"], "gpu_renderer": "llvmpipe (LLVM 19.1.7, 256 bits) (OPENGL)"}
+        (out / "manifest.part.json").write_text(json.dumps(manifest))
+    """)
+
+    class Warnings(Reporter):
+        def __init__(self):
+            self.warnings = []
+
+        def warn(self, message):
+            self.warnings.append(message)
+
+    rep = Warnings()
+    blender_render.run_plan(plan, tmp_path, rep, blender_binary=str(binary), timeout=3)
+    assert len(rep.warnings) == 1 and "llvmpipe" in rep.warnings[0] and "/dev/dri" in rep.warnings[0]
+
+
 def test_failure_removes_partials_but_preserves_previous_good_render(tmp_path):
     scenes, word_count = proof()
     plan = blender_render.write_plan(scenes, tmp_path, word_count=word_count, width=540, height=960)
@@ -261,6 +285,62 @@ def test_renderer_can_open_every_asset_the_planner_may_cut_away():
 
     allowed = {asset for asset, verbs in world3d.CAPABILITIES.items() if "cutaway" in verbs}
     assert set(render_scene.CUTAWAY_PARTS) == allowed
+
+
+class Notes(Reporter):
+    def __init__(self):
+        self.infos = []
+
+    def info(self, message):
+        self.infos.append(message)
+
+
+def test_pace_reports_time_left_from_the_measured_rate():
+    notes = Notes()
+    pace = blender_render.Pace(3600, notes)
+    assert pace.frame(1, 1201, 20.0) == "Rendering 3D frame 1 of 1201"  # start-up is not counted
+    for done in range(2, 6):
+        pace.frame(done, 1201, 20.0 + (done - 1) * 2.0)
+    message = pace.frame(6, 1201, 30.0)  # 2 s a frame, 1195 frames left
+    assert message == "Rendering 3D frame 6 of 1201, about 40 min left"
+    assert notes.infos == ["Blender renders 2.0 s a frame: about 40 min for 1201 frames"]
+
+
+def test_pace_stops_a_render_that_cannot_finish_within_the_limit():
+    pace = blender_render.Pace(3600, Notes())
+    pace.frame(1, 1201, 60.0)
+    with pytest.raises(blender_render.BlenderRenderError, match=r"12.0 s a frame.*about 4 h 0[0-9] min.*60 min limit"):
+        for done in range(2, 7):
+            pace.frame(done, 1201, 60.0 + (done - 1) * 12.0)
+
+
+def test_slow_blender_is_stopped_early_and_its_partials_removed(tmp_path):
+    scenes, word_count = proof()
+    plan = blender_render.write_plan(scenes, tmp_path, word_count=word_count, width=540, height=960)
+    binary = fake_blender(tmp_path, """
+        import pathlib, sys, time
+        out = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])
+        (out / "scene.part.mp4").write_bytes(b"partial")
+        for frame in range(1, 1000):
+            print(f"CLIPPER_PROGRESS {frame} 1000", flush=True)
+            time.sleep(0.05)
+    """)
+    started = time.monotonic()
+    with pytest.raises(blender_render.BlenderRenderError, match="Stopped early"):
+        blender_render.run_plan(plan, tmp_path, Reporter(), blender_binary=str(binary), timeout=5)
+    assert time.monotonic() - started < 3
+    assert not (tmp_path / "scene.part.mp4").exists()
+
+
+def test_plan_uses_the_3d_quality_settings():
+    from clipper.settings import Settings
+
+    board = {"format": "short", "start": 0.0, "end": 50.0, "words": [{}] * 120}
+    options = blender_render._plan_options(board, Settings())
+    assert (options["width"], options["height"]) == (1080, 1920)
+    assert (options["resolution_percentage"], options["samples"]) == (50, 16)
+    options = blender_render._plan_options(board, Settings(studio_3d_render_scale=100, studio_3d_samples=32))
+    assert (options["resolution_percentage"], options["samples"]) == (100, 32)
 
 
 class CancellingReporter(Reporter):
